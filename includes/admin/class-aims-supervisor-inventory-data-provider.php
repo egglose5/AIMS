@@ -9,17 +9,23 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 	private $vendor_repository;
 	private $event_repository;
 	private $scope_resolver;
+	private $inventory_service;
 
 	public function __construct(
 		AIMS_Inventory_Bucket_Repository $bucket_repository = null,
 		AIMS_Vendor_Repository $vendor_repository = null,
 		AIMS_Event_Repository $event_repository = null,
-		AIMS_Admin_Scope_Resolver $scope_resolver = null
+		AIMS_Admin_Scope_Resolver $scope_resolver = null,
+		AIMS_Inventory_Service $inventory_service = null
 	) {
 		$this->bucket_repository = $bucket_repository ?: new AIMS_Inventory_Bucket_Repository();
 		$this->vendor_repository  = $vendor_repository ?: new AIMS_Vendor_Repository();
 		$this->event_repository   = $event_repository ?: new AIMS_Event_Repository();
 		$this->scope_resolver     = $scope_resolver ?: new AIMS_Admin_Scope_Resolver();
+		$this->inventory_service  = $inventory_service ?: new AIMS_Inventory_Service(
+			$this->bucket_repository,
+			new AIMS_Inventory_Movement_Repository()
+		);
 	}
 
 	public function get_rows(): array {
@@ -46,6 +52,34 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 			$type = ! empty( $row['bucket_type'] ) ? (string) $row['bucket_type'] : 'warehouse';
 			if ( isset( $summary[ $type ] ) ) {
 				$summary[ $type ]++;
+			}
+		}
+
+		return $summary;
+	}
+
+	public function get_event_transfer_rows(): array {
+		return $this->inventory_service->get_event_transfer_operator_rows(
+			array(
+				'limit' => 25,
+			)
+		);
+	}
+
+	public function get_event_transfer_summary(): array {
+		$rows = $this->get_event_transfer_rows();
+
+		$summary = array(
+			'ready_to_transfer' => 0,
+			'at_show'          => 0,
+			'show_complete'    => 0,
+			'partially_returned' => 0,
+		);
+
+		foreach ( $rows as $row ) {
+			$state = ! empty( $row['operator_state'] ) ? (string) $row['operator_state'] : '';
+			if ( isset( $summary[ $state ] ) ) {
+				$summary[ $state ]++;
 			}
 		}
 

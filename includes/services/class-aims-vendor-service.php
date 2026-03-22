@@ -7,13 +7,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Vendor_Service {
 	private $vendors;
 	private $access;
+	private $audit;
 
 	public function __construct(
 		AIMS_Vendor_Repository $vendors,
-		AIMS_Vendor_Access_Service $access = null
+		AIMS_Vendor_Access_Service $access = null,
+		AIMS_Audit_Service $audit = null
 	) {
 		$this->vendors = $vendors;
 		$this->access   = $access;
+		$this->audit    = $audit;
 	}
 
 	public function list_vendors( int $user_id = 0 ): array {
@@ -30,10 +33,36 @@ class AIMS_Vendor_Service {
 		$user_id = $this->resolve_actor_user_id( $user_id );
 
 		if ( null !== $this->access && ! $this->access->can_manage_all_vendors( $user_id ) ) {
+			$this->record_audit(
+				'vendor_create_denied',
+				$user_id,
+				0,
+				'vendor',
+				0,
+				array(
+					'input' => $data,
+				),
+				'Vendor creation denied.'
+			);
+
 			return 0;
 		}
 
-		return $this->vendors->save( $data );
+		$vendor_id = $this->vendors->save( $data );
+
+		$this->record_audit(
+			'vendor_created',
+			$user_id,
+			$vendor_id,
+			'vendor',
+			$vendor_id,
+			array(
+				'input' => $data,
+			),
+			'Vendor created.'
+		);
+
+		return $vendor_id;
 	}
 
 	public function get_vendor( int $vendor_id, int $user_id = 0 ): ?array {
@@ -45,6 +74,16 @@ class AIMS_Vendor_Service {
 		}
 
 		if ( null !== $this->access && $user_id > 0 && ! $this->access->user_has_vendor_access( $vendor_id, $user_id ) ) {
+			$this->record_audit(
+				'vendor_view_denied',
+				$user_id,
+				$vendor_id,
+				'vendor',
+				$vendor_id,
+				array(),
+				'Vendor view denied.'
+			);
+
 			return null;
 		}
 
@@ -72,5 +111,32 @@ class AIMS_Vendor_Service {
 		}
 
 		return (int) get_current_user_id();
+	}
+
+	private function record_audit(
+		string $event_type,
+		int $actor_id,
+		int $scope_id,
+		string $entity_type,
+		int $entity_id,
+		array $details = array(),
+		string $reason = ''
+	): void {
+		if ( null === $this->audit ) {
+			$this->audit = new AIMS_Audit_Service();
+		}
+
+		$this->audit->record(
+			$event_type,
+			array(
+				'actor_id'   => $actor_id,
+				'scope_type' => 'vendor',
+				'scope_id'   => $scope_id,
+				'entity_type'=> $entity_type,
+				'entity_id'  => $entity_id,
+				'reason'     => $reason,
+				'details'    => $details,
+			)
+		);
 	}
 }

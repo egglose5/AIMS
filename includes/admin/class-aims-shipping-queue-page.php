@@ -18,6 +18,7 @@ class AIMS_Shipping_Queue_Page {
 		echo '<div class="wrap">';
 		echo '<h1>Needs Shipping</h1>';
 		echo '<p>Orders in this queue were marked by the AIMS shipping marker and require customer fulfillment from warehouse stock.</p>';
+		echo '<p><strong>Access:</strong> ' . esc_html( (string) ( $queue_rows[0]['access_label'] ?? 'Scoped access' ) ) . '</p>';
 
 		echo '<div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0;">';
 		echo '<div class="notice notice-info inline" style="margin:0;padding:12px 16px;"><strong>' . esc_html( (string) $summary['needs_shipping'] ) . '</strong> needs shipping</div>';
@@ -39,6 +40,7 @@ class AIMS_Shipping_Queue_Page {
 		echo '<th>Queue Type</th>';
 		echo '<th>Source</th>';
 		echo '<th>Bucket Scope</th>';
+		echo '<th>Access</th>';
 		echo '<th>Shipping</th>';
 		echo '<th>Status</th>';
 		echo '<th>Created</th>';
@@ -53,6 +55,7 @@ class AIMS_Shipping_Queue_Page {
 			echo '<td>' . esc_html( $row['queue_type'] ) . '</td>';
 			echo '<td>' . esc_html( $row['source_label'] ) . '</td>';
 			echo '<td>' . esc_html( $row['scope_label'] ?? 'Scoped' ) . '</td>';
+			echo '<td>' . esc_html( $row['access_label'] ?? 'Scoped access' ) . '</td>';
 			echo '<td>' . esc_html( $row['shipping_label'] ) . '</td>';
 			echo '<td>' . esc_html( $row['status'] ) . '</td>';
 			echo '<td>' . esc_html( $row['created_at'] ) . '</td>';

@@ -8,15 +8,18 @@ class AIMS_Inventory_Service {
 	private $buckets;
 	private $movements;
 	private $bucket_access;
+	private $audit;
 
 	public function __construct(
 		AIMS_Inventory_Bucket_Repository $buckets,
 		AIMS_Inventory_Movement_Repository $movements,
-		AIMS_Bucket_Access_Service $bucket_access = null
+		AIMS_Bucket_Access_Service $bucket_access = null,
+		AIMS_Audit_Service $audit = null
 	) {
 		$this->buckets       = $buckets;
 		$this->movements     = $movements;
 		$this->bucket_access = $bucket_access;
+		$this->audit         = $audit;
 	}
 
 	public function apply_movement( array $data, int $actor_user_id = 0 ) {
@@ -37,6 +40,22 @@ class AIMS_Inventory_Service {
 		}
 
 		if ( ! $this->can_manage_bucket_context( $bucket_context, $actor_user_id ) ) {
+			$this->record_audit(
+				'inventory_movement_denied',
+				$this->resolve_actor_user_id( $actor_user_id ),
+				(int) ( $bucket_context['owner_entity_id'] ?? 0 ),
+				'bucket',
+				$bucket_id,
+				array(
+					'reference_type' => $reference_type,
+					'reference_id'   => $reference_id,
+					'movement_type'  => $movement_type,
+					'quantity_delta' => $quantity_delta,
+					'bucket_code'    => $bucket_code,
+				),
+				'Inventory movement denied by bucket RBAC.'
+			);
+
 			return new WP_Error( 'aims_bucket_access_denied', 'The current user cannot change inventory for this bucket.' );
 		}
 
@@ -127,8 +146,8 @@ class AIMS_Inventory_Service {
 	public function transfer_warehouse_to_event_bucket( array $data, int $actor_user_id = 0 ) {
 		return $this->transfer_between_buckets(
 			$data,
-			'warehouse_transfer_out',
-			'event_transfer_in',
+			AIMS_Inventory_Movement_Repository::MOVEMENT_WAREHOUSE_TRANSFER_OUT,
+			AIMS_Inventory_Movement_Repository::MOVEMENT_EVENT_TRANSFER_IN,
 			'warehouse',
 			'event',
 			$actor_user_id
@@ -138,12 +157,48 @@ class AIMS_Inventory_Service {
 	public function record_event_return( array $data, int $actor_user_id = 0 ) {
 		return $this->transfer_between_buckets(
 			$data,
-			'event_return_out',
-			'warehouse_return_in',
+			AIMS_Inventory_Movement_Repository::MOVEMENT_EVENT_RETURN_OUT,
+			AIMS_Inventory_Movement_Repository::MOVEMENT_WAREHOUSE_RETURN_IN,
 			'event',
 			'warehouse',
 			$actor_user_id
 		);
+	}
+
+	public function get_event_transfer_operator_rows( array $filters = array() ): array {
+		$event_buckets = $this->buckets->get_bucket_snapshots_by_type( 'event' );
+
+		if ( empty( $event_buckets ) ) {
+			return array();
+		}
+
+		$limit = isset( $filters['limit'] ) ? max( 1, min( 100, (int) $filters['limit'] ) ) : 25;
+		$rows  = array();
+
+		foreach ( $event_buckets as $bucket ) {
+			$summary   = $this->movements->get_transfer_summary_for_bucket_id( (int) $bucket['id'] );
+			$history   = $this->movements->get_recent_movements_for_bucket_id( (int) $bucket['id'], 3 );
+			$rows[]    = array(
+				'bucket'              => $bucket,
+				'transfer_summary'    => $summary,
+				'recent_movements'    => $history,
+				'operator_state'      => $this->determine_operator_state( $bucket, $summary ),
+				'warehouse_to_event'  => array(
+					'movement_type' => AIMS_Inventory_Movement_Repository::MOVEMENT_WAREHOUSE_TRANSFER_OUT,
+					'label'         => 'Move from warehouse to event',
+				),
+				'event_return'        => array(
+					'movement_type' => AIMS_Inventory_Movement_Repository::MOVEMENT_EVENT_RETURN_OUT,
+					'label'         => 'Return to warehouse',
+				),
+			);
+		}
+
+		if ( count( $rows ) > $limit ) {
+			$rows = array_slice( $rows, 0, $limit );
+		}
+
+		return $rows;
 	}
 
 	private function transfer_between_buckets( array $data, string $source_movement_type, string $destination_movement_type, string $source_bucket_type, string $destination_bucket_type, int $actor_user_id = 0 ) {
@@ -164,6 +219,22 @@ class AIMS_Inventory_Service {
 			! $this->can_manage_bucket_context( $source_data['bucket'], $actor_user_id )
 			|| ! $this->can_manage_bucket_context( $destination_data['bucket'], $actor_user_id )
 		) {
+			$this->record_audit(
+				'inventory_transfer_denied',
+				$this->resolve_actor_user_id( $actor_user_id ),
+				(int) ( $source_data['bucket']['owner_entity_id'] ?? 0 ),
+				'bucket',
+				(int) ( $source_data['bucket']['id'] ?? 0 ),
+				array(
+					'reference_type' => $reference_type,
+					'reference_id'   => $reference_id,
+					'quantity'       => $quantity,
+					'source_bucket'   => $source_data['bucket'] ?? array(),
+					'destination_bucket' => $destination_data['bucket'] ?? array(),
+				),
+				'Inventory transfer denied by bucket RBAC.'
+			);
+
 			return new WP_Error( 'aims_bucket_access_denied', 'The current user cannot transfer inventory for one or more buckets.' );
 		}
 
@@ -203,6 +274,31 @@ class AIMS_Inventory_Service {
 				'destination_bucket_type' => $destination_bucket_type,
 			),
 		);
+	}
+
+	private function determine_operator_state( array $bucket, array $summary ): string {
+		$bucket_type = (string) ( $bucket['bucket_type'] ?? '' );
+		$available   = (float) ( $bucket['available_quantity'] ?? 0 );
+		$transferred = (float) ( $summary['transfer_in_quantity'] ?? 0 );
+		$returned    = (float) ( $summary['return_in_quantity'] ?? 0 );
+
+		if ( 'event' !== $bucket_type ) {
+			return 'warehouse';
+		}
+
+		if ( $transferred > 0 && $available <= 0 ) {
+			return 'show_complete';
+		}
+
+		if ( $transferred > 0 && $returned > 0 ) {
+			return 'partially_returned';
+		}
+
+		if ( $transferred > 0 ) {
+			return 'at_show';
+		}
+
+		return 'ready_to_transfer';
 	}
 
 	private function apply_movement_for_transfer_context( array $data, string $movement_type, float $quantity_delta, int $actor_user_id = 0 ) {
@@ -359,5 +455,32 @@ class AIMS_Inventory_Service {
 		}
 
 		return (int) get_current_user_id();
+	}
+
+	private function record_audit(
+		string $event_type,
+		int $actor_id,
+		int $scope_id,
+		string $entity_type,
+		int $entity_id,
+		array $details = array(),
+		string $reason = ''
+	): void {
+		if ( null === $this->audit ) {
+			$this->audit = new AIMS_Audit_Service();
+		}
+
+		$this->audit->record(
+			$event_type,
+			array(
+				'actor_id'   => $actor_id,
+				'scope_type' => 'bucket',
+				'scope_id'   => $scope_id,
+				'entity_type'=> $entity_type,
+				'entity_id'  => $entity_id,
+				'reason'     => $reason,
+				'details'    => $details,
+			)
+		);
 	}
 }

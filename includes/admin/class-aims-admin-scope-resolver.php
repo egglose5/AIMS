@@ -20,6 +20,10 @@ class AIMS_Admin_Scope_Resolver {
 		return current_user_can( AIMS_Capabilities::CAP_MANAGE );
 	}
 
+	public function get_access_mode_label(): string {
+		return $this->can_manage_all() ? 'Full access' : 'Scoped access';
+	}
+
 	public function get_accessible_bucket_ids(): array {
 		if ( $this->can_manage_all() ) {
 			return array();

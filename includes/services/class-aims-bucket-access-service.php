@@ -7,33 +7,99 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Bucket_Access_Service {
 	private $access;
 	private $buckets;
+	private $audit;
 
 	public function __construct(
 		AIMS_Bucket_Access_Repository $access,
-		AIMS_Inventory_Bucket_Repository $buckets
+		AIMS_Inventory_Bucket_Repository $buckets,
+		AIMS_Audit_Service $audit = null
 	) {
 		$this->access  = $access;
 		$this->buckets = $buckets;
+		$this->audit   = $audit;
 	}
 
-	public function grant_bucket_responsibility( int $bucket_id, int $user_id, array $data = array() ): int {
+	public function grant_bucket_responsibility( int $bucket_id, int $user_id, array $data = array(), int $actor_user_id = 0 ): int {
 		$user_id = $this->resolve_actor_user_id( $user_id );
+		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
 
 		if ( $bucket_id <= 0 || $user_id <= 0 ) {
 			return 0;
 		}
 
-		return $this->access->grant_access( $bucket_id, $user_id, $data );
+		if ( ! $this->user_can_manage_bucket( $actor_user_id, $bucket_id ) ) {
+			$this->record_access_audit(
+				'access_grant_denied',
+				$actor_user_id,
+				$bucket_id,
+				$user_id,
+				array(
+					'requested_role' => $data['access_role'] ?? self::ROLE_SUPERVISOR,
+				),
+				'access_change',
+				'Bucket responsibility grant denied.'
+			);
+
+			return 0;
+		}
+
+		$access_id = $this->access->grant_access( $bucket_id, $user_id, $data );
+
+		$this->record_access_audit(
+			'access_granted',
+			$actor_user_id,
+			$bucket_id,
+			$user_id,
+			array_merge(
+				$data,
+				array(
+					'access_id' => $access_id,
+				)
+			),
+			'access_change',
+			'Bucket responsibility granted.'
+		);
+
+		return $access_id;
 	}
 
-	public function revoke_bucket_responsibility( int $bucket_id, int $user_id ): bool {
+	public function revoke_bucket_responsibility( int $bucket_id, int $user_id, int $actor_user_id = 0 ): bool {
 		$user_id = $this->resolve_actor_user_id( $user_id );
+		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
 
 		if ( $bucket_id <= 0 || $user_id <= 0 ) {
 			return false;
 		}
 
-		return $this->access->revoke_access( $bucket_id, $user_id );
+		if ( ! $this->user_can_manage_bucket( $actor_user_id, $bucket_id ) ) {
+			$this->record_access_audit(
+				'access_revoke_denied',
+				$actor_user_id,
+				$bucket_id,
+				$user_id,
+				array(),
+				'access_change',
+				'Bucket responsibility revoke denied.'
+			);
+
+			return false;
+		}
+
+		$deleted = $this->access->revoke_access( $bucket_id, $user_id );
+
+		if ( $deleted ) {
+			$this->record_access_audit(
+				'access_revoked',
+				$actor_user_id,
+				$bucket_id,
+				$user_id,
+				array(),
+				'access_change',
+				'Bucket responsibility revoked.'
+			);
+		}
+
+		return $deleted;
 	}
 
 	public function get_bucket_access_model( int $bucket_id ): array {
@@ -134,6 +200,16 @@ class AIMS_Bucket_Access_Service {
 			return null;
 		}
 
+		$this->record_access_audit(
+			'bucket_view_denied',
+			$this->resolve_actor_user_id( $user_id ),
+			$bucket_id,
+			$user_id,
+			array(),
+			'access_change',
+			'Bucket view access denied.'
+		);
+
 		return new WP_Error( 'aims_bucket_access_denied', 'The current user cannot view this bucket.' );
 	}
 
@@ -142,6 +218,16 @@ class AIMS_Bucket_Access_Service {
 			return null;
 		}
 
+		$this->record_access_audit(
+			'bucket_manage_denied',
+			$this->resolve_actor_user_id( $user_id ),
+			$bucket_id,
+			$user_id,
+			array(),
+			'access_change',
+			'Bucket manage access denied.'
+		);
+
 		return new WP_Error( 'aims_bucket_manage_denied', 'The current user cannot manage this bucket.' );
 	}
 
@@ -149,6 +235,16 @@ class AIMS_Bucket_Access_Service {
 		if ( $this->user_can_transfer_bucket( $user_id, $bucket_id ) ) {
 			return null;
 		}
+
+		$this->record_access_audit(
+			'bucket_transfer_denied',
+			$this->resolve_actor_user_id( $user_id ),
+			$bucket_id,
+			$user_id,
+			array(),
+			'access_change',
+			'Bucket transfer access denied.'
+		);
 
 		return new WP_Error( 'aims_bucket_transfer_denied', 'The current user cannot transfer inventory for this bucket.' );
 	}
@@ -188,5 +284,36 @@ class AIMS_Bucket_Access_Service {
 		}
 
 		return (int) get_current_user_id();
+	}
+
+	private function record_access_audit(
+		string $event_type,
+		int $actor_id,
+		int $bucket_id,
+		int $user_id,
+		array $details = array(),
+		string $reason = '',
+		string $scope_type = 'bucket'
+	): void {
+		if ( null === $this->audit ) {
+			$this->audit = new AIMS_Audit_Service();
+		}
+
+		$this->audit->record_access_change(
+			array(
+				'actor_id'   => $actor_id,
+				'scope_type' => $scope_type,
+				'scope_id'   => $bucket_id,
+				'entity_type'=> 'user',
+				'entity_id'  => $user_id,
+				'reason'     => $reason,
+				'details'    => array_merge(
+					$details,
+					array(
+						'event_type' => $event_type,
+					)
+				),
+			)
+		);
 	}
 }

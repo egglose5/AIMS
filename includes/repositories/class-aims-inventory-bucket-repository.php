@@ -38,6 +38,32 @@ class AIMS_Inventory_Bucket_Repository {
 		);
 	}
 
+	public function get_buckets_by_type( string $bucket_type ): array {
+		global $wpdb;
+
+		$bucket_type = sanitize_key( $bucket_type );
+
+		if ( '' === $bucket_type ) {
+			return array();
+		}
+
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE bucket_type = %s ORDER BY bucket_label ASC, id ASC',
+				$bucket_type
+			),
+			ARRAY_A
+		);
+	}
+
+	public function get_event_buckets(): array {
+		return $this->get_buckets_by_type( 'event' );
+	}
+
+	public function get_warehouse_buckets(): array {
+		return $this->get_buckets_by_type( 'warehouse' );
+	}
+
 	public function get_by_ids( array $bucket_ids ): array {
 		global $wpdb;
 
@@ -226,6 +252,25 @@ class AIMS_Inventory_Bucket_Repository {
 		return (float) $total;
 	}
 
+	public function get_bucket_snapshot_by_id( int $bucket_id ): ?array {
+		$bucket = $this->find_bucket_by_id( $bucket_id );
+
+		if ( empty( $bucket ) ) {
+			return null;
+		}
+
+		return $this->build_snapshot( $bucket );
+	}
+
+	public function get_bucket_snapshots_by_type( string $bucket_type ): array {
+		$buckets = $this->get_buckets_by_type( $bucket_type );
+
+		return array_map(
+			array( $this, 'build_snapshot' ),
+			$buckets
+		);
+	}
+
 	public function get_total_quantity_for_bucket( int $vendor_id, int $product_id, string $bucket_code ): float {
 		$bucket = $this->find_bucket_by_identity( '', 'vendor', 'vendor', $vendor_id, '', $vendor_id, $product_id, $bucket_code );
 
@@ -320,5 +365,27 @@ class AIMS_Inventory_Bucket_Repository {
 		}
 
 		return implode( ':', $parts );
+	}
+
+	private function build_snapshot( array $bucket ): array {
+		$quantity = (float) ( $bucket['quantity'] ?? 0 );
+		$reserved = (float) ( $bucket['reserved_quantity'] ?? 0 );
+
+		return array(
+			'id'                => (int) ( $bucket['id'] ?? 0 ),
+			'bucket_key'        => (string) ( $bucket['bucket_key'] ?? '' ),
+			'bucket_type'       => (string) ( $bucket['bucket_type'] ?? 'warehouse' ),
+			'bucket_label'      => (string) ( $bucket['bucket_label'] ?? '' ),
+			'owner_entity_type' => (string) ( $bucket['owner_entity_type'] ?? '' ),
+			'owner_entity_id'   => (int) ( $bucket['owner_entity_id'] ?? 0 ),
+			'square_location_id' => (string) ( $bucket['square_location_id'] ?? '' ),
+			'vendor_id'         => (int) ( $bucket['vendor_id'] ?? 0 ),
+			'product_id'        => (int) ( $bucket['product_id'] ?? 0 ),
+			'bucket_code'       => (string) ( $bucket['bucket_code'] ?? '' ),
+			'quantity'          => $quantity,
+			'reserved_quantity' => $reserved,
+			'available_quantity'=> max( 0, $quantity - $reserved ),
+			'updated_at'        => (string) ( $bucket['updated_at'] ?? '' ),
+		);
 	}
 }

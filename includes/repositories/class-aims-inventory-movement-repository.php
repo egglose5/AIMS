@@ -5,10 +5,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Inventory_Movement_Repository {
+	public const MOVEMENT_WAREHOUSE_TRANSFER_OUT = 'warehouse_transfer_out';
+	public const MOVEMENT_EVENT_TRANSFER_IN      = 'event_transfer_in';
+	public const MOVEMENT_EVENT_RETURN_OUT       = 'event_return_out';
+	public const MOVEMENT_WAREHOUSE_RETURN_IN    = 'warehouse_return_in';
+
 	public function get_table_name(): string {
 		global $wpdb;
 
 		return $wpdb->prefix . 'aims_inventory_movements';
+	}
+
+	public function transfer_movement_types(): array {
+		return array(
+			self::MOVEMENT_WAREHOUSE_TRANSFER_OUT,
+			self::MOVEMENT_EVENT_TRANSFER_IN,
+			self::MOVEMENT_EVENT_RETURN_OUT,
+			self::MOVEMENT_WAREHOUSE_RETURN_IN,
+		);
 	}
 
 	public function has_reference_application( string $reference_type, string $reference_id, int $product_id, string $bucket_code, string $movement_type ): bool {
@@ -251,6 +265,101 @@ class AIMS_Inventory_Movement_Repository {
 		);
 
 		return (float) $total;
+	}
+
+	public function get_recent_movements_for_bucket_id( int $bucket_id, int $limit = 10 ): array {
+		global $wpdb;
+
+		if ( $bucket_id <= 0 ) {
+			return array();
+		}
+
+		$limit = max( 1, min( 100, $limit ) );
+
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE bucket_id = %d ORDER BY created_at DESC, id DESC LIMIT %d',
+				$bucket_id,
+				$limit
+			),
+			ARRAY_A
+		);
+	}
+
+	public function get_transfer_summary_for_bucket_id( int $bucket_id ): array {
+		global $wpdb;
+
+		if ( $bucket_id <= 0 ) {
+			return array(
+				'transfer_out_quantity'   => 0.0,
+				'transfer_in_quantity'    => 0.0,
+				'return_out_quantity'     => 0.0,
+				'return_in_quantity'      => 0.0,
+				'net_transfer_quantity'   => 0.0,
+				'last_movement_type'      => '',
+				'last_movement_at'        => '',
+			);
+		}
+
+		$summary = $wpdb->get_row(
+			$wpdb->prepare(
+				'
+				SELECT
+					COALESCE(SUM(CASE WHEN movement_type = %s THEN quantity_delta ELSE 0 END), 0) AS transfer_out_quantity,
+					COALESCE(SUM(CASE WHEN movement_type = %s THEN quantity_delta ELSE 0 END), 0) AS transfer_in_quantity,
+					COALESCE(SUM(CASE WHEN movement_type = %s THEN quantity_delta ELSE 0 END), 0) AS return_out_quantity,
+					COALESCE(SUM(CASE WHEN movement_type = %s THEN quantity_delta ELSE 0 END), 0) AS return_in_quantity,
+					(
+						COALESCE(SUM(CASE WHEN movement_type = %s THEN quantity_delta ELSE 0 END), 0)
+						+ COALESCE(SUM(CASE WHEN movement_type = %s THEN quantity_delta ELSE 0 END), 0)
+					) AS net_transfer_quantity,
+					COALESCE((
+						SELECT movement_type
+						FROM ' . $this->get_table_name() . ' m
+						WHERE m.bucket_id = %d
+						ORDER BY m.created_at DESC, m.id DESC
+						LIMIT 1
+					), '') AS last_movement_type,
+					COALESCE((
+						SELECT created_at
+						FROM ' . $this->get_table_name() . ' m
+						WHERE m.bucket_id = %d
+						ORDER BY m.created_at DESC, m.id DESC
+						LIMIT 1
+					), '') AS last_movement_at
+				FROM ' . $this->get_table_name() . '
+				WHERE bucket_id = %d
+				',
+				self::MOVEMENT_WAREHOUSE_TRANSFER_OUT,
+				self::MOVEMENT_EVENT_TRANSFER_IN,
+				self::MOVEMENT_EVENT_RETURN_OUT,
+				self::MOVEMENT_WAREHOUSE_RETURN_IN,
+				self::MOVEMENT_EVENT_TRANSFER_IN,
+				self::MOVEMENT_WAREHOUSE_RETURN_IN,
+				$bucket_id,
+				$bucket_id,
+				$bucket_id
+			),
+			ARRAY_A
+		);
+
+		return is_array( $summary ) ? array(
+			'transfer_out_quantity' => (float) ( $summary['transfer_out_quantity'] ?? 0 ),
+			'transfer_in_quantity'  => (float) ( $summary['transfer_in_quantity'] ?? 0 ),
+			'return_out_quantity'   => (float) ( $summary['return_out_quantity'] ?? 0 ),
+			'return_in_quantity'    => (float) ( $summary['return_in_quantity'] ?? 0 ),
+			'net_transfer_quantity' => (float) ( $summary['net_transfer_quantity'] ?? 0 ),
+			'last_movement_type'    => (string) ( $summary['last_movement_type'] ?? '' ),
+			'last_movement_at'      => (string) ( $summary['last_movement_at'] ?? '' ),
+		) : array(
+			'transfer_out_quantity' => 0.0,
+			'transfer_in_quantity'  => 0.0,
+			'return_out_quantity'   => 0.0,
+			'return_in_quantity'    => 0.0,
+			'net_transfer_quantity' => 0.0,
+			'last_movement_type'    => '',
+			'last_movement_at'      => '',
+		);
 	}
 
 	public function get_total_quantity_for_bucket( int $vendor_id, int $product_id, string $bucket_code ): float {

@@ -26,13 +26,16 @@ class AIMS_Event_Financial_Service {
 	}
 
 	public function recalculate_event( int $event_id ): array {
-		$event             = $this->events->find_by_id( $event_id );
+		$event             = $this->events->get_financial_context( $event_id );
 		$sales_rows        = $this->sales->get_for_event( $event_id );
 		$assignments       = $this->assignments->get_eligible_for_event( $event_id );
 		$expense_total     = $this->expenses->get_total_for_event( $event_id );
-		$commission_policy = $this->events->get_commission_policy_for_event( $event_id );
-		$commission_cap    = max( 0.0, (float) ( $commission_policy['commission_cap_rate'] ?? 30 ) );
-		$split_policy      = (string) ( $commission_policy['commission_split_policy'] ?? 'proportional' );
+		$commission_policy = array(
+			'commission_cap_rate'     => max( 0.0, (float) ( $event['commission_cap_rate'] ?? 30 ) ),
+			'commission_split_policy' => (string) ( $event['commission_split_policy'] ?? 'proportional' ),
+		);
+		$commission_cap    = (float) $commission_policy['commission_cap_rate'];
+		$split_policy      = (string) $commission_policy['commission_split_policy'];
 		$gross_sales_total = 0.0;
 		$discount_total    = 0.0;
 		$tip_total         = 0.0;
@@ -72,13 +75,14 @@ class AIMS_Event_Financial_Service {
 				$running_total += $share;
 
 				$vendor_payout_allocations[] = array(
-					'assignment_id' => (int) $assignment['id'],
-					'vendor_id'     => (int) $assignment['vendor_id'],
+					'assignment_id'   => (int) $assignment['id'],
+					'vendor_id'       => (int) $assignment['vendor_id'],
+					'assignment_status'=> ! empty( $assignment['assignment_status'] ) ? (string) $assignment['assignment_status'] : '',
 					'commission_rate' => (float) $assignment['commission_rate'],
-					'weight'        => $weight,
-					'payout'        => $share,
-					'split_policy'  => $split_policy,
-					'cap_rate'      => $commission_cap,
+					'weight'          => $weight,
+					'payout'          => $share,
+					'split_policy'    => $split_policy,
+					'cap_rate'        => $commission_cap,
 				);
 			}
 
@@ -108,17 +112,22 @@ class AIMS_Event_Financial_Service {
 		);
 
 		return array(
-			'gross_sales_total'   => round( $gross_sales_total, 2 ),
-			'discount_total'      => round( $discount_total, 2 ),
-			'tip_total'           => round( $tip_total, 2 ),
-			'net_sales_total'     => round( $net_sales_total, 2 ),
-			'vendor_payout_total' => round( $vendor_payout, 2 ),
-			'expense_total'       => round( $expense_total + $product_cost_total, 2 ),
-			'profit_total'        => round( $profit_total, 2 ),
-			'product_cost_total'  => round( $product_cost_total, 2 ),
-			'commission_cap_rate' => $commission_cap,
-			'commission_split_policy' => $split_policy,
-			'vendor_payout_allocations' => $vendor_payout_allocations,
+			'gross_sales_total'        => round( $gross_sales_total, 2 ),
+			'discount_total'           => round( $discount_total, 2 ),
+			'tip_total'                => round( $tip_total, 2 ),
+			'net_sales_total'          => round( $net_sales_total, 2 ),
+			'commission_pool_total'    => round( $commission_pool, 2 ),
+			'vendor_payout_total'      => round( $vendor_payout, 2 ),
+			'expense_total'            => round( $expense_total + $product_cost_total, 2 ),
+			'profit_total'             => round( $profit_total, 2 ),
+			'product_cost_total'       => round( $product_cost_total, 2 ),
+			'commission_policy'        => $commission_policy,
+			'payout_allocations'       => $vendor_payout_allocations,
+			'vendor_payout_allocations'=> $vendor_payout_allocations,
+			'eligible_assignment_count'=> count( $assignments ),
+			'eligible_vendor_count'    => count( array_unique( array_map( static function ( $assignment ) {
+				return (int) $assignment['vendor_id'];
+			}, $assignments ) ) ),
 		);
 	}
 

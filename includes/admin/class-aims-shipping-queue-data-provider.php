@@ -179,6 +179,7 @@ class AIMS_Shipping_Queue_Data_Provider {
 			'status'         => $status,
 			'queue_type'     => $this->get_queue_type_label( $status ),
 			'scope_label'    => $this->build_scope_label( $row ),
+			'access_label'   => $this->scope_resolver->get_access_mode_label(),
 			'source_label'   => $source_label,
 			'created_at'     => ! empty( $row['created_at'] ) ? (string) $row['created_at'] : current_time( 'mysql' ),
 		);

@@ -65,6 +65,9 @@ class AIMS_Plugin {
 		add_action( 'init', array( $this->capabilities, 'register' ) );
 		add_action( 'init', array( $this->installer, 'maybe_install' ), 5 );
 		add_action( 'admin_menu', array( $this->admin_menu, 'register' ) );
+		add_action( 'admin_menu', array( $this->admin_menu, 'prune_unrelated_menus' ), 999 );
+		add_action( 'admin_init', array( $this->admin_menu, 'maybe_redirect_shell_users' ) );
+		add_action( 'admin_bar_menu', array( $this->admin_menu, 'prune_admin_bar' ), 999 );
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
 
 		$this->vendor_module->register();

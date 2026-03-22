@@ -120,6 +120,28 @@ class AIMS_Event_Repository {
 		return false !== $updated;
 	}
 
+	public function update_commission_policy( int $event_id, array $policy ): bool {
+		global $wpdb;
+
+		if ( $event_id <= 0 ) {
+			return false;
+		}
+
+		$updated = $wpdb->update(
+			$this->get_table_name(),
+			array(
+				'commission_cap_rate'     => number_format( $this->normalize_commission_cap_rate( $policy['commission_cap_rate'] ?? 30 ), 4, '.', '' ),
+				'commission_split_policy' => $this->normalize_commission_split_policy( (string) ( $policy['commission_split_policy'] ?? 'proportional' ) ),
+				'updated_at'              => current_time( 'mysql' ),
+			),
+			array( 'id' => $event_id ),
+			array( '%f', '%s', '%s' ),
+			array( '%d' )
+		);
+
+		return false !== $updated;
+	}
+
 	public function get_commission_policy_for_event( int $event_id ): array {
 		$event = $this->find_by_id( $event_id );
 
@@ -131,8 +153,43 @@ class AIMS_Event_Repository {
 		}
 
 		return array(
-			'commission_cap_rate'      => (float) ( $event['commission_cap_rate'] ?? 30 ),
+			'commission_cap_rate'      => $this->normalize_commission_cap_rate( $event['commission_cap_rate'] ?? 30 ),
 			'commission_split_policy'  => $this->normalize_commission_split_policy( (string) ( $event['commission_split_policy'] ?? 'proportional' ) ),
+		);
+	}
+
+	public function get_financial_context( int $event_id ): array {
+		$event = $this->find_by_id( $event_id );
+
+		if ( empty( $event ) ) {
+			return array(
+				'event_id'                => $event_id,
+				'event_name'              => '',
+				'commission_cap_rate'     => 30.0,
+				'commission_split_policy' => 'proportional',
+			);
+		}
+
+		$policy = $this->get_commission_policy_for_event( $event_id );
+
+		return array(
+			'event_id'                => (int) $event['id'],
+			'event_name'              => ! empty( $event['event_name'] ) ? (string) $event['event_name'] : '',
+			'status'                  => ! empty( $event['status'] ) ? (string) $event['status'] : 'draft',
+			'participation_status'    => ! empty( $event['participation_status'] ) ? (string) $event['participation_status'] : 'draft',
+			'start_date'              => ! empty( $event['start_date'] ) ? (string) $event['start_date'] : '',
+			'end_date'                => ! empty( $event['end_date'] ) ? (string) $event['end_date'] : '',
+			'square_location_id'      => ! empty( $event['square_location_id'] ) ? (string) $event['square_location_id'] : '',
+			'commission_cap_rate'     => (float) $policy['commission_cap_rate'],
+			'commission_split_policy' => (string) $policy['commission_split_policy'],
+			'commission_policy'       => $policy,
+			'gross_sales_total'       => (float) ( $event['gross_sales_total'] ?? 0 ),
+			'discount_total'          => (float) ( $event['discount_total'] ?? 0 ),
+			'tip_total'               => (float) ( $event['tip_total'] ?? 0 ),
+			'net_sales_total'         => (float) ( $event['net_sales_total'] ?? 0 ),
+			'vendor_payout_total'     => (float) ( $event['vendor_payout_total'] ?? 0 ),
+			'expense_total'           => (float) ( $event['expense_total'] ?? 0 ),
+			'profit_total'            => (float) ( $event['profit_total'] ?? 0 ),
 		);
 	}
 
@@ -171,5 +228,19 @@ class AIMS_Event_Repository {
 			array( 'proportional', 'equal' ),
 			true
 		) ? $policy : 'proportional';
+	}
+
+	private function normalize_commission_cap_rate( $rate ): float {
+		$rate = (float) $rate;
+
+		if ( $rate < 0 ) {
+			$rate = 0.0;
+		}
+
+		if ( $rate > 100 ) {
+			$rate = 100.0;
+		}
+
+		return $rate;
 	}
 }

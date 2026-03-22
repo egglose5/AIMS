@@ -10,19 +10,22 @@ class AIMS_Event_Automation_Service {
 	private $assignments;
 	private $financials;
 	private $vendor_access;
+	private $audit;
 
 	public function __construct(
 		AIMS_Event_Repository $events,
 		AIMS_Square_Sale_Repository $sales,
 		AIMS_Vendor_Event_Assignment_Repository $assignments,
 		AIMS_Event_Financial_Service $financials,
-		AIMS_Vendor_Access_Service $vendor_access = null
+		AIMS_Vendor_Access_Service $vendor_access = null,
+		AIMS_Audit_Service $audit = null
 	) {
 		$this->events      = $events;
 		$this->sales       = $sales;
 		$this->assignments = $assignments;
 		$this->financials  = $financials;
 		$this->vendor_access = $vendor_access;
+		$this->audit       = $audit;
 	}
 
 	public function get_participation_model_for_event( int $event_id ): array {
@@ -78,6 +81,18 @@ class AIMS_Event_Automation_Service {
 
 	public function set_event_participation_controls( int $event_id, array $data = array(), int $actor_user_id = 0 ): ?array {
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
+			$this->record_audit(
+				'participation_control_denied',
+				$actor_user_id,
+				$event_id,
+				'event',
+				$event_id,
+				array(
+					'requested_changes' => $data,
+				),
+				'Event participation control denied.'
+			);
+
 			return null;
 		}
 
@@ -99,6 +114,20 @@ class AIMS_Event_Automation_Service {
 			return null;
 		}
 
+		if ( ! empty( $changes ) ) {
+			$this->record_audit(
+				'participation_control_updated',
+				$actor_user_id,
+				$event_id,
+				'event',
+				$event_id,
+				array(
+					'changes' => $changes,
+				),
+				'Event participation controls updated.'
+			);
+		}
+
 		return $this->refresh_participation_state( $event_id );
 	}
 
@@ -117,6 +146,16 @@ class AIMS_Event_Automation_Service {
 
 	public function close_event_requests( int $event_id, int $actor_user_id = 0 ): ?array {
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
+			$this->record_audit(
+				'participation_close_denied',
+				$actor_user_id,
+				$event_id,
+				'event',
+				$event_id,
+				array(),
+				'Event request close denied.'
+			);
+
 			return null;
 		}
 
@@ -128,6 +167,16 @@ class AIMS_Event_Automation_Service {
 		) ) {
 			return null;
 		}
+
+		$this->record_audit(
+			'participation_closed',
+			$actor_user_id,
+			$event_id,
+			'event',
+			$event_id,
+			array(),
+			'Event request window closed.'
+		);
 
 		return $this->refresh_participation_state( $event_id );
 	}
@@ -141,6 +190,19 @@ class AIMS_Event_Automation_Service {
 			|| ( (int) ( $model['vendor_request_limit'] ?? 0 ) > 0 && (int) ( $model['vendor_request_count'] ?? 0 ) >= (int) $model['vendor_request_limit'] )
 			|| ! $this->can_request_vendor_participation( $actor_user_id, $vendor_id )
 		) {
+			$this->record_audit(
+				'vendor_request_denied',
+				$actor_user_id,
+				$event_id,
+				'vendor',
+				$vendor_id,
+				array(
+					'request_data' => $data,
+					'participation_status' => $model['participation_status'] ?? '',
+				),
+				'Vendor request denied.'
+			);
+
 			return null;
 		}
 
@@ -154,6 +216,21 @@ class AIMS_Event_Automation_Service {
 			return null;
 		}
 
+		$assignment = $this->assignments->find_by_id( $assignment_id );
+
+		$this->record_audit(
+			'vendor_request_created',
+			$actor_user_id,
+			$event_id,
+			'vendor',
+			$vendor_id,
+			array(
+				'assignment_id'     => $assignment_id,
+				'request_sequence'   => (int) ( $assignment['request_sequence'] ?? 0 ),
+			),
+			'Vendor participation requested.'
+		);
+
 		$this->refresh_participation_state( $event_id );
 
 		return $this->assignments->find_by_id( $assignment_id );
@@ -161,12 +238,34 @@ class AIMS_Event_Automation_Service {
 
 	public function approve_next_vendor_request( int $event_id, int $actor_user_id = 0 ): ?array {
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
+			$this->record_audit(
+				'vendor_request_approval_denied',
+				$actor_user_id,
+				$event_id,
+				'vendor',
+				0,
+				array(),
+				'Vendor request approval denied.'
+			);
+
 			return null;
 		}
 
 		$model = $this->get_participation_model_for_event( $event_id );
 
 		if ( empty( $model['has_capacity_remaining'] ) ) {
+			$this->record_audit(
+				'vendor_request_approval_denied',
+				$actor_user_id,
+				$event_id,
+				'vendor',
+				0,
+				array(
+					'reason_code' => 'capacity_exhausted',
+				),
+				'Vendor request approval denied because capacity was exhausted.'
+			);
+
 			$this->refresh_participation_state( $event_id );
 
 			return null;
@@ -178,6 +277,23 @@ class AIMS_Event_Automation_Service {
 			return null;
 		}
 
+		$assignment_vendor_id = (int) ( $assignment['vendor_id'] ?? 0 );
+		$assignment_id        = (int) ( $assignment['id'] ?? 0 );
+		$request_sequence      = (int) ( $assignment['request_sequence'] ?? 0 );
+
+		$this->record_audit(
+			'vendor_request_approved',
+			$actor_user_id,
+			$event_id,
+			'vendor',
+			$assignment_vendor_id,
+			array(
+				'assignment_id'   => $assignment_id,
+				'request_sequence' => $request_sequence,
+			),
+			'Next vendor request approved.'
+		);
+
 		$this->refresh_participation_state( $event_id );
 		$this->recalculate_after_assignment( $event_id );
 
@@ -186,14 +302,49 @@ class AIMS_Event_Automation_Service {
 
 	public function manual_assign_vendor_to_event( int $event_id, int $vendor_id, array $data = array(), int $actor_user_id = 0 ): ?array {
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
+			$this->record_audit(
+				'vendor_manual_assignment_denied',
+				$actor_user_id,
+				$event_id,
+				'vendor',
+				$vendor_id,
+				array(),
+				'Manual vendor assignment denied.'
+			);
+
 			return null;
 		}
 
 		$assignment_id = $this->assignments->manual_assign_vendor( $event_id, $vendor_id, $data );
 
 		if ( $assignment_id <= 0 ) {
+			$this->record_audit(
+				'vendor_manual_assignment_denied',
+				$actor_user_id,
+				$event_id,
+				'vendor',
+				$vendor_id,
+				array(
+					'input' => $data,
+				),
+				'Manual vendor assignment failed.'
+			);
+
 			return null;
 		}
+
+		$this->record_audit(
+			'vendor_manual_assignment',
+			$actor_user_id,
+			$event_id,
+			'vendor',
+			$vendor_id,
+			array(
+				'assignment_id' => $assignment_id,
+				'override'      => true,
+			),
+			'Vendor manually assigned to event.'
+		);
 
 		$this->refresh_participation_state( $event_id );
 		$this->recalculate_after_assignment( $event_id );
@@ -512,5 +663,32 @@ class AIMS_Event_Automation_Service {
 		return null !== $this->vendor_access
 			? $this->vendor_access->user_has_vendor_access( $vendor_id, $actor_user_id )
 			: false;
+	}
+
+	private function record_audit(
+		string $event_type,
+		int $actor_user_id,
+		int $event_id,
+		string $entity_type,
+		int $entity_id,
+		array $details = array(),
+		string $reason = ''
+	): void {
+		if ( null === $this->audit ) {
+			$this->audit = new AIMS_Audit_Service();
+		}
+
+		$this->audit->record(
+			$event_type,
+			array(
+				'actor_id'   => $this->resolve_actor_user_id( $actor_user_id ),
+				'scope_type' => 'event',
+				'scope_id'   => $event_id,
+				'entity_type'=> $entity_type,
+				'entity_id'  => $entity_id,
+				'reason'     => $reason,
+				'details'    => $details,
+			)
+		);
 	}
 }
