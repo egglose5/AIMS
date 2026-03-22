@@ -14,6 +14,7 @@ class AIMS_Plugin {
 	private $installer;
 	private $capabilities;
 	private $admin_menu;
+	private $vendor_access;
 	private $vendor_module;
 
 	public static function instance(): AIMS_Plugin {
@@ -44,12 +45,18 @@ class AIMS_Plugin {
 	}
 
 	private function __construct() {
-		$this->installer     = new AIMS_Installer( new AIMS_Schema() );
-		$this->capabilities  = new AIMS_Capabilities();
-		$this->admin_menu    = new AIMS_Admin_Menu();
+		$this->installer    = new AIMS_Installer( new AIMS_Schema() );
+		$this->capabilities = new AIMS_Capabilities();
+		$this->admin_menu   = new AIMS_Admin_Menu();
+		$vendor_repository = new AIMS_Vendor_Repository();
+		$this->vendor_access = new AIMS_Vendor_Access_Service(
+			new AIMS_Vendor_User_Access_Repository(),
+			$vendor_repository
+		);
 		$this->vendor_module = new AIMS_Vendor_Module(
 			new AIMS_Vendor_Service(
-				new AIMS_Vendor_Repository()
+				$vendor_repository,
+				$this->vendor_access
 			)
 		);
 	}

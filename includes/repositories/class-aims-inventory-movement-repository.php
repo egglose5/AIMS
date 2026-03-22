@@ -97,6 +97,24 @@ class AIMS_Inventory_Movement_Repository {
 		return ( (int) $count ) > 0;
 	}
 
+	public function has_reference_application_for_bucket_key_and_type( string $reference_type, string $reference_id, int $product_id, string $bucket_key, string $bucket_type, string $movement_type ): bool {
+		global $wpdb;
+
+		$count = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COUNT(*) FROM ' . $this->get_table_name() . ' WHERE reference_type = %s AND reference_id = %s AND product_id = %d AND bucket_key = %s AND bucket_type = %s AND movement_type = %s',
+				$reference_type,
+				$reference_id,
+				$product_id,
+				$bucket_key,
+				$bucket_type,
+				$movement_type
+			)
+		);
+
+		return ( (int) $count ) > 0;
+	}
+
 	public function has_reference_application_for_identity( string $reference_type, string $reference_id, int $product_id, int $bucket_id, string $bucket_code, string $movement_type ): bool {
 		global $wpdb;
 
@@ -208,6 +226,27 @@ class AIMS_Inventory_Movement_Repository {
 				$vendor_id,
 				$product_id,
 				$bucket_code
+			)
+		);
+
+		return (float) $total;
+	}
+
+	public function get_total_quantity_for_bucket_by_key_and_type( string $bucket_key, string $bucket_type ): float {
+		global $wpdb;
+
+		$bucket_key  = sanitize_text_field( $bucket_key );
+		$bucket_type = sanitize_key( $bucket_type );
+
+		if ( '' === $bucket_key ) {
+			return 0.0;
+		}
+
+		$total = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COALESCE(SUM(quantity_delta), 0) FROM ' . $this->get_table_name() . ' WHERE bucket_key = %s AND bucket_type = %s',
+				$bucket_key,
+				$bucket_type
 			)
 		);
 

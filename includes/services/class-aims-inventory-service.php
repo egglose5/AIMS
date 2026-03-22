@@ -7,16 +7,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Inventory_Service {
 	private $buckets;
 	private $movements;
+	private $bucket_access;
 
 	public function __construct(
 		AIMS_Inventory_Bucket_Repository $buckets,
-		AIMS_Inventory_Movement_Repository $movements
+		AIMS_Inventory_Movement_Repository $movements,
+		AIMS_Bucket_Access_Service $bucket_access = null
 	) {
-		$this->buckets   = $buckets;
-		$this->movements = $movements;
+		$this->buckets       = $buckets;
+		$this->movements     = $movements;
+		$this->bucket_access = $bucket_access;
 	}
 
-	public function apply_movement( array $data ) {
+	public function apply_movement( array $data, int $actor_user_id = 0 ) {
 		$bucket_context = $this->resolve_bucket_context( $data );
 		$reference_type = sanitize_key( $data['reference_type'] ?? '' );
 		$reference_id   = sanitize_text_field( $data['reference_id'] ?? '' );
@@ -33,11 +36,15 @@ class AIMS_Inventory_Service {
 			return new WP_Error( 'aims_invalid_inventory_movement', 'Inventory movement is missing required fields.' );
 		}
 
+		if ( ! $this->can_manage_bucket_context( $bucket_context, $actor_user_id ) ) {
+			return new WP_Error( 'aims_bucket_access_denied', 'The current user cannot change inventory for this bucket.' );
+		}
+
 		if ( $bucket_id > 0 ) {
 			if ( $this->movements->has_reference_application_for_bucket_id( $reference_type, $reference_id, $product_id, $bucket_id, $movement_type ) ) {
 				return new WP_Error( 'aims_duplicate_inventory_movement', 'This inventory movement has already been applied.' );
 			}
-		} elseif ( '' !== $bucket_key && $this->movements->has_reference_application_for_bucket_key( $reference_type, $reference_id, $product_id, $bucket_key, $movement_type ) ) {
+		} elseif ( '' !== $bucket_key && '' !== $bucket_type && $this->movements->has_reference_application_for_bucket_key_and_type( $reference_type, $reference_id, $product_id, $bucket_key, $bucket_type, $movement_type ) ) {
 			return new WP_Error( 'aims_duplicate_inventory_movement', 'This inventory movement has already been applied.' );
 		} elseif ( $this->movements->has_reference_application_for_identity( $reference_type, $reference_id, $product_id, 0, $bucket_code, $movement_type ) ) {
 			return new WP_Error( 'aims_duplicate_inventory_movement', 'This inventory movement has already been applied.' );
@@ -91,7 +98,7 @@ class AIMS_Inventory_Service {
 		$movement_id = $this->movements->create( $data );
 		$current_qty = $bucket_id > 0
 			? $this->movements->get_total_quantity_for_bucket_by_id( $bucket_id )
-			: $this->movements->get_total_quantity_for_bucket( $vendor_id, $product_id, $bucket_code );
+			: $this->movements->get_total_quantity_for_bucket_by_key_and_type( $bucket_key, $bucket_type );
 
 		$this->buckets->upsert_bucket(
 			array(
@@ -117,27 +124,29 @@ class AIMS_Inventory_Service {
 		);
 	}
 
-	public function transfer_warehouse_to_event_bucket( array $data ) {
+	public function transfer_warehouse_to_event_bucket( array $data, int $actor_user_id = 0 ) {
 		return $this->transfer_between_buckets(
 			$data,
 			'warehouse_transfer_out',
 			'event_transfer_in',
 			'warehouse',
-			'event'
+			'event',
+			$actor_user_id
 		);
 	}
 
-	public function record_event_return( array $data ) {
+	public function record_event_return( array $data, int $actor_user_id = 0 ) {
 		return $this->transfer_between_buckets(
 			$data,
 			'event_return_out',
 			'warehouse_return_in',
 			'event',
-			'warehouse'
+			'warehouse',
+			$actor_user_id
 		);
 	}
 
-	private function transfer_between_buckets( array $data, string $source_movement_type, string $destination_movement_type, string $source_bucket_type, string $destination_bucket_type ) {
+	private function transfer_between_buckets( array $data, string $source_movement_type, string $destination_movement_type, string $source_bucket_type, string $destination_bucket_type, int $actor_user_id = 0 ) {
 		$reference_type = sanitize_key( $data['reference_type'] ?? '' );
 		$reference_id   = sanitize_text_field( $data['reference_id'] ?? '' );
 		$quantity       = abs( (float) ( $data['quantity_delta'] ?? $data['quantity'] ?? 0 ) );
@@ -151,10 +160,18 @@ class AIMS_Inventory_Service {
 		$source_data['bucket']     = $this->resolve_explicit_bucket_side( $data, array( 'source_bucket', 'warehouse_bucket', 'bucket' ), $source_bucket_type );
 		$destination_data['bucket'] = $this->resolve_explicit_bucket_side( $data, array( 'destination_bucket', 'event_bucket', 'bucket' ), $destination_bucket_type );
 
+		if (
+			! $this->can_manage_bucket_context( $source_data['bucket'], $actor_user_id )
+			|| ! $this->can_manage_bucket_context( $destination_data['bucket'], $actor_user_id )
+		) {
+			return new WP_Error( 'aims_bucket_access_denied', 'The current user cannot transfer inventory for one or more buckets.' );
+		}
+
 		$source_result = $this->apply_movement_for_transfer_context(
 			$source_data,
 			$source_movement_type,
-			-1 * $quantity
+			-1 * $quantity,
+			$actor_user_id
 		);
 
 		if ( is_wp_error( $source_result ) ) {
@@ -164,7 +181,8 @@ class AIMS_Inventory_Service {
 		$destination_result = $this->apply_movement_for_transfer_context(
 			$destination_data,
 			$destination_movement_type,
-			$quantity
+			$quantity,
+			$actor_user_id
 		);
 
 		if ( is_wp_error( $destination_result ) ) {
@@ -179,14 +197,19 @@ class AIMS_Inventory_Service {
 			'destination'           => $destination_result,
 			'source_movement_type'  => $source_movement_type,
 			'destination_movement_type' => $destination_movement_type,
+			'workflow'              => array(
+				'type'                  => 'explicit_event_transfer',
+				'source_bucket_type'    => $source_bucket_type,
+				'destination_bucket_type' => $destination_bucket_type,
+			),
 		);
 	}
 
-	private function apply_movement_for_transfer_context( array $data, string $movement_type, float $quantity_delta ) {
+	private function apply_movement_for_transfer_context( array $data, string $movement_type, float $quantity_delta, int $actor_user_id = 0 ) {
 		$data['movement_type']  = $movement_type;
 		$data['quantity_delta'] = $quantity_delta;
 
-		return $this->apply_movement( $data );
+		return $this->apply_movement( $data, $actor_user_id );
 	}
 
 	private function resolve_explicit_bucket_side( array $data, array $keys, string $bucket_type ): array {
@@ -216,6 +239,27 @@ class AIMS_Inventory_Service {
 
 		$resolved = $this->resolve_bucket_context( $data );
 		$resolved['bucket_type'] = $bucket_type;
+		if ( '' === (string) ( $resolved['bucket_key'] ?? '' ) ) {
+			$resolved['bucket_key'] = implode(
+				':',
+				array_filter(
+					array_map(
+						static function ( $value ) {
+							return sanitize_key( (string) $value );
+						},
+						array(
+							$bucket_type,
+							$resolved['owner_entity_type'] ?? '',
+							$resolved['owner_entity_id'] ?? '',
+							$resolved['square_location_id'] ?? '',
+							$resolved['vendor_id'] ?? '',
+							$resolved['product_id'] ?? '',
+							$resolved['bucket_code'] ?? '',
+						)
+					)
+				)
+			);
+		}
 
 		return $resolved;
 	}
@@ -273,5 +317,47 @@ class AIMS_Inventory_Service {
 		}
 
 		return array();
+	}
+
+	private function can_manage_bucket_context( array $bucket_context, int $actor_user_id ): bool {
+		if ( null === $this->bucket_access ) {
+			return true;
+		}
+
+		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+
+		if ( $actor_user_id <= 0 ) {
+			return true;
+		}
+
+		$bucket_id = (int) ( $bucket_context['id'] ?? 0 );
+
+		if ( $bucket_id > 0 ) {
+			return $this->bucket_access->user_can_manage_bucket( $actor_user_id, $bucket_id );
+		}
+
+		$bucket_key = (string) ( $bucket_context['bucket_key'] ?? '' );
+		if ( '' === $bucket_key ) {
+			return $this->bucket_access->can_manage_all_buckets( $actor_user_id );
+		}
+
+		$bucket = $this->buckets->find_bucket_by_key_and_type(
+			$bucket_key,
+			(string) ( $bucket_context['bucket_type'] ?? '' )
+		);
+
+		if ( empty( $bucket ) ) {
+			return $this->bucket_access->can_manage_all_buckets( $actor_user_id );
+		}
+
+		return $this->bucket_access->user_can_manage_bucket( $actor_user_id, (int) ( $bucket['id'] ?? 0 ) );
+	}
+
+	private function resolve_actor_user_id( int $actor_user_id ): int {
+		if ( $actor_user_id > 0 ) {
+			return $actor_user_id;
+		}
+
+		return (int) get_current_user_id();
 	}
 }

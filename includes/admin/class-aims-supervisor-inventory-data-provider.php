@@ -8,15 +8,18 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 	private $bucket_repository;
 	private $vendor_repository;
 	private $event_repository;
+	private $scope_resolver;
 
 	public function __construct(
 		AIMS_Inventory_Bucket_Repository $bucket_repository = null,
 		AIMS_Vendor_Repository $vendor_repository = null,
-		AIMS_Event_Repository $event_repository = null
+		AIMS_Event_Repository $event_repository = null,
+		AIMS_Admin_Scope_Resolver $scope_resolver = null
 	) {
 		$this->bucket_repository = $bucket_repository ?: new AIMS_Inventory_Bucket_Repository();
 		$this->vendor_repository  = $vendor_repository ?: new AIMS_Vendor_Repository();
 		$this->event_repository   = $event_repository ?: new AIMS_Event_Repository();
+		$this->scope_resolver     = $scope_resolver ?: new AIMS_Admin_Scope_Resolver();
 	}
 
 	public function get_rows(): array {
@@ -50,56 +53,7 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 	}
 
 	private function get_bucket_rows(): array {
-		global $wpdb;
-
-		$table = $this->bucket_repository->get_table_name();
-		$allowed_vendor_ids = $this->get_allowed_vendor_ids();
-
-		if ( false === $allowed_vendor_ids ) {
-			$sql = "
-				SELECT *
-				FROM {$table}
-				ORDER BY
-					CASE bucket_type
-						WHEN 'event' THEN 1
-						WHEN 'vendor' THEN 2
-						WHEN 'warehouse' THEN 3
-						ELSE 4
-					END,
-					bucket_label ASC,
-					id ASC
-				LIMIT 50
-			";
-
-			$rows = $wpdb->get_results( $sql, ARRAY_A );
-			return is_array( $rows ) ? $rows : array();
-		}
-
-		if ( empty( $allowed_vendor_ids ) ) {
-			return array();
-		}
-
-		$placeholders = implode( ',', array_fill( 0, count( $allowed_vendor_ids ), '%d' ) );
-		$sql = $wpdb->prepare(
-			"
-				SELECT *
-				FROM {$table}
-				WHERE vendor_id IN ({$placeholders})
-				ORDER BY
-					CASE bucket_type
-						WHEN 'event' THEN 1
-						WHEN 'vendor' THEN 2
-						WHEN 'warehouse' THEN 3
-						ELSE 4
-					END,
-					bucket_label ASC,
-					id ASC
-				LIMIT 50
-			",
-			$allowed_vendor_ids
-		);
-
-		$rows = $wpdb->get_results( $sql, ARRAY_A );
+		$rows = $this->scope_resolver->get_accessible_buckets();
 		return is_array( $rows ) ? $rows : array();
 	}
 
@@ -144,34 +98,7 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 	}
 
 	private function build_access_label(): string {
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE ) ? 'Full access' : 'Bucket-scoped';
-	}
-
-	private function get_allowed_vendor_ids() {
-		if ( current_user_can( AIMS_Capabilities::CAP_MANAGE ) ) {
-			return false;
-		}
-
-		global $wpdb;
-
-		$access_table = $wpdb->prefix . 'aims_vendor_user_access';
-		$table_exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $access_table ) );
-		if ( $table_exists !== $access_table ) {
-			return array();
-		}
-
-		$vendor_ids = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT vendor_id FROM ' . $access_table . ' WHERE user_id = %d ORDER BY vendor_id ASC',
-				get_current_user_id()
-			)
-		);
-
-		if ( empty( $vendor_ids ) || ! is_array( $vendor_ids ) ) {
-			return array();
-		}
-
-		return array_values( array_unique( array_map( 'intval', $vendor_ids ) ) );
+		return $this->scope_resolver->can_manage_all() ? 'Full access' : 'Bucket-scoped';
 	}
 
 	private function find_vendor_name( int $vendor_id ): string {

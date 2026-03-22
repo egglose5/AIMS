@@ -186,18 +186,25 @@ class AIMS_Square_Sale_Repository {
 		);
 	}
 
-	public function assign_event( int $sale_id, int $event_id, int $vendor_id = 0 ): bool {
+	public function assign_event( int $sale_id, int $event_id, ?int $vendor_id = null ): bool {
 		global $wpdb;
+
+		$record = array(
+			'event_id'   => $event_id,
+			'updated_at' => current_time( 'mysql' ),
+		);
+		$formats = array( '%d', '%s' );
+
+		if ( null !== $vendor_id ) {
+			$record['vendor_id'] = max( 0, (int) $vendor_id );
+			$formats            = array( '%d', '%d', '%s' );
+		}
 
 		$updated = $wpdb->update(
 			$this->get_table_name(),
-			array(
-				'event_id'   => $event_id,
-				'vendor_id'  => $vendor_id,
-				'updated_at' => current_time( 'mysql' ),
-			),
+			$record,
 			array( 'id' => $sale_id ),
-			array( '%d', '%d', '%s' ),
+			$formats,
 			array( '%d' )
 		);
 

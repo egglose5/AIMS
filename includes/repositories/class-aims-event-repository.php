@@ -20,6 +20,24 @@ class AIMS_Event_Repository {
 		);
 	}
 
+	public function find_by_id( int $event_id ): ?array {
+		global $wpdb;
+
+		if ( $event_id <= 0 ) {
+			return null;
+		}
+
+		$event = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE id = %d',
+				$event_id
+			),
+			ARRAY_A
+		);
+
+		return is_array( $event ) ? $event : null;
+	}
+
 	public function find_matching_event( string $square_location_id, string $sold_at ): ?array {
 		global $wpdb;
 
@@ -61,7 +79,7 @@ class AIMS_Event_Repository {
 				$this->get_table_name(),
 				$record,
 				array( 'id' => $event_id ),
-				array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
+				array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%f', '%s', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%s', '%s' ),
 				array( '%d' )
 			);
 
@@ -73,7 +91,7 @@ class AIMS_Event_Repository {
 		$wpdb->insert(
 			$this->get_table_name(),
 			$record,
-			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%f', '%s', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%s', '%s', '%s' )
 		);
 
 		return (int) $wpdb->insert_id;
@@ -102,24 +120,56 @@ class AIMS_Event_Repository {
 		return false !== $updated;
 	}
 
+	public function get_commission_policy_for_event( int $event_id ): array {
+		$event = $this->find_by_id( $event_id );
+
+		if ( empty( $event ) ) {
+			return array(
+				'commission_cap_rate'      => 30.0,
+				'commission_split_policy'  => 'proportional',
+			);
+		}
+
+		return array(
+			'commission_cap_rate'      => (float) ( $event['commission_cap_rate'] ?? 30 ),
+			'commission_split_policy'  => $this->normalize_commission_split_policy( (string) ( $event['commission_split_policy'] ?? 'proportional' ) ),
+		);
+	}
+
 	private function build_base_record( array $data ): array {
 		return array(
-			'event_code'         => sanitize_key( $data['event_code'] ?? '' ),
-			'event_name'         => sanitize_text_field( $data['event_name'] ?? '' ),
-			'status'             => sanitize_key( $data['status'] ?? 'draft' ),
-			'start_date'         => sanitize_text_field( $data['start_date'] ?? '' ),
-			'end_date'           => sanitize_text_field( $data['end_date'] ?? '' ),
-			'location_name'      => sanitize_text_field( $data['location_name'] ?? '' ),
-			'square_location_id' => sanitize_text_field( $data['square_location_id'] ?? '' ),
-			'gross_sales_total'  => number_format( (float) ( $data['gross_sales_total'] ?? 0 ), 2, '.', '' ),
-			'discount_total'     => number_format( (float) ( $data['discount_total'] ?? 0 ), 2, '.', '' ),
-			'tip_total'          => number_format( (float) ( $data['tip_total'] ?? 0 ), 2, '.', '' ),
-			'net_sales_total'    => number_format( (float) ( $data['net_sales_total'] ?? 0 ), 2, '.', '' ),
-			'vendor_payout_total'=> number_format( (float) ( $data['vendor_payout_total'] ?? 0 ), 2, '.', '' ),
-			'expense_total'      => number_format( (float) ( $data['expense_total'] ?? 0 ), 2, '.', '' ),
-			'profit_total'       => number_format( (float) ( $data['profit_total'] ?? 0 ), 2, '.', '' ),
-			'notes'              => isset( $data['notes'] ) ? wp_kses_post( $data['notes'] ) : '',
-			'updated_at'         => current_time( 'mysql' ),
+			'event_code'              => sanitize_key( $data['event_code'] ?? '' ),
+			'event_name'              => sanitize_text_field( $data['event_name'] ?? '' ),
+			'status'                  => sanitize_key( $data['status'] ?? 'draft' ),
+			'participation_status'    => sanitize_key( $data['participation_status'] ?? 'draft' ),
+			'start_date'              => sanitize_text_field( $data['start_date'] ?? '' ),
+			'end_date'                => sanitize_text_field( $data['end_date'] ?? '' ),
+			'location_name'           => sanitize_text_field( $data['location_name'] ?? '' ),
+			'square_location_id'      => sanitize_text_field( $data['square_location_id'] ?? '' ),
+			'vendor_capacity'         => (int) ( $data['vendor_capacity'] ?? 0 ),
+			'vendor_request_limit'    => (int) ( $data['vendor_request_limit'] ?? 0 ),
+			'vendor_request_count'    => (int) ( $data['vendor_request_count'] ?? 0 ),
+			'commission_cap_rate'     => number_format( (float) ( $data['commission_cap_rate'] ?? 30 ), 4, '.', '' ),
+			'commission_split_policy' => $this->normalize_commission_split_policy( (string) ( $data['commission_split_policy'] ?? 'proportional' ) ),
+			'gross_sales_total'       => number_format( (float) ( $data['gross_sales_total'] ?? 0 ), 2, '.', '' ),
+			'discount_total'          => number_format( (float) ( $data['discount_total'] ?? 0 ), 2, '.', '' ),
+			'tip_total'               => number_format( (float) ( $data['tip_total'] ?? 0 ), 2, '.', '' ),
+			'net_sales_total'         => number_format( (float) ( $data['net_sales_total'] ?? 0 ), 2, '.', '' ),
+			'vendor_payout_total'     => number_format( (float) ( $data['vendor_payout_total'] ?? 0 ), 2, '.', '' ),
+			'expense_total'           => number_format( (float) ( $data['expense_total'] ?? 0 ), 2, '.', '' ),
+			'profit_total'            => number_format( (float) ( $data['profit_total'] ?? 0 ), 2, '.', '' ),
+			'notes'                   => isset( $data['notes'] ) ? wp_kses_post( $data['notes'] ) : '',
+			'updated_at'              => current_time( 'mysql' ),
 		);
+	}
+
+	private function normalize_commission_split_policy( string $policy ): string {
+		$policy = sanitize_key( $policy );
+
+		return in_array(
+			$policy,
+			array( 'proportional', 'equal' ),
+			true
+		) ? $policy : 'proportional';
 	}
 }

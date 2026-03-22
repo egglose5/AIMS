@@ -17,6 +17,8 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function grant_bucket_responsibility( int $bucket_id, int $user_id, array $data = array() ): int {
+		$user_id = $this->resolve_actor_user_id( $user_id );
+
 		if ( $bucket_id <= 0 || $user_id <= 0 ) {
 			return 0;
 		}
@@ -25,6 +27,8 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function revoke_bucket_responsibility( int $bucket_id, int $user_id ): bool {
+		$user_id = $this->resolve_actor_user_id( $user_id );
+
 		if ( $bucket_id <= 0 || $user_id <= 0 ) {
 			return false;
 		}
@@ -46,6 +50,8 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function get_accessible_buckets_for_user( int $user_id ): array {
+		$user_id = $this->resolve_actor_user_id( $user_id );
+
 		if ( $user_id <= 0 ) {
 			return array();
 		}
@@ -58,6 +64,8 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function get_managed_buckets_for_user( int $user_id ): array {
+		$user_id = $this->resolve_actor_user_id( $user_id );
+
 		if ( $user_id <= 0 ) {
 			return array();
 		}
@@ -86,6 +94,8 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function user_has_bucket_access( int $user_id, int $bucket_id ): bool {
+		$user_id = $this->resolve_actor_user_id( $user_id );
+
 		if ( $this->user_has_global_bucket_view( $user_id ) || $this->user_has_global_bucket_access( $user_id ) ) {
 			return true;
 		}
@@ -94,6 +104,8 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function user_can_manage_bucket( int $user_id, int $bucket_id ): bool {
+		$user_id = $this->resolve_actor_user_id( $user_id );
+
 		if ( $this->user_has_global_bucket_access( $user_id ) ) {
 			return true;
 		}
@@ -102,11 +114,43 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function user_can_transfer_bucket( int $user_id, int $bucket_id ): bool {
+		$user_id = $this->resolve_actor_user_id( $user_id );
+
 		if ( $this->user_has_global_bucket_access( $user_id ) ) {
 			return true;
 		}
 
 		return $this->access->user_can_transfer_bucket( $bucket_id, $user_id );
+	}
+
+	public function can_manage_all_buckets( int $user_id ): bool {
+		$user_id = $this->resolve_actor_user_id( $user_id );
+
+		return $this->user_has_global_bucket_access( $user_id );
+	}
+
+	public function require_bucket_view_access( int $user_id, int $bucket_id ): ?WP_Error {
+		if ( $this->user_has_bucket_access( $user_id, $bucket_id ) ) {
+			return null;
+		}
+
+		return new WP_Error( 'aims_bucket_access_denied', 'The current user cannot view this bucket.' );
+	}
+
+	public function require_bucket_manage_access( int $user_id, int $bucket_id ): ?WP_Error {
+		if ( $this->user_can_manage_bucket( $user_id, $bucket_id ) ) {
+			return null;
+		}
+
+		return new WP_Error( 'aims_bucket_manage_denied', 'The current user cannot manage this bucket.' );
+	}
+
+	public function require_bucket_transfer_access( int $user_id, int $bucket_id ): ?WP_Error {
+		if ( $this->user_can_transfer_bucket( $user_id, $bucket_id ) ) {
+			return null;
+		}
+
+		return new WP_Error( 'aims_bucket_transfer_denied', 'The current user cannot transfer inventory for this bucket.' );
 	}
 
 	private function user_has_global_bucket_view( int $user_id ): bool {
@@ -136,5 +180,13 @@ class AIMS_Bucket_Access_Service {
 				return ! empty( $row[ $flag ] );
 			}
 		);
+	}
+
+	private function resolve_actor_user_id( int $user_id ): int {
+		if ( $user_id > 0 ) {
+			return $user_id;
+		}
+
+		return (int) get_current_user_id();
 	}
 }

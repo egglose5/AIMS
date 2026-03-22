@@ -20,6 +20,28 @@ class AIMS_Vendor_Repository {
 		);
 	}
 
+	public function find_by_ids( array $vendor_ids ): array {
+		global $wpdb;
+
+		$vendor_ids = array_values(
+			array_filter(
+				array_map( 'intval', $vendor_ids )
+			)
+		);
+
+		if ( empty( $vendor_ids ) ) {
+			return array();
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $vendor_ids ), '%d' ) );
+		$sql = $wpdb->prepare(
+			'SELECT * FROM ' . $this->get_table_name() . ' WHERE id IN (' . $placeholders . ') ORDER BY vendor_name ASC, id ASC',
+			...$vendor_ids
+		);
+
+		return $wpdb->get_results( $sql, ARRAY_A );
+	}
+
 	public function find( int $vendor_id ): ?array {
 		global $wpdb;
 
@@ -123,4 +145,3 @@ class AIMS_Vendor_Repository {
 		return number_format( (float) $value, 4, '.', '' );
 	}
 }
-

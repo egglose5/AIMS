@@ -38,6 +38,7 @@ class AIMS_Shipping_Queue_Page {
 		echo '<th>Event</th>';
 		echo '<th>Queue Type</th>';
 		echo '<th>Source</th>';
+		echo '<th>Bucket Scope</th>';
 		echo '<th>Shipping</th>';
 		echo '<th>Status</th>';
 		echo '<th>Created</th>';
@@ -51,6 +52,7 @@ class AIMS_Shipping_Queue_Page {
 			echo '<td>' . esc_html( $row['event_name'] ) . '</td>';
 			echo '<td>' . esc_html( $row['queue_type'] ) . '</td>';
 			echo '<td>' . esc_html( $row['source_label'] ) . '</td>';
+			echo '<td>' . esc_html( $row['scope_label'] ?? 'Scoped' ) . '</td>';
 			echo '<td>' . esc_html( $row['shipping_label'] ) . '</td>';
 			echo '<td>' . esc_html( $row['status'] ) . '</td>';
 			echo '<td>' . esc_html( $row['created_at'] ) . '</td>';

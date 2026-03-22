@@ -23,6 +23,7 @@ Completed backbone:
 - event/vendor assignment is request-driven by default, with open-for-request event statuses
 - inventory buckets are first-class operational objects, not vendor-owned records
 - events should carry a commission cap percent, defaulting to 30%, plus a split policy.
+- wp-admin should act as a mostly empty AIMS container for vendors and stitchers, with unrelated WordPress menus hidden and only scoped AIMS navigation exposed.
 
 Current rules:
 
@@ -32,9 +33,12 @@ Current rules:
 - approved or manual assignments are the only valid vendor linkage for payout
 - approved/manual assignments define the eligible vendor set for commission cap logic
 - manual admin assignment remains a fallback override and historical backfill path
+- manual overrides should be audit-recorded with actor, reason, scope, and target entity
 - vendor requests are approved first-come, first-served with no priorities or preferences
 - bucket-first inventory is the orchestration default, not a vendor-owned subrecord
 - proportional-to-vendor-rate should be the default split policy, with equal-split as an explicit event option
+- commission changes, transfers, and bucket access changes should emit audit entries
+- menu visibility is UX only; RBAC remains enforced in services and actions.
 - stock changes go through `AIMS_Inventory_Service` only
 - AIMS owns internal records; WooCommerce remains a catalog/order projection layer
 
@@ -105,3 +109,4 @@ AIMS uses a ledger-first inventory and financial design:
 - `aims_square_sales` stores imported sales before any optional WooCommerce projection.
 - event automation matches Square sales to events by Square location and sold-at date window, then recalculates event financials.
 - planned bucket-based RBAC can grant supervisors access to specific inventory buckets without full system access.
+- audit hooks should standardize assignment overrides, commission adjustments, transfers, and access changes before persistence is added.

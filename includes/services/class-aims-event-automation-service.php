@@ -9,17 +9,20 @@ class AIMS_Event_Automation_Service {
 	private $sales;
 	private $assignments;
 	private $financials;
+	private $vendor_access;
 
 	public function __construct(
 		AIMS_Event_Repository $events,
 		AIMS_Square_Sale_Repository $sales,
 		AIMS_Vendor_Event_Assignment_Repository $assignments,
-		AIMS_Event_Financial_Service $financials
+		AIMS_Event_Financial_Service $financials,
+		AIMS_Vendor_Access_Service $vendor_access = null
 	) {
 		$this->events      = $events;
 		$this->sales       = $sales;
 		$this->assignments = $assignments;
 		$this->financials  = $financials;
+		$this->vendor_access = $vendor_access;
 	}
 
 	public function get_participation_model_for_event( int $event_id ): array {
@@ -28,6 +31,7 @@ class AIMS_Event_Automation_Service {
 		$status           = $this->get_participation_status_for_event( $event_id );
 		$eligible_count   = (int) ( $assignment_model['eligible_count'] ?? 0 );
 		$capacity         = (int) ( $event['vendor_capacity'] ?? 0 );
+		$has_capacity     = 0 === $capacity || $eligible_count < $capacity;
 
 		return array_merge(
 			$assignment_model,
@@ -38,9 +42,12 @@ class AIMS_Event_Automation_Service {
 				'vendor_capacity'       => $capacity,
 				'vendor_request_limit'  => (int) ( $event['vendor_request_limit'] ?? 0 ),
 				'vendor_request_count'   => (int) ( $event['vendor_request_count'] ?? 0 ),
+				'authorized_count'      => $eligible_count,
 				'is_open_for_request'   => 'open_for_request' === $status,
-				'is_request_closed'     => in_array( $status, array( 'request_closed', 'closed' ), true ),
-				'has_capacity_remaining' => 0 === $capacity || $eligible_count < $capacity,
+				'is_request_closed'     => in_array( $status, array( 'request_closed', 'closed', 'fully_assigned' ), true ),
+				'is_fully_assigned'     => 'fully_assigned' === $status,
+				'has_capacity_remaining' => $has_capacity,
+				'can_accept_requests'    => in_array( $status, array( 'open_for_request', 'partially_assigned' ), true ) && $has_capacity,
 			)
 		);
 	}
@@ -69,7 +76,11 @@ class AIMS_Event_Automation_Service {
 		return $this->assignments->get_vendor_id_for_event( $event_id );
 	}
 
-	public function set_event_participation_controls( int $event_id, array $data = array() ): ?array {
+	public function set_event_participation_controls( int $event_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
+			return null;
+		}
+
 		$changes = array();
 
 		if ( array_key_exists( 'vendor_capacity', $data ) ) {
@@ -91,7 +102,7 @@ class AIMS_Event_Automation_Service {
 		return $this->refresh_participation_state( $event_id );
 	}
 
-	public function open_event_for_requests( int $event_id, array $data = array() ): ?array {
+	public function open_event_for_requests( int $event_id, array $data = array(), int $actor_user_id = 0 ): ?array {
 		return $this->set_event_participation_controls(
 			$event_id,
 			array_merge(
@@ -99,11 +110,16 @@ class AIMS_Event_Automation_Service {
 				array(
 					'participation_status' => 'open_for_request',
 				)
-			)
+			),
+			$actor_user_id
 		);
 	}
 
-	public function close_event_requests( int $event_id ): ?array {
+	public function close_event_requests( int $event_id, int $actor_user_id = 0 ): ?array {
+		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
+			return null;
+		}
+
 		if ( ! $this->update_event_participation_row(
 			$event_id,
 			array(
@@ -116,10 +132,15 @@ class AIMS_Event_Automation_Service {
 		return $this->refresh_participation_state( $event_id );
 	}
 
-	public function request_vendor_participation( int $event_id, int $vendor_id, array $data = array() ): ?array {
-		$current_status = $this->get_participation_status_for_event( $event_id );
+	public function request_vendor_participation( int $event_id, int $vendor_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+		$model = $this->get_participation_model_for_event( $event_id );
+		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
 
-		if ( in_array( $current_status, array( 'request_closed', 'fully_assigned' ), true ) ) {
+		if (
+			empty( $model['can_accept_requests'] )
+			|| ( (int) ( $model['vendor_request_limit'] ?? 0 ) > 0 && (int) ( $model['vendor_request_count'] ?? 0 ) >= (int) $model['vendor_request_limit'] )
+			|| ! $this->can_request_vendor_participation( $actor_user_id, $vendor_id )
+		) {
 			return null;
 		}
 
@@ -138,7 +159,19 @@ class AIMS_Event_Automation_Service {
 		return $this->assignments->find_by_id( $assignment_id );
 	}
 
-	public function approve_next_vendor_request( int $event_id ): ?array {
+	public function approve_next_vendor_request( int $event_id, int $actor_user_id = 0 ): ?array {
+		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
+			return null;
+		}
+
+		$model = $this->get_participation_model_for_event( $event_id );
+
+		if ( empty( $model['has_capacity_remaining'] ) ) {
+			$this->refresh_participation_state( $event_id );
+
+			return null;
+		}
+
 		$assignment = $this->assignments->approve_next_request_for_event( $event_id );
 
 		if ( empty( $assignment ) ) {
@@ -151,7 +184,11 @@ class AIMS_Event_Automation_Service {
 		return $assignment;
 	}
 
-	public function manual_assign_vendor_to_event( int $event_id, int $vendor_id, array $data = array() ): ?array {
+	public function manual_assign_vendor_to_event( int $event_id, int $vendor_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
+			return null;
+		}
+
 		$assignment_id = $this->assignments->manual_assign_vendor( $event_id, $vendor_id, $data );
 
 		if ( $assignment_id <= 0 ) {
@@ -320,7 +357,11 @@ class AIMS_Event_Automation_Service {
 	private function apply_assignment_to_sale( int $sale_id, int $event_id ): bool {
 		$vendor_id = $this->get_authorized_vendor_id_for_event( $event_id );
 
-		return $this->sales->assign_event( $sale_id, $event_id, $vendor_id );
+		return $this->sales->assign_event(
+			$sale_id,
+			$event_id,
+			$vendor_id > 0 ? $vendor_id : null
+		);
 	}
 
 	private function get_event_participation_row( int $event_id ): ?array {
@@ -434,5 +475,42 @@ class AIMS_Event_Automation_Service {
 		global $wpdb;
 
 		return $wpdb->prefix . 'aims_events';
+	}
+
+	private function resolve_actor_user_id( int $actor_user_id ): int {
+		if ( $actor_user_id > 0 ) {
+			return $actor_user_id;
+		}
+
+		return (int) get_current_user_id();
+	}
+
+	private function can_manage_event_participation( int $actor_user_id ): bool {
+		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+
+		if ( $actor_user_id <= 0 ) {
+			return true;
+		}
+
+		return user_can( $actor_user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| user_can( $actor_user_id, AIMS_Capabilities::CAP_MANAGE_EVENTS );
+	}
+
+	private function can_request_vendor_participation( int $actor_user_id, int $vendor_id ): bool {
+		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+
+		if ( $actor_user_id <= 0 ) {
+			return true;
+		}
+
+		if ( user_can( $actor_user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| user_can( $actor_user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS )
+		) {
+			return true;
+		}
+
+		return null !== $this->vendor_access
+			? $this->vendor_access->user_has_vendor_access( $vendor_id, $actor_user_id )
+			: false;
 	}
 }

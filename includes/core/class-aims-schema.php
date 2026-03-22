@@ -157,6 +157,8 @@ class AIMS_Schema {
 				vendor_capacity int(11) unsigned NOT NULL DEFAULT 0,
 				vendor_request_limit int(11) unsigned NOT NULL DEFAULT 0,
 				vendor_request_count int(11) unsigned NOT NULL DEFAULT 0,
+				commission_cap_rate decimal(7,4) NOT NULL DEFAULT 30.0000,
+				commission_split_policy varchar(32) NOT NULL DEFAULT 'proportional',
 				gross_sales_total decimal(20,2) NOT NULL DEFAULT 0.00,
 				discount_total decimal(20,2) NOT NULL DEFAULT 0.00,
 				tip_total decimal(20,2) NOT NULL DEFAULT 0.00,
@@ -176,7 +178,9 @@ class AIMS_Schema {
 				KEY square_location_id (square_location_id),
 				KEY vendor_capacity (vendor_capacity),
 				KEY vendor_request_limit (vendor_request_limit),
-				KEY vendor_request_count (vendor_request_count)
+				KEY vendor_request_count (vendor_request_count),
+				KEY commission_cap_rate (commission_cap_rate),
+				KEY commission_split_policy (commission_split_policy)
 			) {$charset_collate};",
 			"CREATE TABLE {$event_expenses_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
