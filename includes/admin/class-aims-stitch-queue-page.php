@@ -21,10 +21,12 @@ class AIMS_Stitch_Queue_Page {
 		$notice = $this->handle_actions();
 		$rows   = $this->data_provider->get_rows();
 		$summary = $this->data_provider->get_summary();
+		$can_manage = $this->data_provider->user_can_manage_stitch_jobs();
 
 		echo '<div class="wrap">';
 		echo '<h1>Stitch Queue</h1>';
 		echo '<p>Use this queue to receive stitch jobs, move them into work, mark them ready, and close them when finished.</p>';
+		echo '<p><strong>Actions:</strong> ' . esc_html( $can_manage ? 'Transition controls are enabled for this account.' : 'This account can view the queue, but transitions are read-only.' ) . '</p>';
 
 		if ( '' !== $notice ) {
 			echo '<div class="notice notice-' . esc_attr( $this->notice_type( $notice ) ) . ' inline" style="margin:16px 0 0;"><p>' . esc_html( $notice ) . '</p></div>';
@@ -62,8 +64,13 @@ class AIMS_Stitch_Queue_Page {
 			$next = ! empty( $row['next_transition'] ) && is_array( $row['next_transition'] ) ? $row['next_transition'] : array();
 			$next_label = ! empty( $next['label'] ) ? (string) $next['label'] : '';
 			$next_status = ! empty( $next['next_status'] ) ? (string) $next['next_status'] : '';
-			$can_advance = ! empty( $next['available'] );
+			$next_available = ! empty( $next['available'] );
+			$can_advance = ! empty( $next['can_initiate'] );
 			$assigned = ! empty( $row['assigned_user_id'] ) ? 'User #' . (int) $row['assigned_user_id'] : 'Unassigned';
+			$next_display = $next_available ? $next_label : 'No next step';
+			if ( $next_available && ! $can_advance ) {
+				$next_display = $next_label . ' (manager only)';
+			}
 
 			echo '<tr>';
 			echo '<td><strong>' . esc_html( (string) $row['job_code'] ) . '</strong></td>';
@@ -71,7 +78,7 @@ class AIMS_Stitch_Queue_Page {
 			echo '<td>' . esc_html( (string) $row['priority_label'] ) . '</td>';
 			echo '<td>' . esc_html( (string) $row['due_label'] ) . ( ! empty( $row['is_overdue'] ) ? '<br><span style="color:#b32d2e;font-size:12px;">Overdue</span>' : '' ) . '</td>';
 			echo '<td>' . esc_html( $assigned ) . '</td>';
-			echo '<td>' . esc_html( $can_advance ? $next_label : 'No next step' ) . '</td>';
+			echo '<td>' . esc_html( $next_display ) . '</td>';
 			echo '<td>' . $this->render_transition_form( (int) $row['id'], $next_status, $next_label, $can_advance ) . '</td>';
 			echo '</tr>';
 		}
@@ -98,6 +105,10 @@ class AIMS_Stitch_Queue_Page {
 			return 'Missing stitch job details.';
 		}
 
+		if ( ! $this->data_provider->user_can_manage_stitch_jobs() ) {
+			return 'You do not have permission to manage stitch jobs.';
+		}
+
 		$result = $this->data_provider->get_workflow_service()->transition_job_status(
 			$job_id,
 			$next_status,
@@ -122,7 +133,7 @@ class AIMS_Stitch_Queue_Page {
 
 	private function render_transition_form( int $job_id, string $next_status, string $next_label, bool $enabled ): string {
 		if ( ! $enabled || '' === $next_status ) {
-			return '<span style="color:#666;">No transition available</span>';
+			return '<span style="color:#666;">Transition unavailable</span>';
 		}
 
 		ob_start();

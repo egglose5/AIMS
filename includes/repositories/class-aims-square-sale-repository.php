@@ -38,6 +38,7 @@ class AIMS_Square_Sale_Repository {
 	public function save( array $data ): int {
 		global $wpdb;
 
+		// Square line items are deduped by order + line-item uid so a replayed import updates the same row instead of creating a second sale.
 		$record = array(
 			'square_order_id'      => sanitize_text_field( $data['square_order_id'] ?? '' ),
 			'square_line_item_uid' => sanitize_text_field( $data['square_line_item_uid'] ?? '' ),

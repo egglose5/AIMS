@@ -9,20 +9,24 @@ class AIMS_Inventory_Service {
 	private $movements;
 	private $bucket_access;
 	private $audit;
+	private $auth_context;
 
 	public function __construct(
 		AIMS_Inventory_Bucket_Repository $buckets,
 		AIMS_Inventory_Movement_Repository $movements,
 		AIMS_Bucket_Access_Service $bucket_access = null,
-		AIMS_Audit_Service $audit = null
+		AIMS_Audit_Service $audit = null,
+		AIMS_Auth_Context_Service $auth_context = null
 	) {
 		$this->buckets       = $buckets;
 		$this->movements     = $movements;
 		$this->bucket_access = $bucket_access;
 		$this->audit         = $audit;
+		$this->auth_context  = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
-	public function apply_movement( array $data, int $actor_user_id = 0 ) {
+	public function apply_movement( array $data, int $actor_user_id ) {
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 		$bucket_context = $this->resolve_bucket_context( $data );
 		$reference_type = sanitize_key( $data['reference_type'] ?? '' );
 		$reference_id   = sanitize_text_field( $data['reference_id'] ?? '' );
@@ -42,7 +46,7 @@ class AIMS_Inventory_Service {
 		if ( ! $this->can_manage_bucket_context( $bucket_context, $actor_user_id ) ) {
 			$this->record_audit(
 				'inventory_movement_denied',
-				$this->resolve_actor_user_id( $actor_user_id ),
+				$actor_user_id,
 				(int) ( $bucket_context['owner_entity_id'] ?? 0 ),
 				'bucket',
 				$bucket_id,
@@ -59,6 +63,8 @@ class AIMS_Inventory_Service {
 			return new WP_Error( 'aims_bucket_access_denied', 'The current user cannot change inventory for this bucket.' );
 		}
 
+		// Enforce apply-once behavior before any bucket mutation so repeated sync or undo traffic cannot double-count stock.
+		// The ledger row is the source of truth; the bucket snapshot is only a derived aggregate.
 		if ( $bucket_id > 0 ) {
 			if ( $this->movements->has_reference_application_for_bucket_id( $reference_type, $reference_id, $product_id, $bucket_id, $movement_type ) ) {
 				return new WP_Error( 'aims_duplicate_inventory_movement', 'This inventory movement has already been applied.' );
@@ -143,7 +149,7 @@ class AIMS_Inventory_Service {
 		);
 	}
 
-	public function transfer_warehouse_to_event_bucket( array $data, int $actor_user_id = 0 ) {
+	public function transfer_warehouse_to_event_bucket( array $data, int $actor_user_id ) {
 		return $this->transfer_between_buckets(
 			$data,
 			AIMS_Inventory_Movement_Repository::MOVEMENT_WAREHOUSE_TRANSFER_OUT,
@@ -154,7 +160,7 @@ class AIMS_Inventory_Service {
 		);
 	}
 
-	public function record_event_return( array $data, int $actor_user_id = 0 ) {
+	public function record_event_return( array $data, int $actor_user_id ) {
 		return $this->transfer_between_buckets(
 			$data,
 			AIMS_Inventory_Movement_Repository::MOVEMENT_EVENT_RETURN_OUT,
@@ -165,9 +171,9 @@ class AIMS_Inventory_Service {
 		);
 	}
 
-	public function get_event_transfer_operator_rows( array $filters = array(), int $actor_user_id = 0 ): array {
+	public function get_event_transfer_operator_rows( int $actor_user_id, array $filters = array() ): array {
 		$event_buckets = $this->buckets->get_bucket_snapshots_by_type( 'event' );
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		if ( empty( $event_buckets ) ) {
 			return array();
@@ -176,6 +182,8 @@ class AIMS_Inventory_Service {
 		$limit = isset( $filters['limit'] ) ? max( 1, min( 100, (int) $filters['limit'] ) ) : 25;
 		$rows  = array();
 
+		// This builds the supervisor view from current bucket snapshots plus movement history, not from a separate show table.
+		// Event buckets represent the show total, while movement rows explain how stock got there and where it went.
 		foreach ( $event_buckets as $bucket ) {
 			$summary          = $this->movements->get_transfer_summary_for_bucket_id( (int) $bucket['id'] );
 			$history          = $this->movements->get_recent_movements_for_bucket_id( (int) $bucket['id'], 3 );
@@ -235,7 +243,7 @@ class AIMS_Inventory_Service {
 		return $rows;
 	}
 
-	private function transfer_between_buckets( array $data, string $source_movement_type, string $destination_movement_type, string $source_bucket_type, string $destination_bucket_type, int $actor_user_id = 0 ) {
+	private function transfer_between_buckets( array $data, string $source_movement_type, string $destination_movement_type, string $source_bucket_type, string $destination_bucket_type, int $actor_user_id ) {
 		$reference_type = sanitize_key( $data['reference_type'] ?? '' );
 		$reference_id   = sanitize_text_field( $data['reference_id'] ?? '' );
 		$quantity       = abs( (float) ( $data['quantity_delta'] ?? $data['quantity'] ?? 0 ) );
@@ -255,7 +263,7 @@ class AIMS_Inventory_Service {
 		) {
 			$this->record_audit(
 				'inventory_transfer_denied',
-				$this->resolve_actor_user_id( $actor_user_id ),
+				$actor_user_id,
 				(int) ( $source_data['bucket']['owner_entity_id'] ?? 0 ),
 				'bucket',
 				(int) ( $source_data['bucket']['id'] ?? 0 ),
@@ -359,7 +367,7 @@ class AIMS_Inventory_Service {
 		return 'ready_to_transfer';
 	}
 
-	private function apply_movement_for_transfer_context( array $data, string $movement_type, float $quantity_delta, int $actor_user_id = 0 ) {
+	private function apply_movement_for_transfer_context( array $data, string $movement_type, float $quantity_delta, int $actor_user_id ) {
 		$data['movement_type']  = $movement_type;
 		$data['quantity_delta'] = $quantity_delta;
 
@@ -558,14 +566,16 @@ class AIMS_Inventory_Service {
 	}
 
 	private function can_manage_bucket_context( array $bucket_context, int $actor_user_id ): bool {
-		if ( null === $this->bucket_access ) {
-			return true;
-		}
-
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		if ( $actor_user_id <= 0 ) {
 			return false;
+		}
+
+		// Preserve a fail-closed path when bucket access services are unavailable or the actor only has broad admin caps.
+		if ( null === $this->bucket_access ) {
+			return $this->auth_context->can_user( $actor_user_id, AIMS_Capabilities::CAP_MANAGE )
+				|| $this->auth_context->can_user( $actor_user_id, AIMS_Capabilities::CAP_MANAGE_BUCKETS );
 		}
 
 		$bucket_id = (int) ( $bucket_context['id'] ?? 0 );
@@ -591,12 +601,8 @@ class AIMS_Inventory_Service {
 		return $this->bucket_access->user_can_manage_bucket( $actor_user_id, (int) ( $bucket['id'] ?? 0 ) );
 	}
 
-	private function resolve_actor_user_id( int $actor_user_id ): int {
-		if ( $actor_user_id > 0 ) {
-			return $actor_user_id;
-		}
-
-		return (int) get_current_user_id();
+	private function normalize_actor_user_id( int $actor_user_id ): int {
+		return $this->auth_context->normalize_actor_user_id( $actor_user_id );
 	}
 
 	private function record_audit(

@@ -13,9 +13,7 @@ class AIMS_Supervisor_Inventory_Page {
 	}
 
 	public function render(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_VIEW_BUCKETS )
-			&& ! current_user_can( AIMS_Capabilities::CAP_PORTAL_BUCKETS )
-			&& ! current_user_can( AIMS_Capabilities::CAP_MANAGE_BUCKETS )
+		if ( ! current_user_can( AIMS_Capabilities::CAP_PORTAL_BUCKETS )
 			&& ! current_user_can( AIMS_Capabilities::CAP_MANAGE ) ) {
 			wp_die( esc_html__( 'You do not have permission to access supervisor inventory.', 'ai-man-sys' ) );
 		}
@@ -218,7 +216,7 @@ class AIMS_Supervisor_Inventory_Page {
 		echo '<input type="number" min="0.0001" step="0.0001" max="' . esc_attr( (string) $quantity_limit ) . '" name="quantity_delta" value="' . esc_attr( $input_value ) . '" style="width:110px;"' . ( $allowed ? '' : ' disabled="disabled"' ) . '> ';
 		echo '<button type="submit" class="button button-small"' . ( $allowed ? '' : ' disabled="disabled"' ) . '>' . esc_html( $button_label ) . '</button>';
 		if ( ! $allowed ) {
-			echo '<div style="font-size:11px;color:#666;margin-top:4px;">This row is not transferable yet.</div>';
+			echo '<div style="font-size:11px;color:#666;margin-top:4px;">This account cannot initiate this transfer yet.</div>';
 		}
 		echo '</form>';
 		echo '</div>';
@@ -234,7 +232,7 @@ class AIMS_Supervisor_Inventory_Page {
 			return 'No transferable quantity is available right now.';
 		}
 
-		return 'This row is not transferable yet.';
+		return 'This account cannot initiate this transfer yet.';
 	}
 
 	private function notice_type( string $notice ): string {

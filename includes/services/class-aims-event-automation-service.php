@@ -39,6 +39,7 @@ class AIMS_Event_Automation_Service {
 		$capacity         = (int) ( $event['vendor_capacity'] ?? 0 );
 		$has_capacity     = 0 === $capacity || $eligible_count < $capacity;
 
+		// The eligible count only includes approved or manual assignments, so the FCFS queue and cap logic stay aligned.
 		return array_merge(
 			$assignment_model,
 			array(
@@ -82,9 +83,10 @@ class AIMS_Event_Automation_Service {
 		return $this->assignments->get_vendor_id_for_event( $event_id );
 	}
 
-	public function set_event_participation_controls( int $event_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+	public function set_event_participation_controls( int $event_id, int $actor_user_id, array $data = array() ): ?array {
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
+		// Participation state is the gate for FCFS requests, manual fallback, and commission eligibility.
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
 			$this->record_audit(
 				'participation_control_denied',
@@ -136,20 +138,20 @@ class AIMS_Event_Automation_Service {
 		return $this->refresh_participation_state( $event_id );
 	}
 
-	public function open_event_for_requests( int $event_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+	public function open_event_for_requests( int $event_id, int $actor_user_id, array $data = array() ): ?array {
 		return $this->set_event_participation_controls(
 			$event_id,
+			$actor_user_id,
 			array_merge(
 				$data,
 				array(
 					'participation_status' => 'open_for_request',
 				)
-			),
-			$actor_user_id
+			)
 		);
 	}
 
-	public function close_event_requests( int $event_id, int $actor_user_id = 0 ): ?array {
+	public function close_event_requests( int $event_id, int $actor_user_id ): ?array {
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
@@ -188,10 +190,11 @@ class AIMS_Event_Automation_Service {
 		return $this->refresh_participation_state( $event_id );
 	}
 
-	public function request_vendor_participation( int $event_id, int $vendor_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+	public function request_vendor_participation( int $event_id, int $vendor_id, int $actor_user_id, array $data = array() ): ?array {
 		$model = $this->get_participation_model_for_event( $event_id );
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
+		// Requests are intentionally FCFS and must honor both capacity and vendor visibility before anything is persisted.
 		if (
 			empty( $model['can_accept_requests'] )
 			|| ( (int) ( $model['vendor_request_limit'] ?? 0 ) > 0 && (int) ( $model['vendor_request_count'] ?? 0 ) >= (int) $model['vendor_request_limit'] )
@@ -243,9 +246,10 @@ class AIMS_Event_Automation_Service {
 		return $this->assignments->find_by_id( $assignment_id );
 	}
 
-	public function approve_next_vendor_request( int $event_id, int $actor_user_id = 0 ): ?array {
+	public function approve_next_vendor_request( int $event_id, int $actor_user_id ): ?array {
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
+		// Approval always consumes the queue head so the event never bypasses the FCFS policy by accident.
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
 			$this->record_audit(
 				'vendor_request_approval_denied',
@@ -309,9 +313,10 @@ class AIMS_Event_Automation_Service {
 		return $assignment;
 	}
 
-	public function manual_assign_vendor_to_event( int $event_id, int $vendor_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+	public function manual_assign_vendor_to_event( int $event_id, int $vendor_id, int $actor_user_id, array $data = array() ): ?array {
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
+		// Manual assignment remains a controlled override path for backfills, exceptions, and late corrections.
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
 			$this->record_audit(
 				'vendor_manual_assignment_denied',
@@ -412,13 +417,13 @@ class AIMS_Event_Automation_Service {
 		return ! empty( $model['policy'] ) ? (string) $model['policy'] : 'request_first';
 	}
 
-	public function user_can_manage_event_participation( int $actor_user_id = 0 ): bool {
+	public function user_can_manage_event_participation( int $actor_user_id ): bool {
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		return $this->can_manage_event_participation( $actor_user_id );
 	}
 
-	public function user_can_request_vendor_participation( int $vendor_id, int $actor_user_id = 0 ): bool {
+	public function user_can_request_vendor_participation( int $vendor_id, int $actor_user_id ): bool {
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		return $this->can_request_vendor_participation( $actor_user_id, $vendor_id );

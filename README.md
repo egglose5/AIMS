@@ -94,6 +94,9 @@ Public event showcase layer:
 - public content links back to internal events via `aims_event_id`
 - support booth photos, public descriptions, and event reviews/testimonials
 - treat this as a later public-surface layer, not part of the core operational engine
+- preserve OceanWP per-page header/footer disable settings
+- do not force front-end templates
+- keep front-end hooks and assets opt-in only
 
 ## Operational Backbone
 

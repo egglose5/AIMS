@@ -22,7 +22,7 @@ class AIMS_Vendor_Access_Service {
 		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
-	public function grant_vendor_responsibility( int $vendor_id, int $user_id, array $data = array(), int $actor_user_id = 0 ): int {
+	public function grant_vendor_responsibility( int $vendor_id, int $user_id, int $actor_user_id, array $data = array() ): int {
 		$user_id = $this->normalize_actor_user_id( $user_id );
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
@@ -62,7 +62,7 @@ class AIMS_Vendor_Access_Service {
 		return $access_id;
 	}
 
-	public function revoke_vendor_responsibility( int $vendor_id, int $user_id, int $actor_user_id = 0 ): bool {
+	public function revoke_vendor_responsibility( int $vendor_id, int $user_id, int $actor_user_id ): bool {
 		$user_id = $this->normalize_actor_user_id( $user_id );
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
@@ -134,7 +134,7 @@ class AIMS_Vendor_Access_Service {
 
 		$this->record_access_audit(
 			'vendor_view_denied',
-			$this->resolve_actor_user_id( $user_id ),
+			$this->normalize_actor_user_id( $user_id ),
 			$vendor_id,
 			$user_id,
 			array(),
@@ -152,7 +152,7 @@ class AIMS_Vendor_Access_Service {
 
 		$this->record_access_audit(
 			'vendor_manage_denied',
-			$this->resolve_actor_user_id( $user_id ),
+			$this->normalize_actor_user_id( $user_id ),
 			$vendor_id,
 			$user_id,
 			array(),

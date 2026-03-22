@@ -8,6 +8,23 @@ class AIMS_Admin_Menu {
 	const MENU_SLUG = 'aims';
 	const DASHBOARD_PAGE = 'admin.php?page=aims';
 
+	private $event_participation_page;
+	private $stitch_queue_page;
+	private $shipping_queue_page;
+	private $supervisor_inventory_page;
+
+	public function __construct(
+		AIMS_Event_Participation_Page $event_participation_page = null,
+		AIMS_Stitch_Queue_Page $stitch_queue_page = null,
+		AIMS_Shipping_Queue_Page $shipping_queue_page = null,
+		AIMS_Supervisor_Inventory_Page $supervisor_inventory_page = null
+	) {
+		$this->event_participation_page = $event_participation_page;
+		$this->stitch_queue_page        = $stitch_queue_page;
+		$this->shipping_queue_page      = $shipping_queue_page;
+		$this->supervisor_inventory_page = $supervisor_inventory_page;
+	}
+
 	public function register(): void {
 		add_menu_page(
 			'AIMS',
@@ -169,13 +186,23 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_event_participation_shell(): void {
-		$page = new AIMS_Event_Participation_Page( new AIMS_Event_Participation_Data_Provider() );
-		$page->render();
+		if ( null !== $this->event_participation_page ) {
+			$this->event_participation_page->render();
+			return;
+		}
+
+		// Do not self-build this surface here; the bootstrap must inject the protected page object.
+		wp_die( esc_html__( 'AIMS event participation is not wired.', 'ai-man-sys' ) );
 	}
 
 	public function render_stitch_shell(): void {
-		$page = new AIMS_Stitch_Queue_Page( new AIMS_Stitch_Queue_Data_Provider() );
-		$page->render();
+		if ( null !== $this->stitch_queue_page ) {
+			$this->stitch_queue_page->render();
+			return;
+		}
+
+		// Do not self-build this surface here; the bootstrap must inject the protected page object.
+		wp_die( esc_html__( 'AIMS stitch queue is not wired.', 'ai-man-sys' ) );
 	}
 
 	public function render_square_sync_shell(): void {
@@ -187,13 +214,23 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_needs_shipping_queue(): void {
-		$page = new AIMS_Shipping_Queue_Page( new AIMS_Shipping_Queue_Data_Provider() );
-		$page->render();
+		if ( null !== $this->shipping_queue_page ) {
+			$this->shipping_queue_page->render();
+			return;
+		}
+
+		// Do not self-build this surface here; the bootstrap must inject the protected page object.
+		wp_die( esc_html__( 'AIMS shipping queue is not wired.', 'ai-man-sys' ) );
 	}
 
 	public function render_supervisor_inventory(): void {
-		$page = new AIMS_Supervisor_Inventory_Page( new AIMS_Supervisor_Inventory_Data_Provider() );
-		$page->render();
+		if ( null !== $this->supervisor_inventory_page ) {
+			$this->supervisor_inventory_page->render();
+			return;
+		}
+
+		// Do not self-build this surface here; the bootstrap must inject the protected page object.
+		wp_die( esc_html__( 'AIMS supervisor inventory is not wired.', 'ai-man-sys' ) );
 	}
 
 	public function render_reports_shell(): void {

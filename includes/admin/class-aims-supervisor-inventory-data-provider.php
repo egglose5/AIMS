@@ -11,28 +11,43 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 	private $scope_resolver;
 	private $bucket_access;
 	private $inventory_service;
+	private $audit;
+	private $auth_context;
 
 	public function __construct(
 		AIMS_Inventory_Bucket_Repository $bucket_repository = null,
 		AIMS_Vendor_Repository $vendor_repository = null,
 		AIMS_Event_Repository $event_repository = null,
 		AIMS_Admin_Scope_Resolver $scope_resolver = null,
-		AIMS_Inventory_Service $inventory_service = null
+		AIMS_Inventory_Service $inventory_service = null,
+		AIMS_Bucket_Access_Service $bucket_access = null,
+		AIMS_Audit_Service $audit = null,
+		AIMS_Auth_Context_Service $auth_context = null
 	) {
 		$this->bucket_repository = $bucket_repository ?: new AIMS_Inventory_Bucket_Repository();
 		$this->vendor_repository  = $vendor_repository ?: new AIMS_Vendor_Repository();
 		$this->event_repository   = $event_repository ?: new AIMS_Event_Repository();
-		$this->scope_resolver     = $scope_resolver ?: new AIMS_Admin_Scope_Resolver();
-		$this->bucket_access      = new AIMS_Bucket_Access_Service(
+		$this->audit              = $audit ?: new AIMS_Audit_Service();
+		$this->auth_context       = $auth_context ?: new AIMS_Auth_Context_Service();
+		$this->bucket_access      = $bucket_access ?: new AIMS_Bucket_Access_Service(
 			new AIMS_Bucket_Access_Repository(),
 			$this->bucket_repository,
-			new AIMS_Audit_Service()
+			$this->audit,
+			$this->auth_context
 		);
-		$this->inventory_service  = $inventory_service ?: new AIMS_Inventory_Service(
+		$this->inventory_service   = $inventory_service ?: new AIMS_Inventory_Service(
 			$this->bucket_repository,
 			new AIMS_Inventory_Movement_Repository(),
 			$this->bucket_access,
-			new AIMS_Audit_Service()
+			$this->audit,
+			$this->auth_context
+		);
+		$this->scope_resolver     = $scope_resolver ?: new AIMS_Admin_Scope_Resolver(
+			new AIMS_Bucket_Access_Repository(),
+			$this->bucket_repository,
+			null,
+			$this->vendor_repository,
+			$this->auth_context
 		);
 	}
 
@@ -72,10 +87,10 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 
 	public function get_event_transfer_rows(): array {
 		return $this->inventory_service->get_event_transfer_operator_rows(
+			(int) get_current_user_id(),
 			array(
 				'limit' => 25,
-			),
-			(int) get_current_user_id()
+			)
 		);
 	}
 
@@ -110,6 +125,7 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 	}
 
 	private function get_bucket_rows(): array {
+		// Supervisor visibility is derived entirely from the shared scope resolver so bucket RBAC stays consistent.
 		$rows = $this->scope_resolver->get_accessible_buckets( (int) get_current_user_id() );
 		return is_array( $rows ) ? $rows : array();
 	}

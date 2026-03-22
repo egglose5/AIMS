@@ -46,6 +46,8 @@ class AIMS_Shipping_Workflow_Service {
 		array $shipping_address = array(),
 		array $context = array()
 	): string {
+		// Shipping-marker routing takes precedence, then backorder conditions, then the current routed status.
+		// This keeps the external Square marker aligned with AIMS fulfillment state without forcing line-item hacks.
 		$workflow_context = $this->build_workflow_context_flags( $sale, $customer, $shipping_address, $context );
 
 		return $this->evaluate_status_from_context( $sale, $workflow_context );
@@ -105,6 +107,8 @@ class AIMS_Shipping_Workflow_Service {
 			$this->sales->update_fulfillment_status( $sale_id, $status );
 		}
 
+		// Allocation rows are the operational record; they preserve why a sale moved into a shipping or backorder queue.
+		// The sale status is a projection, while the allocation row records the actual fulfillment decision.
 		$allocation_payload = $this->build_allocation_payload( $sale, $status, array_merge( $context, $workflow_context ) );
 		$allocation_id = $this->allocations->save( $allocation_payload );
 

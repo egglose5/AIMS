@@ -22,24 +22,52 @@ class AIMS_Vendor_Service {
 		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
-	public function list_vendors( int $user_id = 0 ): array {
+	public function list_vendors( int $user_id ): array {
 		$user_id = $this->normalize_actor_user_id( $user_id );
 
-		if ( null !== $this->access && $user_id <= 0 ) {
+		if ( $user_id <= 0 ) {
 			return array();
 		}
 
-		if ( null !== $this->access && $user_id > 0 && ! $this->access->can_manage_all_vendors( $user_id ) ) {
+		if ( null !== $this->access && ! $this->access->can_manage_all_vendors( $user_id ) ) {
 			return $this->access->get_accessible_vendors_for_user( $user_id );
+		}
+
+		if ( null === $this->access ) {
+			if ( $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE )
+				|| $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS )
+			) {
+				return $this->vendors->all();
+			}
+
+			return array();
 		}
 
 		return $this->vendors->all();
 	}
 
-	public function create_vendor( array $data, int $user_id = 0 ): int {
+	public function create_vendor( array $data, int $user_id ): int {
 		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( null !== $this->access && ! $this->access->can_manage_all_vendors( $user_id ) ) {
+			$this->record_audit(
+				'vendor_create_denied',
+				$user_id,
+				0,
+				'vendor',
+				0,
+				array(
+					'input' => $data,
+				),
+				'Vendor creation denied.'
+			);
+
+			return 0;
+		}
+
+		if ( null === $this->access && ! $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE )
+			&& ! $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS )
+		) {
 			$this->record_audit(
 				'vendor_create_denied',
 				$user_id,
@@ -72,7 +100,7 @@ class AIMS_Vendor_Service {
 		return $vendor_id;
 	}
 
-	public function get_vendor( int $vendor_id, int $user_id = 0 ): ?array {
+	public function get_vendor( int $vendor_id, int $user_id ): ?array {
 		$user_id = $this->normalize_actor_user_id( $user_id );
 		$vendor = $this->vendors->find( $vendor_id );
 
@@ -80,7 +108,7 @@ class AIMS_Vendor_Service {
 			return null;
 		}
 
-		if ( null !== $this->access && $user_id <= 0 ) {
+		if ( $user_id <= 0 ) {
 			$this->record_audit(
 				'vendor_view_denied',
 				$user_id,
@@ -94,7 +122,23 @@ class AIMS_Vendor_Service {
 			return null;
 		}
 
-		if ( null !== $this->access && $user_id > 0 && ! $this->access->user_has_vendor_access( $vendor_id, $user_id ) ) {
+		if ( null !== $this->access && ! $this->access->user_has_vendor_access( $vendor_id, $user_id ) ) {
+			$this->record_audit(
+				'vendor_view_denied',
+				$user_id,
+				$vendor_id,
+				'vendor',
+				$vendor_id,
+				array(),
+				'Vendor view denied.'
+			);
+
+			return null;
+		}
+
+		if ( null === $this->access && ! $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE )
+			&& ! $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS )
+		) {
 			$this->record_audit(
 				'vendor_view_denied',
 				$user_id,
@@ -111,10 +155,53 @@ class AIMS_Vendor_Service {
 		return $vendor;
 	}
 
-	public function get_sync_mapping_by_square_location( string $square_location_id ): ?array {
+	public function get_sync_mapping_by_square_location( string $square_location_id, int $user_id = 0 ): ?array {
+		$user_id = $this->normalize_actor_user_id( $user_id );
+		if ( $user_id <= 0 ) {
+			$user_id = (int) get_current_user_id();
+		}
+
+		if ( $user_id <= 0 ) {
+			return null;
+		}
+
 		$vendor = $this->vendors->find_by_square_location_id( $square_location_id );
 
 		if ( empty( $vendor ) ) {
+			return null;
+		}
+
+		if ( null !== $this->access ) {
+			if ( ! $this->access->user_has_vendor_access( (int) $vendor['id'], $user_id ) ) {
+				$this->record_audit(
+					'vendor_view_denied',
+					$user_id,
+					(int) $vendor['id'],
+					'vendor',
+					(int) $vendor['id'],
+					array(
+						'square_location_id' => $square_location_id,
+					),
+					'Vendor sync mapping lookup denied.'
+				);
+
+				return null;
+			}
+		} elseif ( ! $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE )
+			&& ! $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS )
+		) {
+			$this->record_audit(
+				'vendor_view_denied',
+				$user_id,
+				(int) $vendor['id'],
+				'vendor',
+				(int) $vendor['id'],
+				array(
+					'square_location_id' => $square_location_id,
+				),
+				'Vendor sync mapping lookup denied.'
+			);
+
 			return null;
 		}
 

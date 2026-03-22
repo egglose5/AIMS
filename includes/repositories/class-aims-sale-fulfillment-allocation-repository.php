@@ -56,6 +56,7 @@ class AIMS_Sale_Fulfillment_Allocation_Repository {
 	public function save( array $data, int $allocation_id = 0 ): int {
 		global $wpdb;
 
+		// Allocation rows mirror the operational decision for a sale; they do not mutate stock on their own.
 		$record = array(
 			'square_sale_id'     => (int) ( $data['square_sale_id'] ?? 0 ),
 			'square_order_id'    => sanitize_text_field( $data['square_order_id'] ?? '' ),

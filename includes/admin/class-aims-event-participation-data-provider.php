@@ -11,19 +11,27 @@ class AIMS_Event_Participation_Data_Provider {
 	private $vendors;
 	private $vendor_access;
 	private $scope_resolver;
+	private $audit;
+	private $auth_context;
 
 	public function __construct(
 		AIMS_Event_Automation_Service $event_automation = null,
 		AIMS_Event_Repository $events = null,
 		AIMS_Vendor_Event_Assignment_Repository $assignments = null,
-		AIMS_Vendor_Repository $vendors = null
+		AIMS_Vendor_Repository $vendors = null,
+		AIMS_Admin_Scope_Resolver $scope_resolver = null,
+		AIMS_Vendor_Access_Service $vendor_access = null,
+		AIMS_Audit_Service $audit = null,
+		AIMS_Auth_Context_Service $auth_context = null
 	) {
-		$audit = new AIMS_Audit_Service();
+		$this->audit = $audit ?: new AIMS_Audit_Service();
+		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 		$vendor_repository = $vendors ?: new AIMS_Vendor_Repository();
-		$this->vendor_access = new AIMS_Vendor_Access_Service(
+		$this->vendor_access = $vendor_access ?: new AIMS_Vendor_Access_Service(
 			new AIMS_Vendor_User_Access_Repository(),
 			$vendor_repository,
-			$audit
+			$this->audit,
+			$this->auth_context
 		);
 		$this->event_automation = $event_automation ?: new AIMS_Event_Automation_Service(
 			new AIMS_Event_Repository(),
@@ -39,20 +47,32 @@ class AIMS_Event_Participation_Data_Provider {
 				)
 			),
 			$this->vendor_access,
-			$audit
+			$this->audit,
+			$this->auth_context
 		);
 		$this->events       = $events ?: new AIMS_Event_Repository();
 		$this->assignments  = $assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
 		$this->vendors      = $vendor_repository;
-		$this->scope_resolver = new AIMS_Admin_Scope_Resolver();
+		$this->scope_resolver = $scope_resolver ?: new AIMS_Admin_Scope_Resolver(
+			new AIMS_Bucket_Access_Repository(),
+			new AIMS_Inventory_Bucket_Repository(),
+			$this->vendor_access,
+			$this->vendors,
+			$this->auth_context
+		);
 	}
 
 	public function get_rows(): array {
 		$rows = array();
+		$visible_event_ids = $this->get_visible_event_ids();
+
+		if ( empty( $visible_event_ids ) ) {
+			return array();
+		}
 
 		foreach ( $this->events->all() as $event ) {
 			$event_id = (int) ( $event['id'] ?? 0 );
-			if ( $event_id <= 0 ) {
+			if ( $event_id <= 0 || ! $this->event_is_visible( $event_id, $visible_event_ids ) ) {
 				continue;
 			}
 
@@ -94,7 +114,7 @@ class AIMS_Event_Participation_Data_Provider {
 
 	public function get_event_bundle( int $event_id ): array {
 		$event = $this->events->find_by_id( $event_id );
-		if ( empty( $event ) ) {
+		if ( empty( $event ) || ! $this->event_is_visible( $event_id ) ) {
 			return array();
 		}
 
@@ -187,6 +207,61 @@ class AIMS_Event_Participation_Data_Provider {
 		$vendors = $this->scope_resolver->get_accessible_vendors( (int) get_current_user_id() );
 
 		return is_array( $vendors ) ? $vendors : array();
+	}
+
+	private function get_visible_event_ids(): array {
+		$user_id = (int) get_current_user_id();
+		$scope = $this->scope_resolver->get_accessible_scope_ids( $user_id );
+
+		if ( ! empty( $scope['all'] ) ) {
+			$event_ids = array();
+
+			foreach ( $this->events->all() as $event ) {
+				if ( ! empty( $event['id'] ) ) {
+					$event_ids[] = (int) $event['id'];
+				}
+			}
+
+			return array_values( array_unique( array_filter( $event_ids ) ) );
+		}
+
+		$visible_event_ids = array();
+		$scope_event_ids   = ! empty( $scope['event_ids'] ) ? array_map( 'intval', (array) $scope['event_ids'] ) : array();
+		$visible_event_ids  = array_merge( $visible_event_ids, $scope_event_ids );
+
+		$vendor_ids = ! empty( $scope['vendor_ids'] ) ? array_map( 'intval', (array) $scope['vendor_ids'] ) : array();
+		if ( ! empty( $vendor_ids ) ) {
+			$vendor_lookup = array_fill_keys( $vendor_ids, true );
+
+			foreach ( $this->events->all() as $event ) {
+				$event_id = (int) ( $event['id'] ?? 0 );
+				if ( $event_id <= 0 ) {
+					continue;
+				}
+
+				foreach ( $this->assignments->get_all_for_event( $event_id ) as $assignment ) {
+					$assignment_vendor_id = (int) ( $assignment['vendor_id'] ?? 0 );
+					if ( $assignment_vendor_id > 0 && isset( $vendor_lookup[ $assignment_vendor_id ] ) ) {
+						$visible_event_ids[] = $event_id;
+						break;
+					}
+				}
+			}
+		}
+
+		return array_values( array_unique( array_filter( array_map( 'intval', $visible_event_ids ) ) ) );
+	}
+
+	private function event_is_visible( int $event_id, array $visible_event_ids = array() ): bool {
+		if ( $event_id <= 0 ) {
+			return false;
+		}
+
+		if ( empty( $visible_event_ids ) ) {
+			$visible_event_ids = $this->get_visible_event_ids();
+		}
+
+		return in_array( $event_id, $visible_event_ids, true );
 	}
 
 	private function build_vendor_label( array $vendor ): string {

@@ -31,6 +31,7 @@ class AIMS_Admin_Scope_Resolver {
 	}
 
 	public function can_manage_all( int $user_id ): bool {
+		// Full-access users can see and act on all scoped entities; everyone else is narrowed to assigned buckets/vendors.
 		return $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE )
 			|| $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_BUCKETS );
 	}
@@ -97,6 +98,7 @@ class AIMS_Admin_Scope_Resolver {
 		$bucket_codes = array();
 
 		if ( $this->can_manage_all( $user_id ) ) {
+			// Returning "all" here lets callers skip repeated OR-clause building for privileged users.
 			return array(
 				'vendor_ids'   => array(),
 				'event_ids'    => array(),

@@ -98,6 +98,7 @@ class AIMS_Vendor_Event_Assignment_Repository {
 	}
 
 	public function get_eligible_for_event( int $event_id ): array {
+		// Only approved or manual rows count as eligible, because request rows are queue state, not capacity state.
 		return $this->get_for_event_by_statuses(
 			$event_id,
 			array(
@@ -113,6 +114,7 @@ class AIMS_Vendor_Event_Assignment_Repository {
 		$approved    = $this->get_for_event_by_statuses( $event_id, array( self::STATUS_APPROVED ) );
 		$manual      = $this->get_for_event_by_statuses( $event_id, array( self::STATUS_MANUAL ) );
 
+		// The model keeps the request queue and the eligible set separate so FCFS approval and manual fallback can coexist cleanly.
 		return array(
 			'event_id'          => $event_id,
 			'policy'            => ! empty( $eligible ) ? 'approved_manual_fallback' : 'request_first',

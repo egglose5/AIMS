@@ -32,6 +32,7 @@ class AIMS_Square_Import_Queue_Repository {
 	public function save( array $data, int $queue_id = 0 ): int {
 		global $wpdb;
 
+		// Square order IDs are unique here so repeated webhook or import passes collapse into one queue record.
 		if ( $queue_id <= 0 && ! empty( $data['square_order_id'] ) ) {
 			$existing = $this->find_by_square_order_id( (string) $data['square_order_id'] );
 

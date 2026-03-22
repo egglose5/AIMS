@@ -19,14 +19,22 @@ class AIMS_Stitch_Workflow_Service {
 		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
-	public function get_queue_rows( array $filters = array() ): array {
+	public function get_queue_rows( array $filters = array(), int $actor_user_id = 0 ): array {
 		$rows = array();
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		foreach ( $this->jobs->get_queue_rows( $filters ) as $job ) {
-			$rows[] = $this->normalize_job_row( $job );
+			$rows[] = $this->normalize_job_row( $job, $actor_user_id );
 		}
 
 		return $rows;
+	}
+
+	public function user_can_manage_stitch_jobs( int $actor_user_id ): bool {
+		return $this->auth_context->can_user(
+			$this->normalize_actor_user_id( $actor_user_id ),
+			AIMS_Capabilities::CAP_MANAGE_STITCH
+		);
 	}
 
 	public function get_summary(): array {
@@ -47,14 +55,14 @@ class AIMS_Stitch_Workflow_Service {
 		return $this->jobs->get_status_options();
 	}
 
-	public function transition_job_status( int $job_id, string $target_status, int $actor_user_id = 0, array $context = array() ) {
+	public function transition_job_status( int $job_id, string $target_status, int $actor_user_id, array $context = array() ) {
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 		$job = $this->jobs->find_by_id( $job_id );
 		if ( empty( $job ) ) {
 			return new WP_Error( 'aims_stitch_job_missing', 'The stitch job could not be found.' );
 		}
 
-		if ( ! $this->auth_context->can_user( $actor_user_id, AIMS_Capabilities::CAP_MANAGE_STITCH ) ) {
+		if ( ! $this->user_can_manage_stitch_jobs( $actor_user_id ) ) {
 			return new WP_Error( 'aims_stitch_access_denied', 'The current user cannot manage stitch jobs.' );
 		}
 
@@ -110,44 +118,46 @@ class AIMS_Stitch_Workflow_Service {
 			'job_id'         => $job_id,
 			'previous_status' => $current_status,
 			'target_status'   => $target_status,
-			'job'            => $this->normalize_job_row( ! empty( $refreshed ) ? $refreshed : $job ),
+			'job'            => $this->normalize_job_row( ! empty( $refreshed ) ? $refreshed : $job, $actor_user_id ),
 			'message'        => $this->build_transition_message( $current_status, $target_status, $job ),
 		);
 	}
 
-	public function receive_job( int $job_id, int $actor_user_id = 0, array $context = array() ) {
+	public function receive_job( int $job_id, int $actor_user_id, array $context = array() ) {
 		return $this->transition_job_status( $job_id, AIMS_Stitch_Job_Repository::STATUS_RECEIVED, $actor_user_id, $context );
 	}
 
-	public function start_job( int $job_id, int $actor_user_id = 0, array $context = array() ) {
+	public function start_job( int $job_id, int $actor_user_id, array $context = array() ) {
 		return $this->transition_job_status( $job_id, AIMS_Stitch_Job_Repository::STATUS_IN_PROGRESS, $actor_user_id, $context );
 	}
 
-	public function mark_ready_for_pickup( int $job_id, int $actor_user_id = 0, array $context = array() ) {
+	public function mark_ready_for_pickup( int $job_id, int $actor_user_id, array $context = array() ) {
 		return $this->transition_job_status( $job_id, AIMS_Stitch_Job_Repository::STATUS_READY_FOR_PICKUP, $actor_user_id, $context );
 	}
 
-	public function close_job( int $job_id, int $actor_user_id = 0, array $context = array() ) {
+	public function close_job( int $job_id, int $actor_user_id, array $context = array() ) {
 		return $this->transition_job_status( $job_id, AIMS_Stitch_Job_Repository::STATUS_CLOSED, $actor_user_id, $context );
 	}
 
-	public function get_available_transition( array $job ): array {
+	public function get_available_transition( array $job, int $actor_user_id = 0 ): array {
 		$status = $this->jobs->normalize_status( (string) ( $job['status'] ?? '' ) );
 		$map = $this->available_transition_map();
 		$transition = ! empty( $map[ $status ] ) ? $map[ $status ] : array();
+		$can_manage = $actor_user_id > 0 && $this->user_can_manage_stitch_jobs( $actor_user_id );
 
 		return array(
 			'next_status' => ! empty( $transition['status'] ) ? (string) $transition['status'] : '',
 			'label'       => ! empty( $transition['label'] ) ? (string) $transition['label'] : '',
 			'available'   => ! empty( $transition ),
+			'can_initiate' => ! empty( $transition ) && $can_manage,
 		);
 	}
 
-	private function normalize_job_row( array $job ): array {
+	private function normalize_job_row( array $job, int $actor_user_id = 0 ): array {
 		$status = $this->jobs->normalize_status( (string) ( $job['status'] ?? '' ) );
 		$priority = $this->jobs->normalize_priority( (string) ( $job['priority'] ?? 'normal' ) );
 		$due_at = ! empty( $job['due_at'] ) ? (string) $job['due_at'] : '';
-		$next_transition = $this->get_available_transition( $job );
+		$next_transition = $this->get_available_transition( $job, $actor_user_id );
 
 		return array(
 			'id'               => (int) ( $job['id'] ?? 0 ),

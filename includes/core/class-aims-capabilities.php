@@ -44,36 +44,17 @@ class AIMS_Capabilities {
 			}
 		}
 
-		add_role(
-			self::ROLE_VENDOR_USER,
-			'AIMS Vendor User',
-			array(
-				'read'                 => true,
-				self::CAP_ACCESS_SHELL => true,
-				self::CAP_PORTAL_VENDORS => true,
-				self::CAP_PORTAL_EVENTS => true,
-			)
-		);
+		foreach ( self::get_shell_role_definitions() as $role_slug => $definition ) {
+			add_role(
+				$role_slug,
+				(string) ( $definition['label'] ?? $role_slug ),
+				array(
+					'read' => true,
+				)
+			);
 
-		add_role(
-			self::ROLE_BUCKET_SUPERVISOR,
-			'AIMS Bucket Supervisor',
-			array(
-				'read'                 => true,
-				self::CAP_ACCESS_SHELL => true,
-				self::CAP_PORTAL_BUCKETS => true,
-			)
-		);
-
-		add_role(
-			self::ROLE_STITCHER,
-			'AIMS Stitcher',
-			array(
-				'read'                 => true,
-				self::CAP_ACCESS_SHELL => true,
-				self::CAP_PORTAL_STITCH => true,
-			)
-		);
+			self::sync_role_capabilities( $role_slug, (array) ( $definition['caps'] ?? array() ) );
+		}
 	}
 
 	public static function remove_roles_and_caps(): void {
@@ -129,6 +110,71 @@ class AIMS_Capabilities {
 		remove_role( self::ROLE_STITCHER );
 	}
 
+	public static function get_shell_role_definitions(): array {
+		return array(
+			self::ROLE_VENDOR_USER => array(
+				'label' => 'AIMS Vendor User',
+				'caps'  => array(
+					self::CAP_ACCESS_SHELL,
+					self::CAP_PORTAL_VENDORS,
+					self::CAP_PORTAL_EVENTS,
+				),
+			),
+			self::ROLE_BUCKET_SUPERVISOR => array(
+				'label' => 'AIMS Bucket Supervisor',
+				'caps'  => array(
+					self::CAP_ACCESS_SHELL,
+					self::CAP_PORTAL_BUCKETS,
+				),
+			),
+			self::ROLE_STITCHER => array(
+				'label' => 'AIMS Stitcher',
+				'caps'  => array(
+					self::CAP_ACCESS_SHELL,
+					self::CAP_PORTAL_STITCH,
+				),
+			),
+		);
+	}
+
+	public static function sync_role_capabilities( string $role_slug, array $allowed_caps ): void {
+		$role = get_role( $role_slug );
+		if ( ! $role ) {
+			return;
+		}
+
+		$allowed_caps = array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						'sanitize_key',
+						$allowed_caps
+					)
+				)
+			)
+		);
+
+		$current_caps = array_keys(
+			array_filter(
+				(array) $role->capabilities
+			)
+		);
+
+		foreach ( $allowed_caps as $cap ) {
+			if ( ! $role->has_cap( $cap ) ) {
+				$role->add_cap( $cap );
+			}
+		}
+
+		foreach ( $current_caps as $cap ) {
+			if ( in_array( $cap, $allowed_caps, true ) || 'read' === $cap ) {
+				continue;
+			}
+
+			$role->remove_cap( $cap );
+		}
+	}
+
 	public static function get_caps(): array {
 		return array(
 			self::CAP_MANAGE,
@@ -150,11 +196,7 @@ class AIMS_Capabilities {
 	}
 
 	public static function get_shell_roles(): array {
-		return array(
-			self::ROLE_VENDOR_USER,
-			self::ROLE_BUCKET_SUPERVISOR,
-			self::ROLE_STITCHER,
-		);
+		return array_keys( self::get_shell_role_definitions() );
 	}
 
 	public static function current_user_is_shell_user(): bool {

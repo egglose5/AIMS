@@ -22,7 +22,7 @@ class AIMS_Bucket_Access_Service {
 		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
-	public function grant_bucket_responsibility( int $bucket_id, int $user_id, array $data = array(), int $actor_user_id = 0 ): int {
+	public function grant_bucket_responsibility( int $bucket_id, int $user_id, int $actor_user_id, array $data = array() ): int {
 		$user_id = $this->normalize_actor_user_id( $user_id );
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
@@ -37,7 +37,7 @@ class AIMS_Bucket_Access_Service {
 				$bucket_id,
 				$user_id,
 				array(
-					'requested_role' => $data['access_role'] ?? self::ROLE_SUPERVISOR,
+					'requested_role' => $data['access_role'] ?? AIMS_Bucket_Access_Repository::ROLE_SUPERVISOR,
 				),
 				'access_change',
 				'Bucket responsibility grant denied.'
@@ -66,7 +66,7 @@ class AIMS_Bucket_Access_Service {
 		return $access_id;
 	}
 
-	public function revoke_bucket_responsibility( int $bucket_id, int $user_id, int $actor_user_id = 0 ): bool {
+	public function revoke_bucket_responsibility( int $bucket_id, int $user_id, int $actor_user_id ): bool {
 		$user_id = $this->normalize_actor_user_id( $user_id );
 		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 

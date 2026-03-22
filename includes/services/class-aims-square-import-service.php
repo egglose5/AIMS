@@ -28,6 +28,7 @@ class AIMS_Square_Import_Service {
 	}
 
 	public function ingest_order_payload( array $payload ): array {
+		// Queue first, analyze second: this keeps raw Square intake replayable even if later enrichment fails.
 		$queue_record = $this->normalize_queue_record( $payload );
 		$queue_id     = $this->queue->save( $queue_record );
 		$this->queue->mark_pending( $queue_id );
@@ -66,6 +67,7 @@ class AIMS_Square_Import_Service {
 			$charges = $payload['service_charges'];
 		}
 
+		// Vendors apply one canonical service charge name, and AIMS treats that name as the shipping/backorder signal.
 		$aims_shipping_marker_name = $this->get_aims_shipping_marker_name();
 
 		foreach ( $charges as $charge ) {
@@ -100,6 +102,7 @@ class AIMS_Square_Import_Service {
 		$has_address       = $this->has_full_shipping_address( $address_data );
 		$has_required_data  = $has_customer && $has_address;
 
+		// The shipping marker turns customer/contact data from optional metadata into a hard intake requirement.
 		return array(
 			'valid'               => ! $requires_shipping || $has_required_data,
 			'has_customer'        => $has_customer,
@@ -134,6 +137,7 @@ class AIMS_Square_Import_Service {
 		$event_id  = (int) ( $payload['event_id'] ?? 0 );
 		$order_totals = $this->extract_order_totals( $payload, $analysis['shipping_marker'] );
 
+		// Each Square line item becomes its own sale row so fulfillment and cost rollups stay line-accurate.
 		foreach ( $payload['line_items'] as $line_item ) {
 			$line_amounts = $this->extract_line_item_amounts( $line_item );
 			$sale_payload = $this->build_sale_payload(
@@ -215,6 +219,8 @@ class AIMS_Square_Import_Service {
 			return array();
 		}
 
+		// Warehouse-marker sales reserve warehouse fulfillment; all other rows stay event-stock projections.
+		// That lets AIMS split operational intake from the later stock movement without double-applying inventory.
 		return array(
 			array(
 				'product_id'         => (int) ( $payload['woo_product_id'] ?? 0 ),

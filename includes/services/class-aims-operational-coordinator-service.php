@@ -23,6 +23,7 @@ class AIMS_Operational_Coordinator_Service {
 	}
 
 	public function process_square_payload( array $payload ): array {
+		// This is the orchestration seam: import, assign, route, then recalculate in one controlled path.
 		$intake = $this->square_import->persist_queue_to_sales_flow( $payload );
 		$analysis = ! empty( $intake['analysis'] ) && is_array( $intake['analysis'] ) ? $intake['analysis'] : array();
 		$sale_ids = ! empty( $intake['sale_ids'] ) && is_array( $intake['sale_ids'] ) ? $intake['sale_ids'] : array();
@@ -116,6 +117,7 @@ class AIMS_Operational_Coordinator_Service {
 		$assignment_model = $event_id > 0 ? $this->event_automation->get_assignment_model_for_event( $event_id ) : array();
 		$participation_policy = ! empty( $assignment_model['policy'] ) ? (string) $assignment_model['policy'] : 'request_first';
 
+		// The routing context is intentionally explicit so shipping logic does not guess from ambient state.
 		return array(
 			'shipping_marker_present'  => ! empty( $shipping_marker['has_aims_shipping_marker'] ),
 			'inventory_shortfall'      => ! empty( $sale['fulfillment_status'] ) && 'backordered' === $sale['fulfillment_status'],

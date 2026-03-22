@@ -61,6 +61,7 @@ class AIMS_Shipping_Queue_Data_Provider {
 		$customer_table = $this->customer_repository->get_table_name();
 		$address_table  = $wpdb->prefix . 'aims_customer_addresses';
 		$alloc_table    = $wpdb->prefix . 'aims_sale_fulfillment_allocations';
+		// Scope is resolved once here so the queue matches the same visibility rules as the underlying service layer.
 		$scope          = $this->scope_resolver->get_accessible_scope_ids( (int) get_current_user_id() );
 		$where_parts    = array(
 			"s.fulfillment_status IN ('needs_shipping', 'needs_shipping_info', 'backordered')",
@@ -198,7 +199,7 @@ class AIMS_Shipping_Queue_Data_Provider {
 			'status'              => $status,
 			'queue_type'          => $this->get_queue_type_label( $status ),
 			'scope_label'         => $this->build_scope_label( $row ),
-			'access_label'        => $this->scope_resolver->get_access_mode_label(),
+			'access_label'        => $this->scope_resolver->get_access_mode_label( (int) get_current_user_id() ),
 			'source_label'        => $source_label,
 			'fulfillment_hint'    => $this->build_fulfillment_hint( $status, $row ),
 			'created_at'          => ! empty( $row['created_at'] ) ? (string) $row['created_at'] : current_time( 'mysql' ),
