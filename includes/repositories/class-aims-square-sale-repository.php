@@ -117,6 +117,20 @@ class AIMS_Square_Sale_Repository {
 		);
 	}
 
+	public function find_by_id( int $sale_id ): ?array {
+		global $wpdb;
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE id = %d',
+				$sale_id
+			),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $row : null;
+	}
+
 	public function get_net_total_for_event_vendor( int $event_id, int $vendor_id ): float {
 		global $wpdb;
 

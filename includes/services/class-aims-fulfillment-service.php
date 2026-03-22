@@ -43,17 +43,21 @@ class AIMS_Fulfillment_Service {
 	): array {
 		if ( null === $this->shipping_workflow ) {
 			return array(
-				'status'        => AIMS_Square_Sale_Repository::STATUS_PENDING,
-				'allocation_id'  => 0,
+				'sale_id'           => (int) ( $sale['id'] ?? $sale['square_sale_id'] ?? 0 ),
+				'status'            => AIMS_Square_Sale_Repository::STATUS_PENDING,
+				'allocation_id'     => 0,
+				'allocation_type'   => AIMS_Sale_Fulfillment_Allocation_Repository::ALLOCATION_EVENT_STOCK,
+				'allocation_status' => AIMS_Sale_Fulfillment_Allocation_Repository::STATUS_PENDING,
+				'allocation_payload' => array(),
 			);
 		}
 
-		$status = $this->shipping_workflow->determine_status( $sale, $customer, $shipping_address, $context );
-		$allocation_id = $this->shipping_workflow->create_allocation_for_sale( $sale, $status, $context );
-
-		return array(
-			'status'        => $status,
-			'allocation_id'  => $allocation_id,
+		return $this->shipping_workflow->process_sale_workflow(
+			(int) ( $sale['id'] ?? $sale['square_sale_id'] ?? 0 ),
+			$sale,
+			$customer,
+			$shipping_address,
+			$context
 		);
 	}
 }

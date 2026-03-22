@@ -34,15 +34,31 @@ class AIMS_Event_Automation_Service {
 	}
 
 	public function assign_sale_to_matching_event( array $sale ): ?array {
+		if ( ! empty( $sale['event_id'] ) && (int) $sale['event_id'] > 0 ) {
+			return null;
+		}
+
 		$matched_event = $this->match_sale_to_event( $sale );
 
 		if ( empty( $matched_event['id'] ) || empty( $sale['id'] ) ) {
 			return null;
 		}
 
-		$this->apply_sale_assignment( $sale, $matched_event );
+		if ( ! $this->apply_sale_assignment( $sale, $matched_event, true ) ) {
+			return null;
+		}
 
 		return $matched_event;
+	}
+
+	public function assign_sale_by_id( int $sale_id ): ?array {
+		$sale = $this->sales->find_by_id( $sale_id );
+
+		if ( empty( $sale ) ) {
+			return null;
+		}
+
+		return $this->assign_sale_to_matching_event( $sale );
 	}
 
 	public function recalculate_for_event( int $event_id ): array {
@@ -58,19 +74,36 @@ class AIMS_Event_Automation_Service {
 
 		foreach ( $sales as $sale ) {
 			$results['processed']++;
-			$matched_event = $this->assign_sale_to_matching_event( $sale );
+
+			if ( ! empty( $sale['event_id'] ) && (int) $sale['event_id'] > 0 ) {
+				continue;
+			}
+
+			$matched_event = $this->match_sale_to_event( $sale );
 
 			if ( empty( $matched_event['id'] ) ) {
 				continue;
 			}
 
-			$results['assigned']++;
-			$results['events'][ (int) $matched_event['id'] ] = true;
+			if ( $this->apply_sale_assignment( $sale, $matched_event, false ) ) {
+				$results['assigned']++;
+				$results['events'][ (int) $matched_event['id'] ] = true;
+			}
+		}
+
+		foreach ( array_keys( $results['events'] ) as $event_id ) {
+			$this->recalculate_after_assignment( (int) $event_id );
 		}
 
 		$results['events'] = array_keys( $results['events'] );
 
 		return $results;
+	}
+
+	public function assign_unassigned_sales_for_location_date( string $square_location_id, string $sold_at ): array {
+		$sales = $this->sales->get_unassigned_sales_by_location_and_date( $square_location_id, $sold_at );
+
+		return $this->process_unassigned_sales_batch( $sales );
 	}
 
 	public function reconcile_sales_for_event_window( string $square_location_id, string $sold_at ): int {
@@ -81,8 +114,7 @@ class AIMS_Event_Automation_Service {
 		}
 
 		$sales = $this->sales->get_unassigned_sales_by_location_and_date( $square_location_id, $sold_at );
-		$assignment = $this->assignments->get_primary_for_event( (int) $matched_event['id'] );
-		$vendor_id  = ! empty( $assignment['vendor_id'] ) ? (int) $assignment['vendor_id'] : 0;
+		$vendor_id  = $this->assignments->get_vendor_id_for_event( (int) $matched_event['id'] );
 		$assigned_count = 0;
 
 		foreach ( $sales as $sale ) {
@@ -96,7 +128,7 @@ class AIMS_Event_Automation_Service {
 		}
 
 		if ( $assigned_count > 0 ) {
-			$this->recalculate_for_event( (int) $matched_event['id'] );
+			$this->recalculate_after_assignment( (int) $matched_event['id'] );
 		}
 
 		return $assigned_count;
@@ -106,9 +138,8 @@ class AIMS_Event_Automation_Service {
 		return $this->financials->recalculate_event( $event_id );
 	}
 
-	private function apply_sale_assignment( array $sale, array $matched_event ): bool {
-		$assignment = $this->assignments->get_primary_for_event( (int) $matched_event['id'] );
-		$vendor_id  = ! empty( $assignment['vendor_id'] ) ? (int) $assignment['vendor_id'] : 0;
+	private function apply_sale_assignment( array $sale, array $matched_event, bool $recalculate = true ): bool {
+		$vendor_id  = $this->assignments->get_vendor_id_for_event( (int) $matched_event['id'] );
 
 		$assigned = $this->apply_assignment_to_sale(
 			(int) $sale['id'],
@@ -116,7 +147,7 @@ class AIMS_Event_Automation_Service {
 			$vendor_id
 		);
 
-		if ( $assigned ) {
+		if ( $assigned && $recalculate ) {
 			$this->recalculate_after_assignment( (int) $matched_event['id'] );
 		}
 
