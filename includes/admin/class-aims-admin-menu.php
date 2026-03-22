@@ -47,6 +47,15 @@ class AIMS_Admin_Menu {
 
 		add_submenu_page(
 			self::MENU_SLUG,
+			'Supervisor Inventory',
+			'Supervisor Inventory',
+			AIMS_Capabilities::CAP_MANAGE_VENDORS,
+			'aims-supervisor-inventory',
+			array( $this, 'render_supervisor_inventory' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
 			'Reports',
 			'Reports',
 			AIMS_Capabilities::CAP_VIEW_REPORTS,
@@ -69,6 +78,11 @@ class AIMS_Admin_Menu {
 
 	public function render_needs_shipping_queue(): void {
 		$page = new AIMS_Shipping_Queue_Page( new AIMS_Shipping_Queue_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_supervisor_inventory(): void {
+		$page = new AIMS_Supervisor_Inventory_Page( new AIMS_Supervisor_Inventory_Data_Provider() );
 		$page->render();
 	}
 

@@ -75,6 +75,10 @@ class AIMS_Square_Import_Queue_Repository {
 	public function update_status( int $queue_id, string $status, ?string $imported_at = null ): bool {
 		global $wpdb;
 
+		if ( $queue_id <= 0 ) {
+			return false;
+		}
+
 		$updated = $wpdb->update(
 			$this->get_table_name(),
 			array(
@@ -92,6 +96,10 @@ class AIMS_Square_Import_Queue_Repository {
 
 	public function mark_processed( int $queue_id, ?string $imported_at = null ): bool {
 		return $this->update_status( $queue_id, self::STATUS_PROCESSED, $imported_at );
+	}
+
+	public function mark_pending( int $queue_id ): bool {
+		return $this->update_status( $queue_id, self::STATUS_PENDING, null );
 	}
 
 	public function mark_error( int $queue_id ): bool {

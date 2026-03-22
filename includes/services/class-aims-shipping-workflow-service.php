@@ -57,7 +57,7 @@ class AIMS_Shipping_Workflow_Service {
 		}
 
 		if ( ! empty( $context['shipping_marker_present'] ) ) {
-			if ( $this->has_shipping_contact_info( $customer, $shipping_address ) ) {
+			if ( $this->has_required_customer_data( $customer ) && $this->has_full_shipping_address( $shipping_address ) ) {
 				return AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING;
 			}
 
@@ -156,6 +156,7 @@ class AIMS_Shipping_Workflow_Service {
 		array $context = array()
 	): array {
 		$status = $this->normalize_status( $status );
+		$bucket_context = $this->normalize_bucket_context( $sale, $context );
 
 		return array(
 			'square_sale_id'     => (int) ( $sale['id'] ?? $sale['square_sale_id'] ?? 0 ),
@@ -163,16 +164,14 @@ class AIMS_Shipping_Workflow_Service {
 			'product_id'         => (int) ( $sale['woo_product_id'] ?? $sale['product_id'] ?? 0 ),
 			'vendor_id'          => (int) ( $sale['vendor_id'] ?? 0 ),
 			'event_id'           => (int) ( $sale['event_id'] ?? 0 ),
-			'source_bucket_code' => sanitize_text_field( $context['source_bucket_code'] ?? '' ),
+			'source_bucket_id'   => $bucket_context['id'],
+			'source_bucket_code' => $bucket_context['bucket_code'],
+			'source_bucket_name' => $bucket_context['bucket_name'],
 			'allocation_type'    => $this->derive_allocation_type( $status ),
 			'allocation_status'  => $this->derive_allocation_status( $status ),
 			'quantity'           => (float) ( $sale['quantity'] ?? 0 ),
 			'notes'              => $context['notes'] ?? '',
 		);
-	}
-
-	private function has_shipping_contact_info( array $customer, array $shipping_address ): bool {
-		return $this->has_required_customer_data( $customer ) && $this->has_full_shipping_address( $shipping_address );
 	}
 
 	private function is_routed_status( string $status ): bool {
@@ -228,6 +227,45 @@ class AIMS_Shipping_Workflow_Service {
 		return '' !== trim( (string) ( $shipping_address['address_line_1'] ?? '' ) )
 			&& '' !== trim( (string) ( $shipping_address['city'] ?? '' ) )
 			&& '' !== trim( (string) ( $shipping_address['state_region'] ?? '' ) )
-			&& '' !== trim( (string) ( $shipping_address['postal_code'] ?? '' ) );
+			&& '' !== trim( (string) ( $shipping_address['postal_code'] ?? '' ) )
+			&& '' !== trim( (string) ( $shipping_address['country_code'] ?? '' ) );
+	}
+
+	private function normalize_bucket_context( array $sale, array $context ): array {
+		$bucket = array();
+
+		foreach ( array( 'bucket', 'inventory_bucket', 'source_bucket' ) as $key ) {
+			if ( ! empty( $context[ $key ] ) ) {
+				$bucket = $this->cast_bucket_context( $context[ $key ] );
+				break;
+			}
+
+			if ( ! empty( $sale[ $key ] ) ) {
+				$bucket = $this->cast_bucket_context( $sale[ $key ] );
+				break;
+			}
+		}
+
+		$bucket_id = (int) ( $context['source_bucket_id'] ?? $context['bucket_id'] ?? $sale['source_bucket_id'] ?? $sale['bucket_id'] ?? $bucket['id'] ?? 0 );
+		$bucket_code = sanitize_text_field( $context['source_bucket_code'] ?? $context['bucket_code'] ?? $sale['source_bucket_code'] ?? $sale['bucket_code'] ?? $bucket['bucket_code'] ?? '' );
+		$bucket_name = sanitize_text_field( $context['source_bucket_name'] ?? $context['bucket_name'] ?? $sale['source_bucket_name'] ?? $sale['bucket_name'] ?? $bucket['bucket_name'] ?? $bucket_code );
+
+		return array(
+			'id'          => $bucket_id,
+			'bucket_code' => $bucket_code,
+			'bucket_name' => $bucket_name,
+		);
+	}
+
+	private function cast_bucket_context( $bucket ): array {
+		if ( is_array( $bucket ) ) {
+			return $bucket;
+		}
+
+		if ( is_object( $bucket ) ) {
+			return get_object_vars( $bucket );
+		}
+
+		return array();
 	}
 }

@@ -30,23 +30,26 @@ class AIMS_Square_Import_Service {
 	public function ingest_order_payload( array $payload ): array {
 		$queue_record = $this->normalize_queue_record( $payload );
 		$queue_id     = $this->queue->save( $queue_record );
+		$this->queue->mark_pending( $queue_id );
 		$analysis     = $this->analyze_order_payload( $payload );
 
 		return array(
 			'queue_id'      => $queue_id,
 			'analysis'      => $analysis,
-			'intake_result'  => $this->build_intake_result( $queue_id, $analysis, array(), $this->queue->normalize_status( AIMS_Square_Import_Queue_Repository::STATUS_PENDING ) ),
+			'intake_result' => $this->build_intake_result( $queue_id, $analysis, array(), AIMS_Square_Import_Queue_Repository::STATUS_PENDING ),
 		);
 	}
 
 	public function analyze_order_payload( array $payload ): array {
+		$order_data     = $this->extract_order_data( $payload );
 		$marker         = $this->detect_canonical_shipping_marker( $payload );
 		$customer_data  = $this->extract_customer_data( $payload );
 		$address_data   = $this->extract_address_data( $payload );
 		$validation     = $this->validate_customer_address_presence( $customer_data, $address_data, $marker );
-		$money_context   = $this->extract_money_context( $payload, $marker );
+		$money_context  = $this->extract_money_context( $payload, $marker );
 
 		return array(
+			'order_data'        => $order_data,
 			'shipping_marker'   => $marker,
 			'customer_data'     => $customer_data,
 			'address_data'      => $address_data,
@@ -110,21 +113,11 @@ class AIMS_Square_Import_Service {
 	public function persist_queue_to_sales_flow( array $payload ): array {
 		$analysis  = $this->analyze_order_payload( $payload );
 		$queue_id  = $this->queue->save( $this->normalize_queue_record( $payload ) );
+		$this->queue->mark_pending( $queue_id );
 		$sale_ids  = array();
 		$has_errors = false;
 
 		if ( empty( $payload['line_items'] ) || ! is_array( $payload['line_items'] ) ) {
-			$this->queue->mark_error( $queue_id );
-
-			return array(
-				'queue_id'      => $queue_id,
-				'sale_ids'      => $sale_ids,
-				'analysis'      => $analysis,
-				'intake_result' => $this->build_intake_result( $queue_id, $analysis, $sale_ids, AIMS_Square_Import_Queue_Repository::STATUS_ERROR ),
-			);
-		}
-
-		if ( ! empty( $analysis['validation']['requires_shipping'] ) && empty( $analysis['validation']['valid'] ) ) {
 			$this->queue->mark_error( $queue_id );
 
 			return array(
@@ -439,21 +432,34 @@ class AIMS_Square_Import_Service {
 	}
 
 	private function build_intake_result( int $queue_id, array $analysis, array $sale_ids, string $queue_status ): array {
+		$queue_status = $this->queue->normalize_status( $queue_status );
+		$financials = $analysis['money_context'] ?? array(
+			'gross_amount'   => 0.0,
+			'net_amount'     => 0.0,
+			'discount_amount'=> 0.0,
+			'shipping_amount'=> 0.0,
+			'tip_amount'     => 0.0,
+		);
+
 		return array(
-			'queue'             => array(
+			'status'                => $queue_status,
+			'queue'                 => array(
 				'id'     => $queue_id,
-				'status' => $this->queue->normalize_status( $queue_status ),
+				'status' => $queue_status,
 			),
-			'sales'             => $this->build_sale_result_rows( $sale_ids ),
-			'sale_count'        => count( $sale_ids ),
-			'requires_shipping' => ! empty( $analysis['validation']['requires_shipping'] ),
-			'needs_shipping_info' => ! empty( $analysis['validation']['needs_shipping_info'] ),
-			'shipping_marker'   => $analysis['shipping_marker'],
-			'customer'          => $analysis['customer_data'],
-			'address'           => $analysis['address_data'],
-			'validation'        => $analysis['validation'],
-			'money_context'     => $analysis['money_context'],
-			'fulfillment_inputs'=> $analysis['fulfillment_inputs'],
+			'order'                 => $analysis['order_data'] ?? array(),
+			'shipping_marker'       => $analysis['shipping_marker'],
+			'customer'              => $analysis['customer_data'],
+			'address'               => $analysis['address_data'],
+			'validation'            => $analysis['validation'],
+			'financials'            => $financials,
+			'money_context'         => $financials,
+			'fulfillment_status'    => $this->determine_fulfillment_status( $analysis ),
+			'sales'                 => $this->build_sale_result_rows( $sale_ids ),
+			'sale_count'            => count( $sale_ids ),
+			'requires_shipping'     => ! empty( $analysis['validation']['requires_shipping'] ),
+			'needs_shipping_info'   => ! empty( $analysis['validation']['needs_shipping_info'] ),
+			'fulfillment_inputs'    => $analysis['fulfillment_inputs'],
 		);
 	}
 
@@ -507,6 +513,16 @@ class AIMS_Square_Import_Service {
 			'email_address'      => (string) ( $customer['email_address'] ?? '' ),
 			'phone_number'       => (string) ( $customer['phone_number'] ?? '' ),
 			'notes'              => '',
+		);
+	}
+
+	private function extract_order_data( array $payload ): array {
+		return array(
+			'square_order_id'    => (string) ( $payload['id'] ?? '' ),
+			'square_location_id' => (string) ( $payload['location_id'] ?? '' ),
+			'created_at'         => (string) ( $payload['created_at'] ?? '' ),
+			'updated_at'         => (string) ( $payload['updated_at'] ?? '' ),
+			'source'             => 'square',
 		);
 	}
 
@@ -596,6 +612,7 @@ class AIMS_Square_Import_Service {
 		return '' !== trim( (string) ( $address_data['address_line_1'] ?? '' ) )
 			&& '' !== trim( (string) ( $address_data['city'] ?? '' ) )
 			&& '' !== trim( (string) ( $address_data['state_region'] ?? '' ) )
-			&& '' !== trim( (string) ( $address_data['postal_code'] ?? '' ) );
+			&& '' !== trim( (string) ( $address_data['postal_code'] ?? '' ) )
+			&& '' !== trim( (string) ( $address_data['country_code'] ?? '' ) );
 	}
 }

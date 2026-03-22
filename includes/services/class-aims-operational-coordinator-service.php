@@ -27,8 +27,8 @@ class AIMS_Operational_Coordinator_Service {
 		$analysis = ! empty( $intake['analysis'] ) && is_array( $intake['analysis'] ) ? $intake['analysis'] : array();
 		$sale_ids = ! empty( $intake['sale_ids'] ) && is_array( $intake['sale_ids'] ) ? $intake['sale_ids'] : array();
 
-		$assignment_results = array();
-		$routing_results = array();
+		$assignment_results    = array();
+		$routing_results       = array();
 		$recalculation_results = array();
 
 		foreach ( $sale_ids as $sale_id ) {
@@ -37,11 +37,14 @@ class AIMS_Operational_Coordinator_Service {
 				continue;
 			}
 
-			$assignment_result = $this->event_automation->assign_sale_by_id( $sale_id );
-			$assignment_results[] = array(
-				'sale_id' => $sale_id,
-				'matched_event_id' => ! empty( $assignment_result['id'] ) ? (int) $assignment_result['id'] : 0,
-			);
+			$assignment_results[] = $this->event_automation->assign_sale_by_id( $sale_id );
+		}
+
+		foreach ( $sale_ids as $sale_id ) {
+			$sale_id = (int) $sale_id;
+			if ( $sale_id <= 0 ) {
+				continue;
+			}
 
 			$sale = $this->sales->find_by_id( $sale_id );
 			if ( empty( $sale ) ) {
@@ -50,7 +53,7 @@ class AIMS_Operational_Coordinator_Service {
 
 			$customer = ! empty( $analysis['customer_data'] ) && is_array( $analysis['customer_data'] ) ? $analysis['customer_data'] : array();
 			$shipping_address = ! empty( $analysis['address_data'] ) && is_array( $analysis['address_data'] ) ? $analysis['address_data'] : array();
-			$context = $this->build_shipping_context( $analysis, $sale );
+			$context = $this->build_operational_context( $analysis, $sale );
 
 			$routing_results[] = $this->shipping_workflow->process_sale_by_id(
 				$sale_id,
@@ -65,10 +68,10 @@ class AIMS_Operational_Coordinator_Service {
 		}
 
 		return array(
-			'intake'                 => $intake,
-			'assignment_results'     => $assignment_results,
-			'routing_results'        => $routing_results,
-			'recalculation_results'  => array_values( $recalculation_results ),
+			'intake'                => $intake,
+			'assignment_results'    => $assignment_results,
+			'routing_results'       => $routing_results,
+			'recalculation_results' => array_values( $recalculation_results ),
 		);
 	}
 
@@ -84,7 +87,7 @@ class AIMS_Operational_Coordinator_Service {
 		$assignment = $this->event_automation->assign_sale_by_id( $sale_id );
 		$customer = array();
 		$shipping_address = array();
-		$context = $this->build_shipping_context( array(), $sale );
+		$context = $this->build_operational_context( array(), $sale );
 
 		return array(
 			'sale_id'            => $sale_id,
@@ -98,17 +101,20 @@ class AIMS_Operational_Coordinator_Service {
 		$assigned_sales = $this->sales->get_unassigned_sales_by_location_and_date( $square_location_id, $sold_at );
 
 		return array(
-			'event_results'   => $results,
-			'sales_scanned'   => count( $assigned_sales ),
-			'location_id'     => sanitize_text_field( $square_location_id ),
-			'sold_at'         => sanitize_text_field( $sold_at ),
+			'event_results' => $results,
+			'sales_scanned'  => count( $assigned_sales ),
+			'location_id'    => sanitize_text_field( $square_location_id ),
+			'sold_at'        => sanitize_text_field( $sold_at ),
 		);
 	}
 
-	private function build_shipping_context( array $analysis, array $sale ): array {
+	private function build_operational_context( array $analysis, array $sale ): array {
 		$shipping_marker = ! empty( $analysis['shipping_marker'] ) && is_array( $analysis['shipping_marker'] )
 			? $analysis['shipping_marker']
 			: array();
+		$event_id = ! empty( $sale['event_id'] ) ? (int) $sale['event_id'] : 0;
+		$assignment_model = $event_id > 0 ? $this->event_automation->get_assignment_model_for_event( $event_id ) : array();
+		$participation_policy = ! empty( $assignment_model['policy'] ) ? (string) $assignment_model['policy'] : 'request_first';
 
 		return array(
 			'shipping_marker_present'  => ! empty( $shipping_marker['has_aims_shipping_marker'] ),
@@ -116,7 +122,12 @@ class AIMS_Operational_Coordinator_Service {
 			'warehouse_fulfillment_required' => ! empty( $shipping_marker['has_aims_shipping_marker'] ),
 			'shipped'                  => ! empty( $sale['fulfillment_status'] ) && 'shipped' === $sale['fulfillment_status'],
 			'source_bucket_code'       => ! empty( $shipping_marker['has_aims_shipping_marker'] ) ? 'warehouse' : 'event',
-			'notes'                    => ! empty( $shipping_marker['has_aims_shipping_marker'] ) ? 'Orchestrated from shipping marker.' : 'Orchestrated from event stock.',
+			'bucket_first_inventory'   => true,
+			'event_participation_policy' => $participation_policy,
+			'event_participation_state'  => $participation_policy,
+			'notes'                    => ! empty( $shipping_marker['has_aims_shipping_marker'] )
+				? 'Orchestrated from bucket-first warehouse inventory.'
+				: 'Orchestrated from bucket-first event inventory.',
 		);
 	}
 }

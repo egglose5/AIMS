@@ -11,6 +11,7 @@ class AIMS_Schema {
 		return array(
 			$wpdb->prefix . 'aims_vendors',
 			$wpdb->prefix . 'aims_vendor_user_access',
+			$wpdb->prefix . 'aims_bucket_user_access',
 			$wpdb->prefix . 'aims_customers',
 			$wpdb->prefix . 'aims_customer_addresses',
 			$wpdb->prefix . 'aims_events',
@@ -34,6 +35,7 @@ class AIMS_Schema {
 		$charset_collate         = $wpdb->get_charset_collate();
 		$vendors_table           = $wpdb->prefix . 'aims_vendors';
 		$vendor_access_table     = $wpdb->prefix . 'aims_vendor_user_access';
+		$bucket_access_table     = $wpdb->prefix . 'aims_bucket_user_access';
 		$customers_table         = $wpdb->prefix . 'aims_customers';
 		$customer_addresses_table = $wpdb->prefix . 'aims_customer_addresses';
 		$events_table            = $wpdb->prefix . 'aims_events';
@@ -88,6 +90,24 @@ class AIMS_Schema {
 				KEY user_id (user_id),
 				KEY access_role (access_role)
 			) {$charset_collate};",
+			"CREATE TABLE {$bucket_access_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				bucket_id bigint(20) unsigned NOT NULL,
+				user_id bigint(20) unsigned NOT NULL,
+				access_role varchar(50) NOT NULL DEFAULT 'supervisor',
+				can_view tinyint(1) NOT NULL DEFAULT 1,
+				can_adjust_inventory tinyint(1) NOT NULL DEFAULT 1,
+				can_transfer tinyint(1) NOT NULL DEFAULT 0,
+				notes longtext NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY bucket_user (bucket_id, user_id),
+				KEY bucket_id (bucket_id),
+				KEY user_id (user_id),
+				KEY access_role (access_role),
+				KEY can_adjust_inventory (can_adjust_inventory)
+			) {$charset_collate};",
 			"CREATE TABLE {$customers_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 				square_customer_id varchar(191) NOT NULL DEFAULT '',
@@ -129,10 +149,14 @@ class AIMS_Schema {
 				event_code varchar(64) NOT NULL DEFAULT '',
 				event_name varchar(255) NOT NULL,
 				status varchar(32) NOT NULL DEFAULT 'draft',
+				participation_status varchar(32) NOT NULL DEFAULT 'draft',
 				start_date date NOT NULL,
 				end_date date NOT NULL,
 				location_name varchar(191) NOT NULL DEFAULT '',
 				square_location_id varchar(191) NOT NULL DEFAULT '',
+				vendor_capacity int(11) unsigned NOT NULL DEFAULT 0,
+				vendor_request_limit int(11) unsigned NOT NULL DEFAULT 0,
+				vendor_request_count int(11) unsigned NOT NULL DEFAULT 0,
 				gross_sales_total decimal(20,2) NOT NULL DEFAULT 0.00,
 				discount_total decimal(20,2) NOT NULL DEFAULT 0.00,
 				tip_total decimal(20,2) NOT NULL DEFAULT 0.00,
@@ -146,9 +170,13 @@ class AIMS_Schema {
 				PRIMARY KEY  (id),
 				UNIQUE KEY event_code (event_code),
 				KEY status (status),
+				KEY participation_status (participation_status),
 				KEY start_date (start_date),
 				KEY end_date (end_date),
-				KEY square_location_id (square_location_id)
+				KEY square_location_id (square_location_id),
+				KEY vendor_capacity (vendor_capacity),
+				KEY vendor_request_limit (vendor_request_limit),
+				KEY vendor_request_count (vendor_request_count)
 			) {$charset_collate};",
 			"CREATE TABLE {$event_expenses_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -170,7 +198,8 @@ class AIMS_Schema {
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 				event_id bigint(20) unsigned NOT NULL,
 				vendor_id bigint(20) unsigned NOT NULL,
-				assignment_status varchar(32) NOT NULL DEFAULT 'assigned',
+				assignment_status varchar(32) NOT NULL DEFAULT 'requested',
+				request_sequence int(11) unsigned DEFAULT NULL,
 				commission_rate decimal(7,4) NOT NULL DEFAULT 0.0000,
 				fulfillment_status varchar(32) NOT NULL DEFAULT 'pending',
 				notes longtext NULL,
@@ -178,8 +207,10 @@ class AIMS_Schema {
 				updated_at datetime NOT NULL,
 				PRIMARY KEY  (id),
 				UNIQUE KEY event_vendor (event_id, vendor_id),
+				UNIQUE KEY event_request_sequence (event_id, request_sequence),
 				KEY vendor_id (vendor_id),
 				KEY assignment_status (assignment_status),
+				KEY request_sequence (request_sequence),
 				KEY fulfillment_status (fulfillment_status)
 			) {$charset_collate};",
 			"CREATE TABLE {$stitch_jobs_table} (
@@ -203,16 +234,27 @@ class AIMS_Schema {
 			) {$charset_collate};",
 			"CREATE TABLE {$inventory_buckets_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				bucket_key varchar(191) NOT NULL DEFAULT '',
+				bucket_type varchar(32) NOT NULL DEFAULT 'warehouse',
+				bucket_label varchar(191) NOT NULL DEFAULT '',
+				owner_entity_type varchar(32) NOT NULL DEFAULT '',
+				owner_entity_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				square_location_id varchar(191) NOT NULL DEFAULT '',
 				vendor_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				product_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				bucket_code varchar(191) NOT NULL DEFAULT '',
-				bucket_name varchar(191) NOT NULL DEFAULT '',
 				quantity decimal(20,4) NOT NULL DEFAULT 0.0000,
 				reserved_quantity decimal(20,4) NOT NULL DEFAULT 0.0000,
+				notes longtext NULL,
 				created_at datetime NOT NULL,
 				updated_at datetime NOT NULL,
 				PRIMARY KEY  (id),
-				UNIQUE KEY vendor_product_bucket (vendor_id, product_id, bucket_code),
+				UNIQUE KEY bucket_key (bucket_key),
+				KEY bucket_key_type (bucket_key, bucket_type),
+				KEY bucket_type (bucket_type),
+				KEY owner_entity_type (owner_entity_type),
+				KEY owner_entity_id (owner_entity_id),
+				KEY square_location_id (square_location_id),
 				KEY vendor_id (vendor_id),
 				KEY product_id (product_id),
 				KEY bucket_code (bucket_code)
@@ -222,6 +264,9 @@ class AIMS_Schema {
 				movement_uuid varchar(36) NOT NULL DEFAULT '',
 				reference_type varchar(50) NOT NULL DEFAULT '',
 				reference_id varchar(191) NOT NULL DEFAULT '',
+				bucket_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				bucket_key varchar(191) NOT NULL DEFAULT '',
+				bucket_type varchar(32) NOT NULL DEFAULT 'warehouse',
 				vendor_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				event_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				stitch_job_id bigint(20) unsigned NOT NULL DEFAULT 0,
@@ -234,7 +279,11 @@ class AIMS_Schema {
 				created_at datetime NOT NULL,
 				PRIMARY KEY  (id),
 				UNIQUE KEY movement_uuid (movement_uuid),
-				UNIQUE KEY apply_once_ref (reference_type, reference_id, product_id, bucket_code, movement_type),
+				UNIQUE KEY apply_once_ref (reference_type, reference_id, product_id, bucket_id, bucket_key, bucket_type, movement_type),
+				KEY bucket_id (bucket_id),
+				KEY bucket_key_type (bucket_key, bucket_type),
+				KEY bucket_key (bucket_key),
+				KEY bucket_type (bucket_type),
 				KEY vendor_id (vendor_id),
 				KEY event_id (event_id),
 				KEY stitch_job_id (stitch_job_id),

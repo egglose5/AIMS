@@ -36,6 +36,8 @@ class AIMS_Shipping_Queue_Page {
 		echo '<th>Order</th>';
 		echo '<th>Customer</th>';
 		echo '<th>Event</th>';
+		echo '<th>Queue Type</th>';
+		echo '<th>Source</th>';
 		echo '<th>Shipping</th>';
 		echo '<th>Status</th>';
 		echo '<th>Created</th>';
@@ -47,6 +49,8 @@ class AIMS_Shipping_Queue_Page {
 			echo '<td>' . esc_html( $row['order_ref'] ) . '</td>';
 			echo '<td>' . esc_html( $row['customer_name'] ) . '</td>';
 			echo '<td>' . esc_html( $row['event_name'] ) . '</td>';
+			echo '<td>' . esc_html( $row['queue_type'] ) . '</td>';
+			echo '<td>' . esc_html( $row['source_label'] ) . '</td>';
 			echo '<td>' . esc_html( $row['shipping_label'] ) . '</td>';
 			echo '<td>' . esc_html( $row['status'] ) . '</td>';
 			echo '<td>' . esc_html( $row['created_at'] ) . '</td>';
