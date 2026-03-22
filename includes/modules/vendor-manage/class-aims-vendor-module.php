@@ -1,0 +1,48 @@
+<?php
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class AIMS_Vendor_Module {
+	private $vendor_service;
+
+	public function __construct( AIMS_Vendor_Service $vendor_service ) {
+		$this->vendor_service = $vendor_service;
+	}
+
+	public function register(): void {
+		add_action( 'admin_init', array( $this, 'register_foundation_notices' ) );
+	}
+
+	public function register_foundation_notices(): void {
+		if ( ! is_admin() ) {
+			return;
+		}
+
+		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS ) ) {
+			return;
+		}
+
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+		if ( 'aims-vendors' !== $page ) {
+			return;
+		}
+
+		add_action( 'admin_notices', array( $this, 'render_foundation_notice' ) );
+	}
+
+	public function render_foundation_notice(): void {
+		$vendors = $this->vendor_service->list_vendors();
+
+		echo '<div class="notice notice-info"><p>';
+		echo esc_html(
+			sprintf(
+				'Vendor Manage foundation is active. %d vendor records currently exist in AIMS tables. Native vendor access control, bucket assignment UI, and Square-location management are the next implementation targets.',
+				count( $vendors )
+			)
+		);
+		echo '</p></div>';
+	}
+}
+
