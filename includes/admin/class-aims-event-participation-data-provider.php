@@ -9,6 +9,8 @@ class AIMS_Event_Participation_Data_Provider {
 	private $events;
 	private $assignments;
 	private $vendors;
+	private $vendor_access;
+	private $scope_resolver;
 
 	public function __construct(
 		AIMS_Event_Automation_Service $event_automation = null,
@@ -16,6 +18,13 @@ class AIMS_Event_Participation_Data_Provider {
 		AIMS_Vendor_Event_Assignment_Repository $assignments = null,
 		AIMS_Vendor_Repository $vendors = null
 	) {
+		$audit = new AIMS_Audit_Service();
+		$vendor_repository = $vendors ?: new AIMS_Vendor_Repository();
+		$this->vendor_access = new AIMS_Vendor_Access_Service(
+			new AIMS_Vendor_User_Access_Repository(),
+			$vendor_repository,
+			$audit
+		);
 		$this->event_automation = $event_automation ?: new AIMS_Event_Automation_Service(
 			new AIMS_Event_Repository(),
 			new AIMS_Square_Sale_Repository(),
@@ -28,11 +37,14 @@ class AIMS_Event_Participation_Data_Provider {
 				new AIMS_Product_Cost_Service(
 					new AIMS_Product_Cost_Rule_Repository()
 				)
-			)
+			),
+			$this->vendor_access,
+			$audit
 		);
 		$this->events       = $events ?: new AIMS_Event_Repository();
 		$this->assignments  = $assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
-		$this->vendors      = $vendors ?: new AIMS_Vendor_Repository();
+		$this->vendors      = $vendor_repository;
+		$this->scope_resolver = new AIMS_Admin_Scope_Resolver();
 	}
 
 	public function get_rows(): array {
@@ -88,20 +100,25 @@ class AIMS_Event_Participation_Data_Provider {
 
 		$model = $this->event_automation->get_participation_model_for_event( $event_id );
 		$vendor_map = $this->get_vendor_label_map();
+		$request_queue = $this->enrich_assignments( $this->event_automation->get_request_queue_for_event( $event_id ), $vendor_map );
+		$authorized_assignments = $this->enrich_assignments( $this->event_automation->get_authorized_assignments_for_event( $event_id ), $vendor_map );
 
 		return array(
-			'event'              => $event,
-			'model'              => $model,
-			'request_queue'      => $this->enrich_assignments( $this->event_automation->get_request_queue_for_event( $event_id ), $vendor_map ),
-			'authorized_assignments' => $this->enrich_assignments( $this->event_automation->get_authorized_assignments_for_event( $event_id ), $vendor_map ),
-			'vendor_options'     => $this->get_vendor_options(),
+			'event'                  => $event,
+			'model'                  => $model,
+			'request_queue'          => $request_queue,
+			'request_queue_head'      => ! empty( $request_queue ) ? $request_queue[0] : array(),
+			'authorized_assignments'  => $authorized_assignments,
+			'vendor_options'         => $this->get_vendor_options(),
+			'actionability'          => $this->build_actionability( $model, $request_queue, $authorized_assignments ),
 		);
 	}
 
 	public function get_vendor_options(): array {
 		$options = array();
+		$vendors = $this->get_visible_vendors();
 
-		foreach ( $this->vendors->all() as $vendor ) {
+		foreach ( $vendors as $vendor ) {
 			$vendor_id = (int) ( $vendor['id'] ?? 0 );
 			if ( $vendor_id <= 0 ) {
 				continue;
@@ -119,15 +136,21 @@ class AIMS_Event_Participation_Data_Provider {
 	private function merge_event_model( array $event, array $model ): array {
 		$vendor_capacity  = (int) ( $event['vendor_capacity'] ?? 0 );
 		$authorized_count = (int) ( $model['authorized_count'] ?? 0 );
+		$remaining       = $vendor_capacity > 0 ? max( 0, $vendor_capacity - $authorized_count ) : 0;
+		$request_count    = (int) ( $model['request_count'] ?? 0 );
+		$state_label      = $this->build_participation_state_label( $model );
 
 		return array_merge(
 			$event,
 			$model,
 			array(
 				'event_id'             => (int) ( $event['id'] ?? 0 ),
+				'state_label'          => $state_label,
 				'capacity_label'       => $this->build_capacity_label( $vendor_capacity, $authorized_count ),
+				'remaining_capacity'   => $remaining,
 				'request_window_label'  => $this->build_request_window_label( $model ),
 				'vendor_count_label'    => $this->build_vendor_count_label( $authorized_count, $vendor_capacity ),
+				'request_status_label'  => $this->build_request_status_label( $model, $request_count ),
 			)
 		);
 	}
@@ -146,8 +169,9 @@ class AIMS_Event_Participation_Data_Provider {
 
 	private function get_vendor_label_map(): array {
 		$map = array();
+		$vendors = $this->get_visible_vendors();
 
-		foreach ( $this->vendors->all() as $vendor ) {
+		foreach ( $vendors as $vendor ) {
 			$vendor_id = (int) ( $vendor['id'] ?? 0 );
 			if ( $vendor_id <= 0 ) {
 				continue;
@@ -157,6 +181,12 @@ class AIMS_Event_Participation_Data_Provider {
 		}
 
 		return $map;
+	}
+
+	private function get_visible_vendors(): array {
+		$vendors = $this->scope_resolver->get_accessible_vendors( (int) get_current_user_id() );
+
+		return is_array( $vendors ) ? $vendors : array();
 	}
 
 	private function build_vendor_label( array $vendor ): string {
@@ -196,5 +226,71 @@ class AIMS_Event_Participation_Data_Provider {
 		}
 
 		return 'Draft';
+	}
+
+	private function build_participation_state_label( array $model ): string {
+		if ( ! empty( $model['is_shipped'] ) ) {
+			return 'Shipped';
+		}
+
+		if ( ! empty( $model['is_open_for_request'] ) ) {
+			return ! empty( $model['has_capacity_remaining'] ) ? 'Open for requests' : 'Open, but at capacity';
+		}
+
+		if ( ! empty( $model['is_fully_assigned'] ) ) {
+			return 'Fully assigned';
+		}
+
+		if ( ! empty( $model['is_request_closed'] ) ) {
+			return 'Request closed';
+		}
+
+		return 'Draft';
+	}
+
+	private function build_request_status_label( array $model, int $request_count = 0 ): string {
+		if ( ! empty( $model['can_accept_requests'] ) ) {
+			return $request_count > 0 ? 'Accepting requests' : 'Open and waiting';
+		}
+
+		if ( ! empty( $model['is_fully_assigned'] ) ) {
+			return 'Capacity reached';
+		}
+
+		if ( ! empty( $model['is_request_closed'] ) ) {
+			return 'Closed';
+		}
+
+		return 'Waiting';
+	}
+
+	private function build_actionability( array $model, array $request_queue, array $authorized_assignments ): array {
+		$next_request = ! empty( $request_queue ) ? $request_queue[0] : array();
+		$remaining_capacity = (int) ( $model['remaining_capacity'] ?? 0 );
+		$actor_user_id = (int) get_current_user_id();
+		$can_manage = $this->event_automation->user_can_manage_event_participation( $actor_user_id );
+		$can_open_requests = $can_manage && ! empty( $model['has_capacity_remaining'] ) && empty( $model['is_open_for_request'] );
+		$can_close_requests = $can_manage && ! empty( $model['is_open_for_request'] );
+		$can_approve_next   = $can_manage && ! empty( $next_request ) && ! empty( $model['has_capacity_remaining'] );
+		$can_manual_assign  = $can_manage;
+		$manual_assignment_label = $can_manual_assign
+			? ( $remaining_capacity > 0 ? 'Manual fallback allowed' : 'Manual fallback override' )
+			: 'Manual fallback unavailable';
+
+		return array(
+			'can_manage'           => $can_manage,
+			'can_accept_requests'  => $can_manage && ! empty( $model['can_accept_requests'] ),
+			'can_open_requests'    => $can_open_requests,
+			'can_close_requests'   => $can_close_requests,
+			'can_approve_next'     => $can_approve_next,
+			'can_manual_assign'    => $can_manual_assign,
+			'manual_assignment_label' => $manual_assignment_label,
+			'queue_count'          => count( $request_queue ),
+			'authorized_count'     => count( $authorized_assignments ),
+			'remaining_capacity'   => $remaining_capacity,
+			'request_status_label'  => $this->build_request_status_label( $model, count( $request_queue ) ),
+			'next_request_vendor'   => ! empty( $next_request['vendor_name'] ) ? (string) $next_request['vendor_name'] : '',
+			'next_request_sequence' => ! empty( $next_request['request_sequence'] ) ? (int) $next_request['request_sequence'] : 0,
+		);
 	}
 }

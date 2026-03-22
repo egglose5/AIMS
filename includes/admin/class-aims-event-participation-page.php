@@ -15,6 +15,12 @@ class AIMS_Event_Participation_Page {
 		AIMS_Event_Automation_Service $event_automation = null
 	) {
 		$this->data_provider   = $data_provider ?: new AIMS_Event_Participation_Data_Provider();
+		$audit = new AIMS_Audit_Service();
+		$vendor_access = new AIMS_Vendor_Access_Service(
+			new AIMS_Vendor_User_Access_Repository(),
+			new AIMS_Vendor_Repository(),
+			$audit
+		);
 		$this->event_automation = $event_automation ?: new AIMS_Event_Automation_Service(
 			new AIMS_Event_Repository(),
 			new AIMS_Square_Sale_Repository(),
@@ -27,13 +33,15 @@ class AIMS_Event_Participation_Page {
 				new AIMS_Product_Cost_Service(
 					new AIMS_Product_Cost_Rule_Repository()
 				)
-			)
+			),
+			$vendor_access,
+			$audit
 		);
 	}
 
 	public function render(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENTS ) ) {
-			wp_die( esc_html__( 'You do not have permission to manage event participation.', 'ai-man-sys' ) );
+		if ( ! current_user_can( AIMS_Capabilities::CAP_PORTAL_EVENTS ) && ! $this->event_automation->user_can_manage_event_participation( get_current_user_id() ) ) {
+			wp_die( esc_html__( 'You do not have permission to access event participation.', 'ai-man-sys' ) );
 		}
 
 		$notice = $this->handle_actions();
@@ -45,6 +53,7 @@ class AIMS_Event_Participation_Page {
 		echo '<div class="wrap">';
 		echo '<h1>Event Participation</h1>';
 		echo '<p>Use this screen to open request windows, review FCFS request queues, approve vendors, and apply manual fallback assignments.</p>';
+		echo '<p>Operator flow: open the request window when the event is available, approve the next queued vendor in sequence, and use manual fallback only when the queue or capacity needs an override.</p>';
 
 		if ( ! empty( $notice ) ) {
 			echo '<div class="notice notice-success inline"><p>' . esc_html( $notice ) . '</p></div>';
@@ -74,17 +83,21 @@ class AIMS_Event_Participation_Page {
 		}
 
 		$actor_user_id = get_current_user_id();
+		if ( ! $this->event_automation->user_can_manage_event_participation( $actor_user_id ) ) {
+			return 'You do not have permission to manage event participation.';
+		}
+		$result = null;
 
 		switch ( $action ) {
 			case 'open_event_for_requests':
 				$result = $this->event_automation->open_event_for_requests( $event_id, array(), $actor_user_id );
-				return ! empty( $result ) ? 'Event requests opened.' : 'Unable to open requests for this event.';
+				return $this->format_status_notice( 'opened', $event_id, $result );
 			case 'close_event_requests':
 				$result = $this->event_automation->close_event_requests( $event_id, $actor_user_id );
-				return ! empty( $result ) ? 'Event requests closed.' : 'Unable to close requests for this event.';
+				return $this->format_status_notice( 'closed', $event_id, $result );
 			case 'approve_next_vendor_request':
 				$result = $this->event_automation->approve_next_vendor_request( $event_id, $actor_user_id );
-				return ! empty( $result ) ? 'Approved the next vendor request.' : 'No request could be approved.';
+				return $this->format_approval_notice( $event_id, $result );
 			case 'manual_assign_vendor_to_event':
 				$vendor_id = absint( $_POST['vendor_id'] ?? 0 );
 				if ( $vendor_id <= 0 ) {
@@ -98,7 +111,7 @@ class AIMS_Event_Participation_Page {
 				}
 
 				$result = $this->event_automation->manual_assign_vendor_to_event( $event_id, $vendor_id, $assignment_data, $actor_user_id );
-				return ! empty( $result ) ? 'Manual fallback assignment saved.' : 'Unable to save the manual fallback assignment.';
+				return $this->format_manual_assignment_notice( $event_id, $vendor_id, $result );
 		}
 
 		return '';
@@ -141,12 +154,12 @@ class AIMS_Event_Participation_Page {
 			$event_id = (int) ( $row['event_id'] ?? 0 );
 			echo '<tr>';
 			echo '<td><strong>' . esc_html( (string) ( $row['event_name'] ?? 'Event' ) ) . '</strong><br><a href="' . esc_url( add_query_arg( array( 'page' => self::PAGE_SLUG, 'event_id' => $event_id ), admin_url( 'admin.php' ) ) ) . '">View participation</a></td>';
-			echo '<td>' . esc_html( (string) ( $row['participation_status'] ?? 'draft' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['state_label'] ?? $row['participation_status'] ?? 'draft' ) ) . '<br><small>' . esc_html( (string) ( $row['request_status_label'] ?? 'Waiting' ) ) . '</small></td>';
 			echo '<td>' . esc_html( (string) ( $row['request_count'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['authorized_count'] ?? 0 ) ) . '</td>';
-			echo '<td>' . esc_html( (string) ( $row['capacity_label'] ?? 'Unlimited' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['capacity_label'] ?? 'Unlimited' ) ) . '<br><small>' . esc_html( (string) ( $row['request_status_label'] ?? 'Waiting' ) ) . '</small></td>';
 			echo '<td>' . esc_html( (string) ( $row['request_window_label'] ?? 'Draft' ) ) . '</td>';
-			echo '<td>' . $this->render_inline_action_buttons( $event_id ) . '</td>';
+			echo '<td>' . $this->render_inline_action_buttons( $row ) . '</td>';
 			echo '</tr>';
 		}
 
@@ -163,41 +176,64 @@ class AIMS_Event_Participation_Page {
 		$requests = ! empty( $bundle['request_queue'] ) ? $bundle['request_queue'] : array();
 		$authorized = ! empty( $bundle['authorized_assignments'] ) ? $bundle['authorized_assignments'] : array();
 		$vendor_options = ! empty( $bundle['vendor_options'] ) ? $bundle['vendor_options'] : array();
+		$actionability = ! empty( $bundle['actionability'] ) ? $bundle['actionability'] : array();
 		$event_id = (int) ( $event['id'] ?? 0 );
 
 		echo '<hr><h2>' . esc_html( (string) ( $event['event_name'] ?? 'Selected event' ) ) . '</h2>';
-		echo '<p>Status: <strong>' . esc_html( (string) ( $model['participation_status'] ?? 'draft' ) ) . '</strong> | ';
+		echo '<p>Status: <strong>' . esc_html( (string) ( $model['state_label'] ?? $model['participation_status'] ?? 'draft' ) ) . '</strong> | ';
 		echo 'Requests: <strong>' . esc_html( (string) ( $model['request_count'] ?? 0 ) ) . '</strong> | ';
 		echo 'Authorized: <strong>' . esc_html( (string) ( $model['authorized_count'] ?? 0 ) ) . '</strong> | ';
 		echo 'Capacity: <strong>' . esc_html( (string) ( $model['capacity_label'] ?? 'Unlimited' ) ) . '</strong></p>';
+		echo '<p><strong>Actionability:</strong> ';
+		echo esc_html( (string) ( $actionability['request_status_label'] ?? 'Waiting' ) );
+		echo ' | ';
+		echo esc_html( ! empty( $actionability['can_open_requests'] ) ? 'Open requests available' : 'Open requests unavailable' );
+		echo ' | ';
+		echo esc_html( ! empty( $actionability['can_close_requests'] ) ? 'Close requests available' : 'Close requests unavailable' );
+		echo ' | ';
+		echo esc_html( ! empty( $actionability['can_approve_next'] ) ? 'Approve-next available' : 'Approve-next unavailable' );
+		echo ' | ';
+		echo esc_html( (string) ( $actionability['manual_assignment_label'] ?? ( ! empty( $actionability['can_manual_assign'] ) ? 'Manual fallback allowed' : 'Manual fallback unavailable' ) ) );
+		echo ' | Remaining capacity: ' . esc_html( (string) ( $model['remaining_capacity'] ?? 0 ) );
+		echo '</p>';
+
+		if ( ! empty( $actionability['next_request_sequence'] ) ) {
+			echo '<div class="notice notice-info inline" style="margin:12px 0 16px;padding:12px 16px;">';
+			echo '<strong>Next in queue:</strong> ';
+			echo esc_html( 'Request #' . (string) $actionability['next_request_sequence'] . ' ' . (string) ( $actionability['next_request_vendor'] ?? 'Vendor' ) );
+			echo '</div>';
+		}
 
 		echo '<div style="display:flex;gap:16px;flex-wrap:wrap;margin:16px 0;">';
 		echo '<form method="post" style="display:inline-block;margin:0;">';
 		wp_nonce_field( 'aims_event_participation_action', 'aims_event_participation_nonce' );
 		echo '<input type="hidden" name="event_id" value="' . esc_attr( (string) $event_id ) . '">';
 		echo '<input type="hidden" name="aims_event_participation_action" value="open_event_for_requests">';
-		echo '<button type="submit" class="button button-primary">Open for requests</button>';
+		$open_disabled = empty( $actionability['can_open_requests'] );
+		echo '<button type="submit" class="button button-primary"' . ( $open_disabled ? ' disabled="disabled"' : '' ) . '>Open for requests</button>';
 		echo '</form>';
 
 		echo '<form method="post" style="display:inline-block;margin:0;">';
 		wp_nonce_field( 'aims_event_participation_action', 'aims_event_participation_nonce' );
 		echo '<input type="hidden" name="event_id" value="' . esc_attr( (string) $event_id ) . '">';
 		echo '<input type="hidden" name="aims_event_participation_action" value="close_event_requests">';
-		echo '<button type="submit" class="button">Close requests</button>';
+		$close_disabled = empty( $actionability['can_close_requests'] );
+		echo '<button type="submit" class="button"' . ( $close_disabled ? ' disabled="disabled"' : '' ) . '>Close requests</button>';
 		echo '</form>';
 
 		echo '<form method="post" style="display:inline-block;margin:0;">';
 		wp_nonce_field( 'aims_event_participation_action', 'aims_event_participation_nonce' );
 		echo '<input type="hidden" name="event_id" value="' . esc_attr( (string) $event_id ) . '">';
 		echo '<input type="hidden" name="aims_event_participation_action" value="approve_next_vendor_request">';
-		echo '<button type="submit" class="button">Approve next request</button>';
+		$approve_disabled = empty( $actionability['can_approve_next'] ) ? ' disabled="disabled"' : '';
+		echo '<button type="submit" class="button"' . $approve_disabled . '>Approve next request</button>';
 		echo '</form>';
 		echo '</div>';
 
 		echo '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;margin-top:24px;">';
 		$this->render_request_table( $requests );
 		$this->render_assignment_table( $authorized, 'Approved and manual assignments' );
-		$this->render_manual_assign_form( $event_id, $vendor_options );
+		$this->render_manual_assign_form( $event_id, $vendor_options, $model, $actionability );
 		echo '</div>';
 	}
 
@@ -246,9 +282,18 @@ class AIMS_Event_Participation_Page {
 		echo '</div>';
 	}
 
-	private function render_manual_assign_form( int $event_id, array $vendor_options ): void {
+	private function render_manual_assign_form( int $event_id, array $vendor_options, array $model = array(), array $actionability = array() ): void {
 		echo '<div>';
 		echo '<h3>Manual Fallback Assignment</h3>';
+		echo '<p>Use manual fallback when a vendor must be assigned outside FCFS or when you need to override the request queue for a live event.</p>';
+		echo '<p><strong>Current state:</strong> ' . esc_html( (string) ( $model['state_label'] ?? $model['participation_status'] ?? 'draft' ) ) . ' | ';
+		echo 'Remaining capacity: ' . esc_html( (string) ( $model['remaining_capacity'] ?? 0 ) ) . ' | ';
+		echo 'Queue size: ' . esc_html( (string) ( $actionability['queue_count'] ?? 0 ) ) . ' | ';
+		echo esc_html( (string) ( $actionability['manual_assignment_label'] ?? 'Manual fallback allowed' ) ) . '</p>';
+
+		if ( empty( $actionability['can_manual_assign'] ) ) {
+			echo '<div class="notice notice-warning inline" style="margin:0 0 12px;"><p>Manual fallback assignment is not available to this account.</p></div>';
+		}
 
 		if ( empty( $vendor_options ) ) {
 			echo '<p>No vendors are available for assignment.</p>';
@@ -261,33 +306,68 @@ class AIMS_Event_Participation_Page {
 		echo '<input type="hidden" name="event_id" value="' . esc_attr( (string) $event_id ) . '">';
 		echo '<input type="hidden" name="aims_event_participation_action" value="manual_assign_vendor_to_event">';
 		echo '<p><label for="aims-event-vendor">Vendor</label><br>';
-		echo '<select id="aims-event-vendor" name="vendor_id" required>';
+		echo '<select id="aims-event-vendor" name="vendor_id" required' . ( empty( $actionability['can_manual_assign'] ) ? ' disabled="disabled"' : '' ) . '>';
 		echo '<option value="">Choose vendor</option>';
 		foreach ( $vendor_options as $option ) {
 			echo '<option value="' . esc_attr( (string) ( $option['id'] ?? 0 ) ) . '">' . esc_html( (string) ( $option['label'] ?? 'Vendor' ) ) . '</option>';
 		}
 		echo '</select></p>';
 		echo '<p><label for="aims-event-commission">Commission rate</label><br>';
-		echo '<input id="aims-event-commission" name="commission_rate" type="number" min="0" step="0.0001" value="0"></p>';
-		echo '<p><button type="submit" class="button button-primary">Save fallback assignment</button></p>';
+		echo '<input id="aims-event-commission" name="commission_rate" type="number" min="0" step="0.0001" value="0"' . ( empty( $actionability['can_manual_assign'] ) ? ' disabled="disabled"' : '' ) . '></p>';
+		echo '<p><button type="submit" class="button button-primary"' . ( empty( $actionability['can_manual_assign'] ) ? ' disabled="disabled"' : '' ) . '>Save fallback assignment</button></p>';
 		echo '</form>';
 		echo '</div>';
 	}
 
-	private function render_inline_action_buttons( int $event_id ): string {
+	private function render_inline_action_buttons( array $row ): string {
+		$event_id = (int) ( $row['event_id'] ?? 0 );
+		$approve_disabled = empty( $row['can_approve_next'] );
+		$open_disabled = empty( $row['can_open_requests'] );
+		$close_disabled = empty( $row['can_close_requests'] );
 		ob_start();
-		$this->render_action_form( $event_id, 'open_event_for_requests', 'Open' );
-		$this->render_action_form( $event_id, 'close_event_requests', 'Close' );
-		$this->render_action_form( $event_id, 'approve_next_vendor_request', 'Approve next' );
+		$this->render_action_form( $event_id, 'open_event_for_requests', 'Open', $open_disabled );
+		$this->render_action_form( $event_id, 'close_event_requests', 'Close', $close_disabled );
+		$this->render_action_form( $event_id, 'approve_next_vendor_request', 'Approve next', $approve_disabled );
 		return (string) ob_get_clean();
 	}
 
-	private function render_action_form( int $event_id, string $action, string $label ): void {
+	private function render_action_form( int $event_id, string $action, string $label, bool $disabled = false ): void {
 		echo '<form method="post" style="display:inline-block;margin:0 6px 0 0;">';
 		wp_nonce_field( 'aims_event_participation_action', 'aims_event_participation_nonce' );
 		echo '<input type="hidden" name="event_id" value="' . esc_attr( (string) $event_id ) . '">';
 		echo '<input type="hidden" name="aims_event_participation_action" value="' . esc_attr( $action ) . '">';
-		echo '<button type="submit" class="button button-small">' . esc_html( $label ) . '</button>';
+		echo '<button type="submit" class="button button-small"' . ( $disabled ? ' disabled="disabled"' : '' ) . '>' . esc_html( $label ) . '</button>';
 		echo '</form>';
+	}
+
+	private function format_status_notice( string $verb, int $event_id, $result ): string {
+		if ( empty( $result ) || ! is_array( $result ) ) {
+			return 'Unable to ' . $verb . ' requests for this event.';
+		}
+
+		$model = $this->event_automation->get_participation_model_for_event( $event_id );
+		return 'Event requests ' . $verb . '. Status: ' . (string) ( $model['state_label'] ?? $model['participation_status'] ?? 'draft' ) . '. Queue: ' . (string) ( $model['request_count'] ?? 0 ) . '. Remaining capacity: ' . (string) ( $model['remaining_capacity'] ?? 0 ) . '.';
+	}
+
+	private function format_approval_notice( int $event_id, $result ): string {
+		if ( empty( $result ) || ! is_array( $result ) ) {
+			return 'No request could be approved.';
+		}
+
+		$model = $this->event_automation->get_participation_model_for_event( $event_id );
+		$sequence = ! empty( $result['request_sequence'] ) ? (int) $result['request_sequence'] : 0;
+		$vendor_label = ! empty( $result['vendor_id'] ) ? 'Vendor #' . (int) $result['vendor_id'] : 'Vendor';
+
+		return 'Approved request #' . $sequence . ' for ' . $vendor_label . '. Status: ' . (string) ( $model['state_label'] ?? $model['participation_status'] ?? 'draft' ) . '. Remaining capacity: ' . (string) ( $model['remaining_capacity'] ?? 0 ) . '.';
+	}
+
+	private function format_manual_assignment_notice( int $event_id, int $vendor_id, $result ): string {
+		if ( empty( $result ) || ! is_array( $result ) ) {
+			return 'Unable to save the manual fallback assignment.';
+		}
+
+		$model = $this->event_automation->get_participation_model_for_event( $event_id );
+
+		return 'Manual fallback assignment saved for vendor #' . $vendor_id . '. Status: ' . (string) ( $model['state_label'] ?? $model['participation_status'] ?? 'draft' ) . '. Remaining capacity: ' . (string) ( $model['remaining_capacity'] ?? 0 ) . '.';
 	}
 }

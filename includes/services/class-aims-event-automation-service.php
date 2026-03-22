@@ -11,6 +11,7 @@ class AIMS_Event_Automation_Service {
 	private $financials;
 	private $vendor_access;
 	private $audit;
+	private $auth_context;
 
 	public function __construct(
 		AIMS_Event_Repository $events,
@@ -18,7 +19,8 @@ class AIMS_Event_Automation_Service {
 		AIMS_Vendor_Event_Assignment_Repository $assignments,
 		AIMS_Event_Financial_Service $financials,
 		AIMS_Vendor_Access_Service $vendor_access = null,
-		AIMS_Audit_Service $audit = null
+		AIMS_Audit_Service $audit = null,
+		AIMS_Auth_Context_Service $auth_context = null
 	) {
 		$this->events      = $events;
 		$this->sales       = $sales;
@@ -26,6 +28,7 @@ class AIMS_Event_Automation_Service {
 		$this->financials  = $financials;
 		$this->vendor_access = $vendor_access;
 		$this->audit       = $audit;
+		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
 	public function get_participation_model_for_event( int $event_id ): array {
@@ -80,6 +83,8 @@ class AIMS_Event_Automation_Service {
 	}
 
 	public function set_event_participation_controls( int $event_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
+
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
 			$this->record_audit(
 				'participation_control_denied',
@@ -145,6 +150,8 @@ class AIMS_Event_Automation_Service {
 	}
 
 	public function close_event_requests( int $event_id, int $actor_user_id = 0 ): ?array {
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
+
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
 			$this->record_audit(
 				'participation_close_denied',
@@ -183,7 +190,7 @@ class AIMS_Event_Automation_Service {
 
 	public function request_vendor_participation( int $event_id, int $vendor_id, array $data = array(), int $actor_user_id = 0 ): ?array {
 		$model = $this->get_participation_model_for_event( $event_id );
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		if (
 			empty( $model['can_accept_requests'] )
@@ -237,6 +244,8 @@ class AIMS_Event_Automation_Service {
 	}
 
 	public function approve_next_vendor_request( int $event_id, int $actor_user_id = 0 ): ?array {
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
+
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
 			$this->record_audit(
 				'vendor_request_approval_denied',
@@ -301,6 +310,8 @@ class AIMS_Event_Automation_Service {
 	}
 
 	public function manual_assign_vendor_to_event( int $event_id, int $vendor_id, array $data = array(), int $actor_user_id = 0 ): ?array {
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
+
 		if ( ! $this->can_manage_event_participation( $actor_user_id ) ) {
 			$this->record_audit(
 				'vendor_manual_assignment_denied',
@@ -399,6 +410,18 @@ class AIMS_Event_Automation_Service {
 		$model = $this->assignments->get_assignment_model_for_event( $event_id );
 
 		return ! empty( $model['policy'] ) ? (string) $model['policy'] : 'request_first';
+	}
+
+	public function user_can_manage_event_participation( int $actor_user_id = 0 ): bool {
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
+
+		return $this->can_manage_event_participation( $actor_user_id );
+	}
+
+	public function user_can_request_vendor_participation( int $vendor_id, int $actor_user_id = 0 ): bool {
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
+
+		return $this->can_request_vendor_participation( $actor_user_id, $vendor_id );
 	}
 
 	public function get_assignment_model_for_event( int $event_id ): array {
@@ -628,34 +651,18 @@ class AIMS_Event_Automation_Service {
 		return $wpdb->prefix . 'aims_events';
 	}
 
-	private function resolve_actor_user_id( int $actor_user_id ): int {
-		if ( $actor_user_id > 0 ) {
-			return $actor_user_id;
-		}
-
-		return (int) get_current_user_id();
+	private function normalize_actor_user_id( int $actor_user_id ): int {
+		return $this->auth_context->normalize_actor_user_id( $actor_user_id );
 	}
 
 	private function can_manage_event_participation( int $actor_user_id ): bool {
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
-
-		if ( $actor_user_id <= 0 ) {
-			return true;
-		}
-
-		return user_can( $actor_user_id, AIMS_Capabilities::CAP_MANAGE )
-			|| user_can( $actor_user_id, AIMS_Capabilities::CAP_MANAGE_EVENTS );
+		return $this->auth_context->can_user( $actor_user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| $this->auth_context->can_user( $actor_user_id, AIMS_Capabilities::CAP_MANAGE_EVENTS );
 	}
 
 	private function can_request_vendor_participation( int $actor_user_id, int $vendor_id ): bool {
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
-
-		if ( $actor_user_id <= 0 ) {
-			return true;
-		}
-
-		if ( user_can( $actor_user_id, AIMS_Capabilities::CAP_MANAGE )
-			|| user_can( $actor_user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS )
+		if ( $this->auth_context->can_user( $actor_user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| $this->auth_context->can_user( $actor_user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS )
 		) {
 			return true;
 		}
@@ -681,7 +688,7 @@ class AIMS_Event_Automation_Service {
 		$this->audit->record(
 			$event_type,
 			array(
-				'actor_id'   => $this->resolve_actor_user_id( $actor_user_id ),
+			'actor_id'   => $this->normalize_actor_user_id( $actor_user_id ),
 				'scope_type' => 'event',
 				'scope_id'   => $event_id,
 				'entity_type'=> $entity_type,

@@ -13,6 +13,7 @@ class AIMS_Plugin {
 
 	private $installer;
 	private $capabilities;
+	private $auth_context;
 	private $admin_menu;
 	private $vendor_access;
 	private $vendor_module;
@@ -47,16 +48,22 @@ class AIMS_Plugin {
 	private function __construct() {
 		$this->installer    = new AIMS_Installer( new AIMS_Schema() );
 		$this->capabilities = new AIMS_Capabilities();
+		$this->auth_context = new AIMS_Auth_Context_Service();
 		$this->admin_menu   = new AIMS_Admin_Menu();
+		$audit_service     = new AIMS_Audit_Service();
 		$vendor_repository = new AIMS_Vendor_Repository();
 		$this->vendor_access = new AIMS_Vendor_Access_Service(
 			new AIMS_Vendor_User_Access_Repository(),
-			$vendor_repository
+			$vendor_repository,
+			$audit_service,
+			$this->auth_context
 		);
 		$this->vendor_module = new AIMS_Vendor_Module(
 			new AIMS_Vendor_Service(
 				$vendor_repository,
-				$this->vendor_access
+				$this->vendor_access,
+				$audit_service,
+				$this->auth_context
 			)
 		);
 	}

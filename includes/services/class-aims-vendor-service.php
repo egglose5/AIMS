@@ -8,19 +8,26 @@ class AIMS_Vendor_Service {
 	private $vendors;
 	private $access;
 	private $audit;
+	private $auth_context;
 
 	public function __construct(
 		AIMS_Vendor_Repository $vendors,
 		AIMS_Vendor_Access_Service $access = null,
-		AIMS_Audit_Service $audit = null
+		AIMS_Audit_Service $audit = null,
+		AIMS_Auth_Context_Service $auth_context = null
 	) {
 		$this->vendors = $vendors;
 		$this->access   = $access;
 		$this->audit    = $audit;
+		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
 	public function list_vendors( int $user_id = 0 ): array {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
+
+		if ( null !== $this->access && $user_id <= 0 ) {
+			return array();
+		}
 
 		if ( null !== $this->access && $user_id > 0 && ! $this->access->can_manage_all_vendors( $user_id ) ) {
 			return $this->access->get_accessible_vendors_for_user( $user_id );
@@ -30,7 +37,7 @@ class AIMS_Vendor_Service {
 	}
 
 	public function create_vendor( array $data, int $user_id = 0 ): int {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( null !== $this->access && ! $this->access->can_manage_all_vendors( $user_id ) ) {
 			$this->record_audit(
@@ -66,10 +73,24 @@ class AIMS_Vendor_Service {
 	}
 
 	public function get_vendor( int $vendor_id, int $user_id = 0 ): ?array {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 		$vendor = $this->vendors->find( $vendor_id );
 
 		if ( empty( $vendor ) ) {
+			return null;
+		}
+
+		if ( null !== $this->access && $user_id <= 0 ) {
+			$this->record_audit(
+				'vendor_view_denied',
+				$user_id,
+				$vendor_id,
+				'vendor',
+				$vendor_id,
+				array(),
+				'Vendor view denied.'
+			);
+
 			return null;
 		}
 
@@ -105,12 +126,8 @@ class AIMS_Vendor_Service {
 		);
 	}
 
-	private function resolve_actor_user_id( int $user_id ): int {
-		if ( $user_id > 0 ) {
-			return $user_id;
-		}
-
-		return (int) get_current_user_id();
+	private function normalize_actor_user_id( int $user_id ): int {
+		return $this->auth_context->normalize_actor_user_id( $user_id );
 	}
 
 	private function record_audit(

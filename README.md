@@ -61,7 +61,7 @@ The current milestone is the first complete operational flow:
 2. Implement request-first vendor assignment with FCFS approval and admin manual fallback.
 3. Preserve the current financial, fulfillment, and shipping rules.
 4. Keep bucket-first inventory routing and event participation policy explicit in orchestration.
-5. Add Square runtime integration points for later webhook and catalog work.
+5. Add Square runtime integration points for later webhook, catalog publishing, and downstream projection work.
 
 ## Future Phases
 
@@ -70,7 +70,8 @@ Square runtime integration:
 - real Square API client
 - webhook handling
 - dedupe and watermark state
-- catalog sync orchestration
+- catalog publishing orchestration
+- optional WooCommerce order projection from AIMS-owned sale records
 - AIMS-owned shipping marker configuration in Square
 
 Twilio notifications:
@@ -88,11 +89,11 @@ Customer SMS updates:
 
 Public event showcase layer:
 
-- separate public-facing custom post type for event archive/showcase content
+- separate public-facing event showcase layer, likely a CPT or block-driven surface
 - internal `aims_events` remains the source of truth for operational event data
-- public posts link back to internal events via `aims_event_id`
+- public content links back to internal events via `aims_event_id`
 - support booth photos, public descriptions, and event reviews/testimonials
-- plan for future widgets, shortcodes, or blocks powered by this layer for archives, previews, and review highlights
+- treat this as a later public-surface layer, not part of the core operational engine
 
 ## Operational Backbone
 
@@ -107,6 +108,8 @@ AIMS uses a ledger-first inventory and financial design:
 - `aims_product_cost_rules` stores per-product and per-category cost mappings for COGS and profitability calculations.
 - `aims_sale_fulfillment_allocations` stores event-stock and warehouse-backorder allocations.
 - `aims_square_sales` stores imported sales before any optional WooCommerce projection.
+- reporting should read from AIMS operational tables first, then optionally project to WooCommerce when the business needs a commerce object.
+- Square catalog publishing should be driven from AIMS catalog state, not from WooCommerce as the source of truth.
 - event automation matches Square sales to events by Square location and sold-at date window, then recalculates event financials.
 - planned bucket-based RBAC can grant supervisors access to specific inventory buckets without full system access.
 - audit hooks should standardize assignment overrides, commission adjustments, transfers, and access changes before persistence is added.

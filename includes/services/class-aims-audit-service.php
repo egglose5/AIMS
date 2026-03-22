@@ -40,7 +40,7 @@ class AIMS_Audit_Service {
 	private function normalize_entry( string $event_type, array $context ): array {
 		return array(
 			'event_type'   => sanitize_key( $event_type ),
-			'actor_id'     => (int) ( $context['actor_id'] ?? get_current_user_id() ),
+			'actor_id'     => (int) ( $context['actor_id'] ?? 0 ),
 			'scope_type'   => sanitize_key( $context['scope_type'] ?? '' ),
 			'scope_id'     => (int) ( $context['scope_id'] ?? 0 ),
 			'entity_type'   => sanitize_key( $context['entity_type'] ?? '' ),

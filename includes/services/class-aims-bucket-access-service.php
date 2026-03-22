@@ -8,26 +8,29 @@ class AIMS_Bucket_Access_Service {
 	private $access;
 	private $buckets;
 	private $audit;
+	private $auth_context;
 
 	public function __construct(
 		AIMS_Bucket_Access_Repository $access,
 		AIMS_Inventory_Bucket_Repository $buckets,
-		AIMS_Audit_Service $audit = null
+		AIMS_Audit_Service $audit = null,
+		AIMS_Auth_Context_Service $auth_context = null
 	) {
 		$this->access  = $access;
 		$this->buckets = $buckets;
 		$this->audit   = $audit;
+		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
 	public function grant_bucket_responsibility( int $bucket_id, int $user_id, array $data = array(), int $actor_user_id = 0 ): int {
-		$user_id = $this->resolve_actor_user_id( $user_id );
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		if ( $bucket_id <= 0 || $user_id <= 0 ) {
 			return 0;
 		}
 
-		if ( ! $this->user_can_manage_bucket( $actor_user_id, $bucket_id ) ) {
+		if ( ! $this->auth_context->has_actor_user_id( $actor_user_id ) || ! $this->user_can_manage_bucket( $actor_user_id, $bucket_id ) ) {
 			$this->record_access_audit(
 				'access_grant_denied',
 				$actor_user_id,
@@ -64,14 +67,14 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function revoke_bucket_responsibility( int $bucket_id, int $user_id, int $actor_user_id = 0 ): bool {
-		$user_id = $this->resolve_actor_user_id( $user_id );
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
 		if ( $bucket_id <= 0 || $user_id <= 0 ) {
 			return false;
 		}
 
-		if ( ! $this->user_can_manage_bucket( $actor_user_id, $bucket_id ) ) {
+		if ( ! $this->auth_context->has_actor_user_id( $actor_user_id ) || ! $this->user_can_manage_bucket( $actor_user_id, $bucket_id ) ) {
 			$this->record_access_audit(
 				'access_revoke_denied',
 				$actor_user_id,
@@ -116,7 +119,7 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function get_accessible_buckets_for_user( int $user_id ): array {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( $user_id <= 0 ) {
 			return array();
@@ -130,7 +133,7 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function get_managed_buckets_for_user( int $user_id ): array {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( $user_id <= 0 ) {
 			return array();
@@ -160,7 +163,7 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function user_has_bucket_access( int $user_id, int $bucket_id ): bool {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( $this->user_has_global_bucket_view( $user_id ) || $this->user_has_global_bucket_access( $user_id ) ) {
 			return true;
@@ -170,7 +173,7 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function user_can_manage_bucket( int $user_id, int $bucket_id ): bool {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( $this->user_has_global_bucket_access( $user_id ) ) {
 			return true;
@@ -180,7 +183,7 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function user_can_transfer_bucket( int $user_id, int $bucket_id ): bool {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( $this->user_has_global_bucket_access( $user_id ) ) {
 			return true;
@@ -190,8 +193,6 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	public function can_manage_all_buckets( int $user_id ): bool {
-		$user_id = $this->resolve_actor_user_id( $user_id );
-
 		return $this->user_has_global_bucket_access( $user_id );
 	}
 
@@ -202,7 +203,7 @@ class AIMS_Bucket_Access_Service {
 
 		$this->record_access_audit(
 			'bucket_view_denied',
-			$this->resolve_actor_user_id( $user_id ),
+			$this->normalize_actor_user_id( $user_id ),
 			$bucket_id,
 			$user_id,
 			array(),
@@ -220,7 +221,7 @@ class AIMS_Bucket_Access_Service {
 
 		$this->record_access_audit(
 			'bucket_manage_denied',
-			$this->resolve_actor_user_id( $user_id ),
+			$this->normalize_actor_user_id( $user_id ),
 			$bucket_id,
 			$user_id,
 			array(),
@@ -238,7 +239,7 @@ class AIMS_Bucket_Access_Service {
 
 		$this->record_access_audit(
 			'bucket_transfer_denied',
-			$this->resolve_actor_user_id( $user_id ),
+			$this->normalize_actor_user_id( $user_id ),
 			$bucket_id,
 			$user_id,
 			array(),
@@ -250,23 +251,15 @@ class AIMS_Bucket_Access_Service {
 	}
 
 	private function user_has_global_bucket_view( int $user_id ): bool {
-		if ( $user_id <= 0 ) {
-			return false;
-		}
-
-		return user_can( $user_id, AIMS_Capabilities::CAP_MANAGE )
-			|| user_can( $user_id, AIMS_Capabilities::CAP_MANAGE_BUCKETS )
-			|| user_can( $user_id, AIMS_Capabilities::CAP_VIEW_BUCKETS );
+		return $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_BUCKETS )
+			|| $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_VIEW_BUCKETS );
 	}
 
 	private function user_has_global_bucket_access( int $user_id ): bool {
-		if ( $user_id <= 0 ) {
-			return false;
-		}
-
-		return user_can( $user_id, AIMS_Capabilities::CAP_MANAGE )
-			|| user_can( $user_id, AIMS_Capabilities::CAP_MANAGE_BUCKETS )
-			|| user_can( $user_id, AIMS_Capabilities::CAP_MANAGE_BUCKET_ACCESS );
+		return $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_BUCKETS )
+			|| $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_BUCKET_ACCESS );
 	}
 
 	private function filter_rows_by_flag( array $rows, string $flag ): array {
@@ -278,12 +271,8 @@ class AIMS_Bucket_Access_Service {
 		);
 	}
 
-	private function resolve_actor_user_id( int $user_id ): int {
-		if ( $user_id > 0 ) {
-			return $user_id;
-		}
-
-		return (int) get_current_user_id();
+	private function normalize_actor_user_id( int $user_id ): int {
+		return $this->auth_context->normalize_actor_user_id( $user_id );
 	}
 
 	private function record_access_audit(

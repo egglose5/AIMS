@@ -12,7 +12,7 @@ class AIMS_Admin_Menu {
 		add_menu_page(
 			'AIMS',
 			'AIMS',
-			AIMS_Capabilities::CAP_ACCESS_ADMIN,
+			AIMS_Capabilities::CAP_ACCESS_SHELL,
 			self::MENU_SLUG,
 			array( $this, 'render_dashboard' ),
 			'dashicons-database-view',
@@ -23,7 +23,7 @@ class AIMS_Admin_Menu {
 			self::MENU_SLUG,
 			'Vendors',
 			'Vendors',
-			AIMS_Capabilities::CAP_MANAGE_VENDORS,
+			AIMS_Capabilities::CAP_PORTAL_VENDORS,
 			'aims-vendors',
 			array( $this, 'render_vendors_shell' )
 		);
@@ -32,7 +32,7 @@ class AIMS_Admin_Menu {
 			self::MENU_SLUG,
 			'Stitch Work',
 			'Stitch Work',
-			AIMS_Capabilities::CAP_MANAGE_STITCH,
+			AIMS_Capabilities::CAP_PORTAL_STITCH,
 			'aims-stitch-work',
 			array( $this, 'render_stitch_shell' )
 		);
@@ -41,7 +41,7 @@ class AIMS_Admin_Menu {
 			self::MENU_SLUG,
 			'Event Participation',
 			'Event Participation',
-			AIMS_Capabilities::CAP_MANAGE_EVENTS,
+			AIMS_Capabilities::CAP_PORTAL_EVENTS,
 			'aims-event-participation',
 			array( $this, 'render_event_participation_shell' )
 		);
@@ -68,7 +68,7 @@ class AIMS_Admin_Menu {
 			self::MENU_SLUG,
 			'Supervisor Inventory',
 			'Supervisor Inventory',
-			AIMS_Capabilities::CAP_VIEW_BUCKETS,
+			AIMS_Capabilities::CAP_PORTAL_BUCKETS,
 			'aims-supervisor-inventory',
 			array( $this, 'render_supervisor_inventory' )
 		);
@@ -81,6 +81,8 @@ class AIMS_Admin_Menu {
 			'aims-reports',
 			array( $this, 'render_reports_shell' )
 		);
+
+		remove_submenu_page( self::MENU_SLUG, self::MENU_SLUG );
 	}
 
 	public function prune_unrelated_menus(): void {
@@ -93,14 +95,21 @@ class AIMS_Admin_Menu {
 			'edit.php',
 			'upload.php',
 			'edit.php?post_type=page',
+			'post-new.php?post_type=page',
 			'edit-comments.php',
+			'customize.php',
+			'nav-menus.php',
 			'themes.php',
+			'site-editor.php',
 			'plugins.php',
 			'users.php',
 			'tools.php',
 			'options-general.php',
+			'woocommerce-marketing',
 			'woocommerce',
 			'wc-admin',
+			'admin.php?page=wc-admin',
+			'admin.php?page=wc-orders',
 			'edit.php?post_type=product',
 			'edit.php?post_type=shop_order',
 			'edit.php?post_type=shop_coupon',
@@ -142,11 +151,21 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_dashboard(): void {
-		echo '<div class="wrap"><h1>AIMS</h1><p>This is the AIMS container. Use the scoped AIMS navigation to access the modules available to your role.</p></div>';
+		$shortcuts = $this->get_shell_shortcuts();
+		$this->render_shell_frame(
+			'AIMS',
+			'This is the AIMS container for your role.',
+			'Use the scoped navigation to reach only the modules you are meant to operate.',
+			$shortcuts
+		);
 	}
 
 	public function render_vendors_shell(): void {
-		echo '<div class="wrap"><h1>Vendor Manage</h1><p>The vendor module foundation is active. Vendor access control, bucket assignment, and vendor operations UI will be implemented here next.</p></div>';
+		$this->render_shell_frame(
+			'Vendor Operations',
+			'Vendor-facing workspace',
+			'Use this area for vendor records, bucket assignment, and vendor-specific operational work.'
+		);
 	}
 
 	public function render_event_participation_shell(): void {
@@ -155,11 +174,16 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_stitch_shell(): void {
-		echo '<div class="wrap"><h1>Stitch Work</h1><p>The stitch workflow is presented here as a scoped AIMS surface for stitchers. Authorization remains enforced in services and action handlers.</p></div>';
+		$page = new AIMS_Stitch_Queue_Page( new AIMS_Stitch_Queue_Data_Provider() );
+		$page->render();
 	}
 
 	public function render_square_sync_shell(): void {
-		echo '<div class="wrap"><h1>Square Sync</h1><p>Native AIMS Square ingestion will be implemented here with queueing, dedupe, logging, and undo-safe stock controls before any live stock mutations are enabled.</p></div>';
+		$this->render_shell_frame(
+			'Square Intake',
+			'Integration workspace',
+			'Native Square ingestion will land here with queueing, dedupe, logging, and undo-safe stock controls.'
+		);
 	}
 
 	public function render_needs_shipping_queue(): void {
@@ -173,11 +197,84 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_reports_shell(): void {
-		echo '<div class="wrap"><h1>Reports &amp; Analytics</h1><p>AIMS reporting repositories will be built directly on top of native AIMS operational and sync tables in a later phase.</p></div>';
+		$this->render_shell_frame(
+			'Reports &amp; Analytics',
+			'Operational reporting workspace',
+			'Reporting will be built directly on top of native AIMS operational and sync tables.'
+		);
+	}
+
+	private function render_shell_frame( string $title, string $subtitle, string $description, array $shortcuts = array() ): void {
+		echo '<div class="wrap aims-shell">';
+		echo '<h1>' . esc_html( $title ) . '</h1>';
+		echo '<p class="description">' . esc_html( $subtitle ) . '</p>';
+		echo '<div class="notice notice-info inline" style="margin:16px 0 20px;"><p>' . esc_html( $description ) . '</p></div>';
+		if ( ! empty( $shortcuts ) ) {
+			echo '<div style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px;">';
+			foreach ( $shortcuts as $shortcut ) {
+				$label = isset( $shortcut['label'] ) ? (string) $shortcut['label'] : '';
+				$url   = isset( $shortcut['url'] ) ? (string) $shortcut['url'] : '';
+				if ( '' === $label || '' === $url ) {
+					continue;
+				}
+				echo '<a class="button button-secondary" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a>';
+			}
+			echo '</div>';
+		}
+		echo '</div>';
+	}
+
+	private function get_shell_shortcuts(): array {
+		$shortcuts = array();
+
+		if ( current_user_can( AIMS_Capabilities::CAP_PORTAL_VENDORS ) ) {
+			$shortcuts[] = array(
+				'label' => 'Vendor Operations',
+				'url'   => admin_url( 'admin.php?page=aims-vendors' ),
+			);
+		}
+
+		if ( current_user_can( AIMS_Capabilities::CAP_PORTAL_STITCH ) ) {
+			$shortcuts[] = array(
+				'label' => 'Stitch Queue',
+				'url'   => admin_url( 'admin.php?page=aims-stitch-work' ),
+			);
+		}
+
+		if ( current_user_can( AIMS_Capabilities::CAP_PORTAL_EVENTS ) ) {
+			$shortcuts[] = array(
+				'label' => 'Event Participation',
+				'url'   => admin_url( 'admin.php?page=aims-event-participation' ),
+			);
+		}
+
+		if ( current_user_can( AIMS_Capabilities::CAP_PORTAL_BUCKETS ) ) {
+			$shortcuts[] = array(
+				'label' => 'Supervisor Inventory',
+				'url'   => admin_url( 'admin.php?page=aims-supervisor-inventory' ),
+			);
+		}
+
+		if ( current_user_can( AIMS_Capabilities::CAP_RUN_SYNC ) ) {
+			$shortcuts[] = array(
+				'label' => 'Square Intake',
+				'url'   => admin_url( 'admin.php?page=aims-square-sync' ),
+			);
+		}
+
+		if ( current_user_can( AIMS_Capabilities::CAP_VIEW_REPORTS ) ) {
+			$shortcuts[] = array(
+				'label' => 'Reports',
+				'url'   => admin_url( 'admin.php?page=aims-reports' ),
+			);
+		}
+
+		return $shortcuts;
 	}
 
 	private function should_use_shell_navigation(): bool {
-		return current_user_can( AIMS_Capabilities::CAP_ACCESS_ADMIN )
+		return current_user_can( AIMS_Capabilities::CAP_ACCESS_SHELL )
+			&& AIMS_Capabilities::current_user_is_shell_user()
 			&& ! current_user_can( 'manage_options' )
 			&& ! current_user_can( 'manage_woocommerce' );
 	}

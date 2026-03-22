@@ -9,6 +9,7 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 	private $vendor_repository;
 	private $event_repository;
 	private $scope_resolver;
+	private $bucket_access;
 	private $inventory_service;
 
 	public function __construct(
@@ -22,9 +23,16 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 		$this->vendor_repository  = $vendor_repository ?: new AIMS_Vendor_Repository();
 		$this->event_repository   = $event_repository ?: new AIMS_Event_Repository();
 		$this->scope_resolver     = $scope_resolver ?: new AIMS_Admin_Scope_Resolver();
+		$this->bucket_access      = new AIMS_Bucket_Access_Service(
+			new AIMS_Bucket_Access_Repository(),
+			$this->bucket_repository,
+			new AIMS_Audit_Service()
+		);
 		$this->inventory_service  = $inventory_service ?: new AIMS_Inventory_Service(
 			$this->bucket_repository,
-			new AIMS_Inventory_Movement_Repository()
+			new AIMS_Inventory_Movement_Repository(),
+			$this->bucket_access,
+			new AIMS_Audit_Service()
 		);
 	}
 
@@ -58,11 +66,16 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 		return $summary;
 	}
 
+	public function get_access_mode_label(): string {
+		return $this->scope_resolver->get_access_mode_label( (int) get_current_user_id() );
+	}
+
 	public function get_event_transfer_rows(): array {
 		return $this->inventory_service->get_event_transfer_operator_rows(
 			array(
 				'limit' => 25,
-			)
+			),
+			(int) get_current_user_id()
 		);
 	}
 
@@ -71,9 +84,11 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 
 		$summary = array(
 			'ready_to_transfer' => 0,
-			'at_show'          => 0,
-			'show_complete'    => 0,
+			'at_show'           => 0,
+			'show_complete'     => 0,
 			'partially_returned' => 0,
+			'source_missing'    => 0,
+			'transferable_rows'  => 0,
 		);
 
 		foreach ( $rows as $row ) {
@@ -81,13 +96,21 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 			if ( isset( $summary[ $state ] ) ) {
 				$summary[ $state ]++;
 			}
+
+			if ( ! empty( $row['workflow_actions']['warehouse_to_event']['can_initiate'] ) || ! empty( $row['workflow_actions']['event_return']['can_initiate'] ) ) {
+				$summary['transferable_rows']++;
+			}
 		}
 
 		return $summary;
 	}
 
+	public function get_inventory_service(): AIMS_Inventory_Service {
+		return $this->inventory_service;
+	}
+
 	private function get_bucket_rows(): array {
-		$rows = $this->scope_resolver->get_accessible_buckets();
+		$rows = $this->scope_resolver->get_accessible_buckets( (int) get_current_user_id() );
 		return is_array( $rows ) ? $rows : array();
 	}
 
@@ -132,7 +155,7 @@ class AIMS_Supervisor_Inventory_Data_Provider {
 	}
 
 	private function build_access_label(): string {
-		return $this->scope_resolver->can_manage_all() ? 'Full access' : 'Bucket-scoped';
+		return $this->scope_resolver->can_manage_all( (int) get_current_user_id() ) ? 'Full access' : 'Bucket-scoped';
 	}
 
 	private function find_vendor_name( int $vendor_id ): string {

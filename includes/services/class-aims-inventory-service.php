@@ -165,8 +165,9 @@ class AIMS_Inventory_Service {
 		);
 	}
 
-	public function get_event_transfer_operator_rows( array $filters = array() ): array {
+	public function get_event_transfer_operator_rows( array $filters = array(), int $actor_user_id = 0 ): array {
 		$event_buckets = $this->buckets->get_bucket_snapshots_by_type( 'event' );
+		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
 
 		if ( empty( $event_buckets ) ) {
 			return array();
@@ -176,20 +177,53 @@ class AIMS_Inventory_Service {
 		$rows  = array();
 
 		foreach ( $event_buckets as $bucket ) {
-			$summary   = $this->movements->get_transfer_summary_for_bucket_id( (int) $bucket['id'] );
-			$history   = $this->movements->get_recent_movements_for_bucket_id( (int) $bucket['id'], 3 );
-			$rows[]    = array(
-				'bucket'              => $bucket,
-				'transfer_summary'    => $summary,
-				'recent_movements'    => $history,
-				'operator_state'      => $this->determine_operator_state( $bucket, $summary ),
-				'warehouse_to_event'  => array(
-					'movement_type' => AIMS_Inventory_Movement_Repository::MOVEMENT_WAREHOUSE_TRANSFER_OUT,
-					'label'         => 'Move from warehouse to event',
-				),
-				'event_return'        => array(
-					'movement_type' => AIMS_Inventory_Movement_Repository::MOVEMENT_EVENT_RETURN_OUT,
-					'label'         => 'Return to warehouse',
+			$summary          = $this->movements->get_transfer_summary_for_bucket_id( (int) $bucket['id'] );
+			$history          = $this->movements->get_recent_movements_for_bucket_id( (int) $bucket['id'], 3 );
+			$warehouse_bucket  = $this->resolve_transfer_partner_bucket( $bucket, 'warehouse' );
+			$transfer_capacity = $this->get_transfer_capacity( $warehouse_bucket );
+			$return_capacity   = $this->get_transfer_capacity( $bucket );
+			$source_missing    = ! empty( $warehouse_bucket['source_missing'] );
+			$can_transfer      = $transfer_capacity > 0
+				&& ! $source_missing
+				&& $this->can_manage_bucket_context( $warehouse_bucket, $actor_user_id )
+				&& $this->can_manage_bucket_context( $bucket, $actor_user_id );
+			$can_return        = $return_capacity > 0
+				&& $this->can_manage_bucket_context( $bucket, $actor_user_id )
+				&& $this->can_manage_bucket_context( $warehouse_bucket, $actor_user_id );
+
+			$rows[] = array(
+				'bucket'           => $bucket,
+				'warehouse_bucket' => $warehouse_bucket,
+				'transfer_summary' => $summary,
+				'recent_movements' => $history,
+				'operator_state'   => $this->determine_operator_state( $bucket, $summary, $warehouse_bucket ),
+				'operator_state_label' => $this->describe_operator_state( $this->determine_operator_state( $bucket, $summary, $warehouse_bucket ) ),
+				'can_transfer'     => $can_transfer,
+				'can_return'       => $can_return,
+				'available_to_transfer' => $transfer_capacity,
+				'available_to_return'    => $return_capacity,
+				'workflow_actions'       => array(
+					'warehouse_to_event' => array(
+						'movement_type'         => AIMS_Inventory_Movement_Repository::MOVEMENT_WAREHOUSE_TRANSFER_OUT,
+						'label'                 => 'Move from warehouse to event',
+						'source_bucket'         => $warehouse_bucket,
+						'destination_bucket'    => $bucket,
+						'quantity_limit'        => $transfer_capacity,
+						'can_initiate'          => $can_transfer,
+						'source_missing'        => $source_missing,
+						'source_label'          => $this->build_bucket_label( $warehouse_bucket, 'Warehouse source' ),
+						'destination_label'     => $this->build_bucket_label( $bucket, 'Event bucket' ),
+					),
+					'event_return'       => array(
+						'movement_type'         => AIMS_Inventory_Movement_Repository::MOVEMENT_EVENT_RETURN_OUT,
+						'label'                 => 'Return to warehouse',
+						'source_bucket'         => $bucket,
+						'destination_bucket'    => $warehouse_bucket,
+						'quantity_limit'        => $return_capacity,
+						'can_initiate'          => $can_return,
+						'source_label'          => $this->build_bucket_label( $bucket, 'Event bucket' ),
+						'destination_label'     => $this->build_bucket_label( $warehouse_bucket, 'Warehouse destination' ),
+					),
 				),
 			);
 		}
@@ -276,14 +310,38 @@ class AIMS_Inventory_Service {
 		);
 	}
 
-	private function determine_operator_state( array $bucket, array $summary ): string {
+	public function describe_operator_state( string $state ): string {
+		switch ( sanitize_key( $state ) ) {
+			case 'ready_to_transfer':
+				return 'Ready to transfer';
+			case 'at_show':
+				return 'At show';
+			case 'show_complete':
+				return 'Show complete';
+			case 'partially_returned':
+				return 'Partially returned';
+			case 'source_missing':
+				return 'Warehouse source missing';
+			case 'warehouse':
+				return 'Warehouse bucket';
+			default:
+				return ucfirst( str_replace( '_', ' ', sanitize_key( $state ) ) );
+		}
+	}
+
+	private function determine_operator_state( array $bucket, array $summary, array $warehouse_bucket = array() ): string {
 		$bucket_type = (string) ( $bucket['bucket_type'] ?? '' );
 		$available   = (float) ( $bucket['available_quantity'] ?? 0 );
 		$transferred = (float) ( $summary['transfer_in_quantity'] ?? 0 );
 		$returned    = (float) ( $summary['return_in_quantity'] ?? 0 );
+		$source_missing = empty( $warehouse_bucket ) || ! empty( $warehouse_bucket['source_missing'] );
 
 		if ( 'event' !== $bucket_type ) {
 			return 'warehouse';
+		}
+
+		if ( $source_missing && $transferred <= 0 ) {
+			return 'source_missing';
 		}
 
 		if ( $transferred > 0 && $available <= 0 ) {
@@ -331,6 +389,17 @@ class AIMS_Inventory_Service {
 
 				return $bucket;
 			}
+
+			if ( is_string( $data[ $key ] ) ) {
+				$decoded = json_decode( wp_unslash( $data[ $key ] ), true );
+				if ( is_array( $decoded ) ) {
+					if ( empty( $decoded['bucket_type'] ) ) {
+						$decoded['bucket_type'] = $bucket_type;
+					}
+
+					return $decoded;
+				}
+			}
 		}
 
 		$resolved = $this->resolve_bucket_context( $data );
@@ -358,6 +427,79 @@ class AIMS_Inventory_Service {
 		}
 
 		return $resolved;
+	}
+
+	private function resolve_transfer_partner_bucket( array $event_bucket, string $bucket_type ): array {
+		$bucket_type   = sanitize_key( $bucket_type );
+		$product_id    = (int) ( $event_bucket['product_id'] ?? 0 );
+		$vendor_id     = (int) ( $event_bucket['vendor_id'] ?? 0 );
+		$bucket_code   = sanitize_text_field( $event_bucket['bucket_code'] ?? '' );
+		$bucket_name   = ! empty( $event_bucket['bucket_label'] ) ? (string) $event_bucket['bucket_label'] : '';
+
+		$matched_bucket = $this->buckets->find_bucket_by_identity(
+			'',
+			$bucket_type,
+			'',
+			0,
+			'',
+			$vendor_id,
+			$product_id,
+			$bucket_code
+		);
+
+		if ( ! empty( $matched_bucket ) ) {
+			return $this->buckets->get_bucket_snapshot_by_id( (int) ( $matched_bucket['id'] ?? 0 ) ) ?: array();
+		}
+
+		$warehouse_buckets = $this->buckets->get_bucket_snapshots_by_type( $bucket_type );
+
+		foreach ( $warehouse_buckets as $candidate ) {
+			$candidate_product_id = (int) ( $candidate['product_id'] ?? 0 );
+			$candidate_vendor_id  = (int) ( $candidate['vendor_id'] ?? 0 );
+			$candidate_bucket_code = sanitize_text_field( $candidate['bucket_code'] ?? '' );
+
+			if ( $product_id > 0 && $candidate_product_id !== $product_id ) {
+				continue;
+			}
+
+			if ( $vendor_id > 0 && $candidate_vendor_id !== $vendor_id ) {
+				continue;
+			}
+
+			if ( '' !== $bucket_code && '' !== $candidate_bucket_code && $candidate_bucket_code !== $bucket_code ) {
+				continue;
+			}
+
+			return $candidate;
+		}
+
+		return array(
+			'bucket_label' => $bucket_name,
+			'bucket_type'  => $bucket_type,
+			'quantity'     => 0,
+			'reserved_quantity' => 0,
+			'available_quantity' => 0,
+			'source_missing' => true,
+		);
+	}
+
+	private function get_transfer_capacity( array $bucket ): float {
+		$quantity = (float) ( $bucket['quantity'] ?? 0 );
+		$reserved = (float) ( $bucket['reserved_quantity'] ?? 0 );
+
+		return max( 0, $quantity - $reserved );
+	}
+
+	private function build_bucket_label( array $bucket, string $fallback ): string {
+		if ( ! empty( $bucket['bucket_label'] ) ) {
+			return (string) $bucket['bucket_label'];
+		}
+
+		if ( ! empty( $bucket['bucket_key'] ) ) {
+			return (string) $bucket['bucket_key'];
+		}
+
+		return $fallback;
 	}
 
 	public function resolve_bucket_context( array $data ): array {
@@ -423,7 +565,7 @@ class AIMS_Inventory_Service {
 		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
 
 		if ( $actor_user_id <= 0 ) {
-			return true;
+			return false;
 		}
 
 		$bucket_id = (int) ( $bucket_context['id'] ?? 0 );

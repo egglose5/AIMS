@@ -8,22 +8,25 @@ class AIMS_Vendor_Access_Service {
 	private $access;
 	private $vendors;
 	private $audit;
+	private $auth_context;
 
 	public function __construct(
 		AIMS_Vendor_User_Access_Repository $access,
 		AIMS_Vendor_Repository $vendors,
-		AIMS_Audit_Service $audit = null
+		AIMS_Audit_Service $audit = null,
+		AIMS_Auth_Context_Service $auth_context = null
 	) {
 		$this->access  = $access;
 		$this->vendors = $vendors;
 		$this->audit   = $audit;
+		$this->auth_context = $auth_context ?: new AIMS_Auth_Context_Service();
 	}
 
 	public function grant_vendor_responsibility( int $vendor_id, int $user_id, array $data = array(), int $actor_user_id = 0 ): int {
-		$user_id = $this->resolve_actor_user_id( $user_id );
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
-		if ( ! $this->can_manage_vendor_scope( $vendor_id, $actor_user_id ) ) {
+		if ( ! $this->auth_context->has_actor_user_id( $actor_user_id ) || ! $this->can_manage_vendor_scope( $vendor_id, $actor_user_id ) ) {
 			$this->record_access_audit(
 				'access_grant_denied',
 				$actor_user_id,
@@ -60,10 +63,10 @@ class AIMS_Vendor_Access_Service {
 	}
 
 	public function revoke_vendor_responsibility( int $vendor_id, int $user_id, int $actor_user_id = 0 ): bool {
-		$user_id = $this->resolve_actor_user_id( $user_id );
-		$actor_user_id = $this->resolve_actor_user_id( $actor_user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
+		$actor_user_id = $this->normalize_actor_user_id( $actor_user_id );
 
-		if ( ! $this->can_manage_vendor_scope( $vendor_id, $actor_user_id ) ) {
+		if ( ! $this->auth_context->has_actor_user_id( $actor_user_id ) || ! $this->can_manage_vendor_scope( $vendor_id, $actor_user_id ) ) {
 			$this->record_access_audit(
 				'access_revoke_denied',
 				$actor_user_id,
@@ -95,7 +98,7 @@ class AIMS_Vendor_Access_Service {
 	}
 
 	public function get_accessible_vendors_for_user( int $user_id ): array {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( $this->can_manage_all_vendors( $user_id ) ) {
 			return $this->vendors->all();
@@ -105,7 +108,7 @@ class AIMS_Vendor_Access_Service {
 	}
 
 	public function user_has_vendor_access( int $vendor_id, int $user_id ): bool {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( $this->can_manage_all_vendors( $user_id ) ) {
 			return true;
@@ -115,7 +118,7 @@ class AIMS_Vendor_Access_Service {
 	}
 
 	public function user_can_manage_vendor( int $vendor_id, int $user_id ): bool {
-		$user_id = $this->resolve_actor_user_id( $user_id );
+		$user_id = $this->normalize_actor_user_id( $user_id );
 
 		if ( $this->can_manage_all_vendors( $user_id ) ) {
 			return true;
@@ -161,12 +164,8 @@ class AIMS_Vendor_Access_Service {
 	}
 
 	public function can_manage_all_vendors( int $user_id ): bool {
-		if ( $user_id <= 0 ) {
-			return false;
-		}
-
-		return user_can( $user_id, AIMS_Capabilities::CAP_MANAGE )
-			|| user_can( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS );
+		return $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| $this->auth_context->can_user( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDORS );
 	}
 
 	private function can_manage_vendor_scope( int $vendor_id, int $user_id ): bool {
@@ -177,12 +176,8 @@ class AIMS_Vendor_Access_Service {
 		return $this->access->user_can_manage_vendor( $vendor_id, $user_id );
 	}
 
-	private function resolve_actor_user_id( int $user_id ): int {
-		if ( $user_id > 0 ) {
-			return $user_id;
-		}
-
-		return (int) get_current_user_id();
+	private function normalize_actor_user_id( int $user_id ): int {
+		return $this->auth_context->normalize_actor_user_id( $user_id );
 	}
 
 	private function record_access_audit(

@@ -49,14 +49,19 @@ class AIMS_Shipping_Queue_Data_Provider {
 		return $summary;
 	}
 
+	public function get_access_mode_label(): string {
+		return $this->scope_resolver->get_access_mode_label( (int) get_current_user_id() );
+	}
+
 	private function get_service_rows(): array {
 		global $wpdb;
 
 		$table          = $this->sale_repository->get_table_name();
 		$event_table    = $this->event_repository->get_table_name();
 		$customer_table = $this->customer_repository->get_table_name();
+		$address_table  = $wpdb->prefix . 'aims_customer_addresses';
 		$alloc_table    = $wpdb->prefix . 'aims_sale_fulfillment_allocations';
-		$scope          = $this->scope_resolver->get_accessible_scope_ids();
+		$scope          = $this->scope_resolver->get_accessible_scope_ids( (int) get_current_user_id() );
 		$where_parts    = array(
 			"s.fulfillment_status IN ('needs_shipping', 'needs_shipping_info', 'backordered')",
 		);
@@ -122,7 +127,16 @@ class AIMS_Shipping_Queue_Data_Provider {
 				s.created_at,
 				s.event_id,
 				s.customer_id,
+				s.shipping_address_id,
 				COALESCE(e.event_name, '') AS event_name,
+				COALESCE(c.email_address, '') AS customer_email,
+				COALESCE(c.phone_number, '') AS customer_phone,
+				COALESCE(a.address_line_1, '') AS shipping_address_line_1,
+				COALESCE(a.address_line_2, '') AS shipping_address_line_2,
+				COALESCE(a.city, '') AS shipping_city,
+				COALESCE(a.state_region, '') AS shipping_state_region,
+				COALESCE(a.postal_code, '') AS shipping_postal_code,
+				COALESCE(a.country_code, '') AS shipping_country_code,
 				COALESCE(
 					TRIM(CONCAT(COALESCE(c.first_name, ''), ' ', COALESCE(c.last_name, ''))),
 					''
@@ -130,6 +144,7 @@ class AIMS_Shipping_Queue_Data_Provider {
 			FROM {$table} s
 			LEFT JOIN {$event_table} e ON e.id = s.event_id
 			LEFT JOIN {$customer_table} c ON c.id = s.customer_id
+			LEFT JOIN {$address_table} a ON a.id = s.shipping_address_id
 			WHERE " . implode( ' AND ', $where_parts ) . "
 			ORDER BY
 				CASE s.fulfillment_status
@@ -154,7 +169,7 @@ class AIMS_Shipping_Queue_Data_Provider {
 
 		$rows = array();
 		foreach ( $results as $result ) {
-		$rows[] = $this->normalize_row( $result );
+			$rows[] = $this->normalize_row( $result );
 		}
 
 		return $rows;
@@ -164,6 +179,8 @@ class AIMS_Shipping_Queue_Data_Provider {
 		$order_ref = ! empty( $row['square_order_id'] ) ? $row['square_order_id'] : 'Order #' . (int) $row['id'];
 		$status    = ! empty( $row['fulfillment_status'] ) ? (string) $row['fulfillment_status'] : 'needs_shipping';
 		$customer  = trim( (string) ( $row['customer_name'] ?? '' ) );
+		$contact_label = $this->build_contact_label( $row );
+		$shipping_label = $this->build_shipping_label( $row );
 
 		if ( '' === $customer ) {
 			$customer = 'Unknown customer';
@@ -172,16 +189,19 @@ class AIMS_Shipping_Queue_Data_Provider {
 		$source_label = $this->build_source_label( $row );
 
 		return array(
-			'order_ref'      => $order_ref,
-			'customer_name'  => $customer,
-			'event_name'     => ! empty( $row['event_name'] ) ? (string) $row['event_name'] : 'Unassigned event',
-			'shipping_label' => 'needs_shipping' === $status ? 'AIMS Shipping Required' : ucfirst( str_replace( '_', ' ', $status ) ),
-			'status'         => $status,
-			'queue_type'     => $this->get_queue_type_label( $status ),
-			'scope_label'    => $this->build_scope_label( $row ),
-			'access_label'   => $this->scope_resolver->get_access_mode_label(),
-			'source_label'   => $source_label,
-			'created_at'     => ! empty( $row['created_at'] ) ? (string) $row['created_at'] : current_time( 'mysql' ),
+			'order_ref'           => $order_ref,
+			'customer_name'       => $customer,
+			'customer_contact'    => $contact_label,
+			'event_name'          => ! empty( $row['event_name'] ) ? (string) $row['event_name'] : 'Unassigned event',
+			'shipping_label'      => $shipping_label,
+			'shipping_details'    => $this->build_shipping_details_label( $row ),
+			'status'              => $status,
+			'queue_type'          => $this->get_queue_type_label( $status ),
+			'scope_label'         => $this->build_scope_label( $row ),
+			'access_label'        => $this->scope_resolver->get_access_mode_label(),
+			'source_label'        => $source_label,
+			'fulfillment_hint'    => $this->build_fulfillment_hint( $status, $row ),
+			'created_at'          => ! empty( $row['created_at'] ) ? (string) $row['created_at'] : current_time( 'mysql' ),
 		);
 	}
 
@@ -231,6 +251,75 @@ class AIMS_Shipping_Queue_Data_Provider {
 		}
 
 		return $source_bucket !== '' ? $source_bucket : 'Unassigned source';
+	}
+
+	private function build_shipping_label( array $row ): string {
+		$status = ! empty( $row['fulfillment_status'] ) ? (string) $row['fulfillment_status'] : '';
+
+		switch ( $status ) {
+			case 'needs_shipping':
+				return 'Ready to ship';
+			case 'needs_shipping_info':
+				return 'Needs shipping info';
+			case 'backordered':
+				return 'Backordered';
+			case 'shipped':
+				return 'Shipped';
+			default:
+				return 'Fulfillment routed';
+		}
+	}
+
+	private function build_contact_label( array $row ): string {
+		$parts = array();
+
+		if ( ! empty( $row['customer_email'] ) ) {
+			$parts[] = (string) $row['customer_email'];
+		}
+
+		if ( ! empty( $row['customer_phone'] ) ) {
+			$parts[] = (string) $row['customer_phone'];
+		}
+
+		if ( empty( $parts ) ) {
+			return 'No contact on file';
+		}
+
+		return implode( ' · ', $parts );
+	}
+
+	private function build_shipping_details_label( array $row ): string {
+		$line_1 = trim( (string) ( $row['shipping_address_line_1'] ?? '' ) );
+		$line_2 = trim( (string) ( $row['shipping_address_line_2'] ?? '' ) );
+		$city   = trim( (string) ( $row['shipping_city'] ?? '' ) );
+		$state  = trim( (string) ( $row['shipping_state_region'] ?? '' ) );
+		$postal = trim( (string) ( $row['shipping_postal_code'] ?? '' ) );
+		$country = trim( (string) ( $row['shipping_country_code'] ?? '' ) );
+
+		if ( '' === $line_1 && '' === $city && '' === $state && '' === $postal && '' === $country ) {
+			return 'Shipping address not yet stored';
+		}
+
+		$city_state = trim( implode( ', ', array_filter( array( $city, $state ) ) ) );
+		$parts = array_filter( array( $line_1, $line_2, $city_state, $postal, $country ) );
+
+		return implode( ' · ', $parts );
+	}
+
+	private function build_fulfillment_hint( string $status, array $row ): string {
+		if ( 'needs_shipping_info' === $status ) {
+			return 'Collect missing contact or shipping details before creating the shipment.';
+		}
+
+		if ( 'backordered' === $status ) {
+			return 'Warehouse stock is required before this order can leave the queue.';
+		}
+
+		if ( 'needs_shipping' === $status ) {
+			return 'Order is ready for warehouse shipment.';
+		}
+
+		return ! empty( $row['shipping_country_code'] ) ? 'Shipment details are complete.' : 'Shipment details are incomplete.';
 	}
 
 	private function get_queue_type_label( string $status ): string {

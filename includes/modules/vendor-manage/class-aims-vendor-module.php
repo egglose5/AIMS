@@ -20,7 +20,7 @@ class AIMS_Vendor_Module {
 			return;
 		}
 
-		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS ) ) {
+		if ( ! current_user_can( AIMS_Capabilities::CAP_PORTAL_VENDORS ) && ! current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS ) ) {
 			return;
 		}
 
@@ -33,7 +33,7 @@ class AIMS_Vendor_Module {
 	}
 
 	public function render_foundation_notice(): void {
-		$vendors = $this->vendor_service->list_vendors();
+		$vendors = $this->vendor_service->list_vendors( (int) get_current_user_id() );
 
 		echo '<div class="notice notice-info"><p>';
 		echo esc_html(
@@ -45,4 +45,3 @@ class AIMS_Vendor_Module {
 		echo '</p></div>';
 	}
 }
-

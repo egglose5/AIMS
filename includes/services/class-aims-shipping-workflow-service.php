@@ -46,33 +46,9 @@ class AIMS_Shipping_Workflow_Service {
 		array $shipping_address = array(),
 		array $context = array()
 	): string {
-		$current_status = $this->normalize_status( (string) ( $sale['fulfillment_status'] ?? AIMS_Square_Sale_Repository::STATUS_PENDING ) );
+		$workflow_context = $this->build_workflow_context_flags( $sale, $customer, $shipping_address, $context );
 
-		if ( ! empty( $context['shipped'] ) ) {
-			return AIMS_Square_Sale_Repository::STATUS_SHIPPED;
-		}
-
-		if ( ! empty( $context['inventory_shortfall'] ) ) {
-			return AIMS_Square_Sale_Repository::STATUS_BACKORDERED;
-		}
-
-		if ( ! empty( $context['shipping_marker_present'] ) ) {
-			if ( $this->has_required_customer_data( $customer ) && $this->has_full_shipping_address( $shipping_address ) ) {
-				return AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING;
-			}
-
-			return AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING_INFO;
-		}
-
-		if ( ! empty( $context['warehouse_fulfillment_required'] ) ) {
-			return AIMS_Square_Sale_Repository::STATUS_BACKORDERED;
-		}
-
-		if ( $this->is_routed_status( $current_status ) ) {
-			return $current_status;
-		}
-
-		return AIMS_Square_Sale_Repository::STATUS_FULFILLED;
+		return $this->evaluate_status_from_context( $sale, $workflow_context );
 	}
 
 	public function route_sale(
@@ -82,12 +58,15 @@ class AIMS_Shipping_Workflow_Service {
 		array $shipping_address = array(),
 		array $context = array()
 	): array {
-		$status = $this->determine_status( $sale, $customer, $shipping_address, $context );
+		$workflow_context = $this->build_workflow_context( $sale, $customer, $shipping_address, $context );
+		$status = $workflow_context['status'];
 		$this->sales->update_fulfillment_status( $sale_id, $status );
 
 		return array(
-			'sale_id' => $sale_id,
-			'status'  => $status,
+			'sale_id'       => $sale_id,
+			'status'        => $status,
+			'status_label'  => $workflow_context['status_label'],
+			'routing_reason' => $workflow_context['routing_reason'],
 		);
 	}
 
@@ -120,21 +99,26 @@ class AIMS_Shipping_Workflow_Service {
 		array $shipping_address = array(),
 		array $context = array()
 	): array {
-		$status = $this->determine_status( $sale, $customer, $shipping_address, $context );
+		$workflow_context = $this->build_workflow_context( $sale, $customer, $shipping_address, $context );
+		$status = $workflow_context['status'];
 		if ( $sale_id > 0 ) {
 			$this->sales->update_fulfillment_status( $sale_id, $status );
 		}
 
-		$allocation_payload = $this->build_allocation_payload( $sale, $status, $context );
+		$allocation_payload = $this->build_allocation_payload( $sale, $status, array_merge( $context, $workflow_context ) );
 		$allocation_id = $this->allocations->save( $allocation_payload );
 
 		return array(
-			'sale_id'           => $sale_id,
-			'status'            => $status,
-			'allocation_id'     => $allocation_id,
-			'allocation_type' => $this->derive_allocation_type( $status ),
-			'allocation_status' => $this->derive_allocation_status( $status ),
+			'sale_id'            => $sale_id,
+			'status'             => $status,
+			'status_label'       => $workflow_context['status_label'],
+			'routing_reason'     => $workflow_context['routing_reason'],
+			'allocation_id'      => $allocation_id,
+			'allocation_type'    => $this->derive_allocation_type( $status ),
+			'allocation_status'  => $this->derive_allocation_status( $status ),
 			'allocation_payload' => $allocation_payload,
+			'customer_ready'     => ! empty( $workflow_context['customer_ready'] ),
+			'shipping_address_ready' => ! empty( $workflow_context['shipping_address_ready'] ),
 		);
 	}
 
@@ -171,7 +155,29 @@ class AIMS_Shipping_Workflow_Service {
 			'allocation_status'  => $this->derive_allocation_status( $status ),
 			'quantity'           => (float) ( $sale['quantity'] ?? 0 ),
 			'notes'              => $context['notes'] ?? '',
+			'routing_reason'     => ! empty( $context['routing_reason'] ) ? sanitize_text_field( (string) $context['routing_reason'] ) : '',
+			'status_label'       => $this->describe_status( $status ),
+			'customer_ready'     => ! empty( $context['customer_ready'] ),
+			'shipping_address_ready' => ! empty( $context['shipping_address_ready'] ),
+			'shipping_marker_present' => ! empty( $context['shipping_marker_present'] ),
 		);
+	}
+
+	public function describe_status( string $status ): string {
+		switch ( $this->normalize_status( $status ) ) {
+			case AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING:
+				return 'Needs shipping';
+			case AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING_INFO:
+				return 'Needs shipping info';
+			case AIMS_Square_Sale_Repository::STATUS_BACKORDERED:
+				return 'Backordered';
+			case AIMS_Square_Sale_Repository::STATUS_SHIPPED:
+				return 'Shipped';
+			case AIMS_Square_Sale_Repository::STATUS_FULFILLED:
+				return 'Fulfilled';
+			default:
+				return 'Pending';
+		}
 	}
 
 	private function is_routed_status( string $status ): bool {
@@ -216,11 +222,116 @@ class AIMS_Shipping_Workflow_Service {
 		return AIMS_Sale_Fulfillment_Allocation_Repository::STATUS_ALLOCATED;
 	}
 
+	private function build_workflow_context(
+		array $sale,
+		array $customer = array(),
+		array $shipping_address = array(),
+		array $context = array()
+	): array {
+		$flags  = $this->build_workflow_context_flags( $sale, $customer, $shipping_address, $context );
+		$status = $this->evaluate_status_from_context( $sale, $flags );
+
+		return array(
+			'status'                    => $status,
+			'status_label'              => $this->describe_status( $status ),
+			'routing_reason'            => $this->build_routing_reason( $status, $flags ),
+			'shipping_marker_present'   => $flags['shipping_marker_present'],
+			'customer_ready'            => $flags['customer_ready'],
+			'shipping_address_ready'    => $flags['shipping_address_ready'],
+			'inventory_shortfall'       => $flags['inventory_shortfall'],
+			'current_status'            => $flags['current_status'],
+			'warehouse_fulfillment_required' => $flags['warehouse_fulfillment_required'],
+			'shipped'                   => $flags['shipped'],
+		);
+	}
+
+	private function build_workflow_context_flags(
+		array $sale,
+		array $customer = array(),
+		array $shipping_address = array(),
+		array $context = array()
+	): array {
+		return array(
+			'current_status'             => $this->normalize_status( (string) ( $sale['fulfillment_status'] ?? AIMS_Square_Sale_Repository::STATUS_PENDING ) ),
+			'shipping_marker_present'    => ! empty( $context['shipping_marker_present'] ),
+			'customer_ready'             => $this->has_required_customer_data( $customer ),
+			'shipping_address_ready'     => $this->has_full_shipping_address( $shipping_address ),
+			'inventory_shortfall'        => ! empty( $context['inventory_shortfall'] ),
+			'warehouse_fulfillment_required' => ! empty( $context['warehouse_fulfillment_required'] ),
+			'shipped'                    => ! empty( $context['shipped'] ),
+		);
+	}
+
+	private function evaluate_status_from_context( array $sale, array $flags ): string {
+		$current_status = ! empty( $flags['current_status'] ) ? (string) $flags['current_status'] : AIMS_Square_Sale_Repository::STATUS_PENDING;
+
+		if ( ! empty( $flags['shipped'] ) ) {
+			return AIMS_Square_Sale_Repository::STATUS_SHIPPED;
+		}
+
+		if ( ! empty( $flags['inventory_shortfall'] ) ) {
+			return AIMS_Square_Sale_Repository::STATUS_BACKORDERED;
+		}
+
+		if ( ! empty( $flags['shipping_marker_present'] ) ) {
+			if ( ! empty( $flags['customer_ready'] ) && ! empty( $flags['shipping_address_ready'] ) ) {
+				return AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING;
+			}
+
+			return AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING_INFO;
+		}
+
+		if ( ! empty( $flags['warehouse_fulfillment_required'] ) ) {
+			return AIMS_Square_Sale_Repository::STATUS_BACKORDERED;
+		}
+
+		if ( $this->is_routed_status( $current_status ) ) {
+			return $current_status;
+		}
+
+		return AIMS_Square_Sale_Repository::STATUS_FULFILLED;
+	}
+
+	private function build_routing_reason( string $status, array $flags ): string {
+		if ( ! empty( $flags['shipped'] ) ) {
+			return 'Marked shipped at intake.';
+		}
+
+		if ( ! empty( $flags['inventory_shortfall'] ) ) {
+			return 'Inventory shortfall routed to warehouse backorder.';
+		}
+
+		if ( ! empty( $flags['warehouse_fulfillment_required'] ) ) {
+			return 'Warehouse fulfillment required by workflow context.';
+		}
+
+		if ( AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING_INFO === $this->normalize_status( $status ) ) {
+			$missing = array();
+			if ( empty( $flags['customer_ready'] ) ) {
+				$missing[] = 'customer contact';
+			}
+			if ( empty( $flags['shipping_address_ready'] ) ) {
+				$missing[] = 'shipping address';
+			}
+
+			return 'Missing ' . implode( ' and ', $missing ) . '.';
+		}
+
+		if ( AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING === $this->normalize_status( $status ) ) {
+			return ! empty( $flags['shipping_marker_present'] ) ? 'Shipping marker present and contact info complete.' : 'Warehouse shipment queued.';
+		}
+
+		if ( AIMS_Square_Sale_Repository::STATUS_FULFILLED === $this->normalize_status( $status ) ) {
+			return 'Fulfilled on site.';
+		}
+
+		return 'Pending routing.';
+	}
+
 	private function has_required_customer_data( array $customer ): bool {
 		return '' !== trim( (string) ( $customer['first_name'] ?? '' ) )
 			&& '' !== trim( (string) ( $customer['last_name'] ?? '' ) )
-			&& '' !== trim( (string) ( $customer['email_address'] ?? '' ) )
-			&& '' !== trim( (string) ( $customer['phone_number'] ?? '' ) );
+			&& ( '' !== trim( (string) ( $customer['email_address'] ?? '' ) ) || '' !== trim( (string) ( $customer['phone_number'] ?? '' ) ) );
 	}
 
 	private function has_full_shipping_address( array $shipping_address ): bool {
