@@ -9,6 +9,7 @@ class AIMS_Event_Automation_Service {
 	private $sales;
 	private $assignments;
 	private $financials;
+	private $event_locations;
 
 	public function __construct(
 		AIMS_Event_Repository $events,
@@ -30,7 +31,7 @@ class AIMS_Event_Automation_Service {
 			return null;
 		}
 
-		return $this->events->find_matching_event( $square_location_id, $sold_at );
+		return $this->find_matching_event_by_location_and_date( $square_location_id, $sold_at );
 	}
 
 	public function assign_sale_to_matching_event( array $sale ): ?array {
@@ -74,18 +75,18 @@ class AIMS_Event_Automation_Service {
 	}
 
 	public function reconcile_sales_for_event_window( string $square_location_id, string $sold_at ): int {
-		$matched_event = $this->events->find_matching_event( $square_location_id, $sold_at );
+		$matched_event = $this->find_matching_event_by_location_and_date( $square_location_id, $sold_at );
 
 		if ( empty( $matched_event['id'] ) ) {
 			return 0;
 		}
 
-		$sales = $this->sales->get_unassigned_sales_by_location_and_date( $square_location_id, $sold_at );
-		$assignment = $this->assignments->get_primary_for_event( (int) $matched_event['id'] );
-		$vendor_id  = ! empty( $assignment['vendor_id'] ) ? (int) $assignment['vendor_id'] : 0;
+		$sales          = $this->sales->get_unassigned_sales_by_location_and_date( $square_location_id, $sold_at );
 		$assigned_count = 0;
 
 		foreach ( $sales as $sale ) {
+			$vendor_id = $this->resolve_vendor_id_for_sale_assignment( $sale, $matched_event );
+
 			if ( $this->apply_assignment_to_sale(
 				(int) $sale['id'],
 				(int) $matched_event['id'],
@@ -107,8 +108,7 @@ class AIMS_Event_Automation_Service {
 	}
 
 	private function apply_sale_assignment( array $sale, array $matched_event ): bool {
-		$assignment = $this->assignments->get_primary_for_event( (int) $matched_event['id'] );
-		$vendor_id  = ! empty( $assignment['vendor_id'] ) ? (int) $assignment['vendor_id'] : 0;
+		$vendor_id = $this->resolve_vendor_id_for_sale_assignment( $sale, $matched_event );
 
 		$assigned = $this->apply_assignment_to_sale(
 			(int) $sale['id'],
@@ -125,5 +125,43 @@ class AIMS_Event_Automation_Service {
 
 	private function apply_assignment_to_sale( int $sale_id, int $event_id, int $vendor_id ): bool {
 		return $this->sales->assign_event( $sale_id, $event_id, $vendor_id );
+	}
+
+	private function resolve_vendor_id_for_sale_assignment( array $sale, array $matched_event ): int {
+		$existing_vendor_id = (int) ( $sale['vendor_id'] ?? 0 );
+
+		if ( $existing_vendor_id > 0 ) {
+			return $existing_vendor_id;
+		}
+
+		$assignment = $this->assignments->get_primary_for_event( (int) $matched_event['id'] );
+
+		return ! empty( $assignment['vendor_id'] ) ? (int) $assignment['vendor_id'] : 0;
+	}
+
+	private function find_matching_event_by_location_and_date( string $square_location_id, string $sold_at ): ?array {
+		$event_locations = $this->get_event_locations_repository();
+
+		if ( null !== $event_locations && method_exists( $event_locations, 'find_matching_event' ) ) {
+			$event = $event_locations->find_matching_event( $square_location_id, $sold_at );
+
+			if ( ! empty( $event ) ) {
+				return $event;
+			}
+		}
+
+		return $this->events->find_matching_event( $square_location_id, $sold_at );
+	}
+
+	private function get_event_locations_repository() {
+		if ( null !== $this->event_locations ) {
+			return $this->event_locations;
+		}
+
+		if ( class_exists( 'AIMS_Event_Square_Location_Repository' ) ) {
+			$this->event_locations = new AIMS_Event_Square_Location_Repository();
+		}
+
+		return $this->event_locations;
 	}
 }

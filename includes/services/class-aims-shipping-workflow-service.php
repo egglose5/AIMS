@@ -7,13 +7,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Shipping_Workflow_Service {
 	private $sales;
 	private $allocations;
+	private $bucket_identity;
 
 	public function __construct(
 		AIMS_Square_Sale_Repository $sales,
-		AIMS_Sale_Fulfillment_Allocation_Repository $allocations
+		AIMS_Sale_Fulfillment_Allocation_Repository $allocations,
+		AIMS_Bucket_Identity_Service $bucket_identity = null
 	) {
-		$this->sales       = $sales;
-		$this->allocations = $allocations;
+		$this->sales           = $sales;
+		$this->allocations     = $allocations;
+		$this->bucket_identity = $bucket_identity;
 	}
 
 	public function normalize_status( string $status ): string {
@@ -97,6 +100,7 @@ class AIMS_Shipping_Workflow_Service {
 		array $context = array()
 	): int {
 		$status = $this->normalize_status( $status );
+		$bucket_context = $this->normalize_bucket_context( $context );
 
 		$allocation_type = AIMS_Sale_Fulfillment_Allocation_Repository::ALLOCATION_EVENT_STOCK;
 		if ( $this->is_backordered_status( $status ) ) {
@@ -112,7 +116,8 @@ class AIMS_Shipping_Workflow_Service {
 				'product_id'         => (int) ( $sale['woo_product_id'] ?? $sale['product_id'] ?? 0 ),
 				'vendor_id'          => (int) ( $sale['vendor_id'] ?? 0 ),
 				'event_id'           => (int) ( $sale['event_id'] ?? 0 ),
-				'source_bucket_code' => sanitize_text_field( $context['source_bucket_code'] ?? '' ),
+				'source_bucket_id'   => (int) $bucket_context['source_bucket_id'],
+				'source_bucket_code' => (string) $bucket_context['source_bucket_code'],
 				'allocation_type'    => $allocation_type,
 				'allocation_status'  => $this->map_allocation_status_for_sale_status( $status ),
 				'quantity'           => (float) ( $sale['quantity'] ?? 0 ),
@@ -165,5 +170,26 @@ class AIMS_Shipping_Workflow_Service {
 		}
 
 		return AIMS_Sale_Fulfillment_Allocation_Repository::STATUS_ALLOCATED;
+	}
+
+	private function normalize_bucket_context( array $context ): array {
+		$bucket_ref = array(
+			'source_bucket_id'   => ! empty( $context['source_bucket_id'] ) ? (int) $context['source_bucket_id'] : 0,
+			'source_bucket_code' => sanitize_text_field( $context['source_bucket_code'] ?? '' ),
+		);
+
+		if ( is_object( $this->bucket_identity ) ) {
+			$resolved = $this->bucket_identity->normalize_bucket_reference(
+				array(
+					'bucket_id'   => $bucket_ref['source_bucket_id'],
+					'bucket_code' => $bucket_ref['source_bucket_code'],
+				)
+			);
+
+			$bucket_ref['source_bucket_id']   = (int) $resolved['bucket_id'];
+			$bucket_ref['source_bucket_code'] = (string) $resolved['bucket_code'];
+		}
+
+		return $bucket_ref;
 	}
 }

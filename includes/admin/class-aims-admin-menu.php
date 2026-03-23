@@ -18,6 +18,26 @@ class AIMS_Admin_Menu {
 			56
 		);
 
+		add_menu_page(
+			'Events',
+			'Events',
+			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
+			'aims-events',
+			array( $this, 'render_events_shell' ),
+			'dashicons-calendar-alt',
+			57
+		);
+
+		add_menu_page(
+			'Inventory',
+			'Inventory',
+			AIMS_Capabilities::CAP_VIEW_INVENTORY_SHELL,
+			'aims-inventory',
+			array( $this, 'render_inventory_shell' ),
+			'dashicons-archive',
+			58
+		);
+
 		add_submenu_page(
 			self::MENU_SLUG,
 			'Vendors',
@@ -31,7 +51,7 @@ class AIMS_Admin_Menu {
 			self::MENU_SLUG,
 			'Square Sync',
 			'Square Sync',
-			AIMS_Capabilities::CAP_RUN_SYNC,
+			AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC,
 			'aims-square-sync',
 			array( $this, 'render_square_sync_shell' )
 		);
@@ -40,9 +60,45 @@ class AIMS_Admin_Menu {
 			self::MENU_SLUG,
 			'Needs Shipping',
 			'Needs Shipping',
-			AIMS_Capabilities::CAP_RUN_SYNC,
+			AIMS_Capabilities::CAP_MANAGE_FULFILLMENT,
 			'aims-needs-shipping',
 			array( $this, 'render_needs_shipping_queue' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'Unmatched Sales',
+			'Unmatched Sales',
+			AIMS_Capabilities::CAP_REVIEW_SQUARE_EXCEPTIONS,
+			'aims-unmatched-sales',
+			array( $this, 'render_unmatched_sales_queue' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'Exceptions',
+			'Exceptions',
+			AIMS_Capabilities::CAP_REVIEW_SQUARE_EXCEPTIONS,
+			'aims-square-exceptions',
+			array( $this, 'render_square_exceptions_queue' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'Vendor Sync Review',
+			'Vendor Sync Review',
+			AIMS_Capabilities::CAP_REVIEW_VENDOR_SYNC,
+			'aims-vendor-sync-review',
+			array( $this, 'render_vendor_sync_review' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'Sync Runs / Replay',
+			'Sync Runs / Replay',
+			AIMS_Capabilities::CAP_RUN_REPLAY,
+			'aims-square-sync-runs',
+			array( $this, 'render_sync_runs_review' )
 		);
 
 		add_submenu_page(
@@ -56,15 +112,26 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_dashboard(): void {
-		echo '<div class="wrap"><h1>AIMS</h1><p>Phase 1 foundation is installed. Core modules will attach to this menu as the native AIMS rebuild progresses.</p></div>';
+		echo '<div class="wrap"><h1>AIMS</h1><p>Current implementation phase: Phase 1 schema and runtime hardening. Events, inventory, and reporting are being reshaped so Square flows into `event_id` first and physical inventory stays separate.</p></div>';
+	}
+
+	public function render_events_shell(): void {
+		$page = new AIMS_Events_Overview_Page( new AIMS_Events_Overview_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_inventory_shell(): void {
+		$page = new AIMS_Inventory_Overview_Page( new AIMS_Inventory_Overview_Data_Provider() );
+		$page->render();
 	}
 
 	public function render_vendors_shell(): void {
-		echo '<div class="wrap"><h1>Vendor Manage</h1><p>The vendor module foundation is active. Vendor access control, bucket assignment, and vendor operations UI will be implemented here next.</p></div>';
+		echo '<div class="wrap"><h1>Vendor Manage</h1><p>The vendor module foundation is active. Vendor access control and Square team-member reconciliation remain here, while bucket assignment is handled through Events and Inventory.</p></div>';
 	}
 
 	public function render_square_sync_shell(): void {
-		echo '<div class="wrap"><h1>Square Sync</h1><p>Native AIMS Square ingestion will be implemented here with queueing, dedupe, logging, and undo-safe stock controls before any live stock mutations are enabled.</p></div>';
+		$module = new AIMS_Square_Sync_Module();
+		$module->render_shell();
 	}
 
 	public function render_needs_shipping_queue(): void {
@@ -72,7 +139,28 @@ class AIMS_Admin_Menu {
 		$page->render();
 	}
 
+	public function render_unmatched_sales_queue(): void {
+		$page = new AIMS_Square_Unmatched_Sales_Page( new AIMS_Square_Unmatched_Sales_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_square_exceptions_queue(): void {
+		$page = new AIMS_Square_Exceptions_Page( new AIMS_Square_Exceptions_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_vendor_sync_review(): void {
+		$page = new AIMS_Vendor_Square_Sync_Review_Page( new AIMS_Vendor_Square_Sync_Review_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_sync_runs_review(): void {
+		$page = new AIMS_Square_Sync_Runs_Page( new AIMS_Square_Sync_Runs_Data_Provider() );
+		$page->render();
+	}
+
 	public function render_reports_shell(): void {
-		echo '<div class="wrap"><h1>Reports &amp; Analytics</h1><p>AIMS reporting repositories will be built directly on top of native AIMS operational and sync tables in a later phase.</p></div>';
+		$module = new AIMS_Reports_Module();
+		$module->render_shell();
 	}
 }

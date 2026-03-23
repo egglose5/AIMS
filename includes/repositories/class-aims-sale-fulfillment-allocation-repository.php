@@ -62,6 +62,7 @@ class AIMS_Sale_Fulfillment_Allocation_Repository {
 			'product_id'         => (int) ( $data['product_id'] ?? 0 ),
 			'vendor_id'          => (int) ( $data['vendor_id'] ?? 0 ),
 			'event_id'           => (int) ( $data['event_id'] ?? 0 ),
+			'source_bucket_id'   => ! empty( $data['source_bucket_id'] ) ? (int) $data['source_bucket_id'] : null,
 			'source_bucket_code' => sanitize_text_field( $data['source_bucket_code'] ?? '' ),
 			'allocation_type'    => $this->normalize_allocation_type( (string) ( $data['allocation_type'] ?? self::ALLOCATION_EVENT_STOCK ) ),
 			'allocation_status'  => $this->normalize_status( (string) ( $data['allocation_status'] ?? self::STATUS_ALLOCATED ) ),
@@ -75,7 +76,7 @@ class AIMS_Sale_Fulfillment_Allocation_Repository {
 				$this->get_table_name(),
 				$record,
 				array( 'id' => $allocation_id ),
-				array( '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%f', '%s', '%s' ),
+				array( '%d', '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%f', '%s', '%s' ),
 				array( '%d' )
 			);
 
@@ -87,7 +88,7 @@ class AIMS_Sale_Fulfillment_Allocation_Repository {
 		$wpdb->insert(
 			$this->get_table_name(),
 			$record,
-			array( '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%f', '%s', '%s', '%s' )
+			array( '%d', '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%f', '%s', '%s', '%s' )
 		);
 
 		return (int) $wpdb->insert_id;

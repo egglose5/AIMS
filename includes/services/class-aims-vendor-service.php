@@ -30,6 +30,7 @@ class AIMS_Vendor_Service {
 			'vendor_id'           => (int) $vendor['id'],
 			'vendor_name'         => (string) $vendor['vendor_name'],
 			'square_location_id'  => (string) $vendor['square_location_id'],
+			'square_team_member_id' => (string) ( $vendor['square_team_member_id'] ?? '' ),
 			'default_bucket_code' => (string) $vendor['default_bucket_code'],
 		);
 	}

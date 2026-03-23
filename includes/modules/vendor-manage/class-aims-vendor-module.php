@@ -38,7 +38,7 @@ class AIMS_Vendor_Module {
 		echo '<div class="notice notice-info"><p>';
 		echo esc_html(
 			sprintf(
-				'Vendor Manage foundation is active. %d vendor records currently exist in AIMS tables. Native vendor access control, bucket assignment UI, and Square-location management are the next implementation targets.',
+				'Vendor Manage foundation is active. %d vendor records currently exist in AIMS tables. Native vendor access control and Square team-member reconciliation remain here, while event and inventory modules own bucket assignment.',
 				count( $vendors )
 			)
 		);
