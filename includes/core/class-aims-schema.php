@@ -16,6 +16,8 @@ class AIMS_Schema {
 			$wpdb->prefix . 'aims_events',
 			$wpdb->prefix . 'aims_event_square_locations',
 			$wpdb->prefix . 'aims_event_expenses',
+			$wpdb->prefix . 'aims_event_customer_requests',
+			$wpdb->prefix . 'aims_event_customer_request_items',
 			$wpdb->prefix . 'aims_vendor_event_assignments',
 			$wpdb->prefix . 'aims_stitch_jobs',
 			$wpdb->prefix . 'aims_storage_locations',
@@ -52,6 +54,8 @@ class AIMS_Schema {
 		$events_table            = $wpdb->prefix . 'aims_events';
 		$event_square_locations_table = $wpdb->prefix . 'aims_event_square_locations';
 		$event_expenses_table    = $wpdb->prefix . 'aims_event_expenses';
+		$event_customer_requests_table = $wpdb->prefix . 'aims_event_customer_requests';
+		$event_customer_request_items_table = $wpdb->prefix . 'aims_event_customer_request_items';
 		$event_assignments_table = $wpdb->prefix . 'aims_vendor_event_assignments';
 		$stitch_jobs_table       = $wpdb->prefix . 'aims_stitch_jobs';
 		$storage_locations_table = $wpdb->prefix . 'aims_storage_locations';
@@ -211,6 +215,58 @@ class AIMS_Schema {
 				KEY vendor_id (vendor_id),
 				KEY expense_type (expense_type),
 				KEY incurred_at (incurred_at)
+			) {$charset_collate};",
+			"CREATE TABLE {$event_customer_requests_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				event_id bigint(20) unsigned NOT NULL,
+				wp_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				vendor_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				customer_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				customer_name varchar(191) NOT NULL DEFAULT '',
+				customer_email varchar(190) NOT NULL DEFAULT '',
+				customer_phone varchar(50) NOT NULL DEFAULT '',
+				status varchar(32) NOT NULL DEFAULT 'planned',
+				request_source varchar(50) NOT NULL DEFAULT 'event_customer_request',
+				request_status varchar(32) NOT NULL DEFAULT 'approved',
+				approval_mode varchar(50) NOT NULL DEFAULT 'auto_planning_signal',
+				notes longtext NULL,
+				submitted_at datetime NULL DEFAULT NULL,
+				requested_at datetime NULL DEFAULT NULL,
+				approved_at datetime NULL DEFAULT NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				KEY event_id (event_id),
+				KEY status (status),
+				KEY wp_user_id (wp_user_id),
+				KEY vendor_id (vendor_id),
+				KEY customer_id (customer_id),
+				KEY request_status (request_status),
+				KEY submitted_at (submitted_at),
+				KEY requested_at (requested_at)
+			) {$charset_collate};",
+			"CREATE TABLE {$event_customer_request_items_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				request_id bigint(20) unsigned NOT NULL,
+				event_id bigint(20) unsigned NOT NULL,
+				woo_product_id bigint(20) unsigned NOT NULL,
+				product_sku varchar(191) NOT NULL DEFAULT '',
+				product_name varchar(191) NOT NULL DEFAULT '',
+				vendor_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				quantity decimal(20,4) NOT NULL DEFAULT 0.0000,
+				quantity_requested decimal(20,4) NOT NULL DEFAULT 0.0000,
+				notes longtext NULL,
+				request_note text NULL,
+				item_status varchar(32) NOT NULL DEFAULT 'planned',
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				KEY request_id (request_id),
+				KEY event_id (event_id),
+				KEY item_status (item_status),
+				KEY woo_product_id (woo_product_id),
+				KEY product_sku (product_sku),
+				KEY vendor_id (vendor_id)
 			) {$charset_collate};",
 			"CREATE TABLE {$event_assignments_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

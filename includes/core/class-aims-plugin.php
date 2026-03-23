@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Plugin {
 	const OPTION_SCHEMA_VERSION = 'aims_schema_version';
 	const OPTION_INSTALLED_AT   = 'aims_installed_at';
-	const SCHEMA_VERSION        = '0.3.1';
+	const SCHEMA_VERSION        = '0.3.4';
 
 	private static $instance = null;
 
@@ -15,6 +15,7 @@ class AIMS_Plugin {
 	private $capabilities;
 	private $admin_menu;
 	private $vendor_module;
+	private $event_module;
 	private $square_sync_module;
 	private $reports_module;
 
@@ -54,6 +55,7 @@ class AIMS_Plugin {
 				new AIMS_Vendor_Repository()
 			)
 		);
+		$this->event_module      = new AIMS_Event_Module();
 		$this->square_sync_module = new AIMS_Square_Sync_Module();
 		$this->reports_module     = new AIMS_Reports_Module();
 	}
@@ -66,6 +68,7 @@ class AIMS_Plugin {
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
 
 		$this->vendor_module->register();
+		$this->event_module->register();
 		$this->square_sync_module->register();
 		$this->reports_module->register();
 	}

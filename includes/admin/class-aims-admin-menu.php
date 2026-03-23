@@ -28,6 +28,24 @@ class AIMS_Admin_Menu {
 			57
 		);
 
+		add_submenu_page(
+			'aims-events',
+			'Customer Demand',
+			'Customer Demand',
+			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
+			'aims-event-customer-demand',
+			array( $this, 'render_event_customer_demand' )
+		);
+
+		add_submenu_page(
+			'aims-events',
+			'Demand Summary',
+			'Demand Summary',
+			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
+			'aims-event-demand-summary',
+			array( $this, 'render_event_demand_summary' )
+		);
+
 		add_menu_page(
 			'Inventory',
 			'Inventory',
@@ -117,6 +135,16 @@ class AIMS_Admin_Menu {
 
 	public function render_events_shell(): void {
 		$page = new AIMS_Events_Overview_Page( new AIMS_Events_Overview_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_event_customer_demand(): void {
+		$page = new AIMS_Event_Customer_Demand_Page( new AIMS_Event_Customer_Demand_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_event_demand_summary(): void {
+		$page = new AIMS_Event_Demand_Summary_Page( new AIMS_Event_Demand_Summary_Data_Provider() );
 		$page->render();
 	}
 

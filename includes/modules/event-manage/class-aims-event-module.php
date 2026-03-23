@@ -5,8 +5,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Event_Module {
+	private $public_demand_controller;
+	private $requests_history_controller;
+
 	public function register(): void {
+		add_action( 'init', array( $this, 'register_public_hooks' ) );
 		add_action( 'admin_init', array( $this, 'register_foundation_notices' ) );
+	}
+
+	public function register_public_hooks(): void {
+		$this->get_public_demand_controller()->register();
+		$this->get_requests_history_controller()->register();
 	}
 
 	public function register_foundation_notices(): void {
@@ -19,7 +28,7 @@ class AIMS_Event_Module {
 		}
 
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
-		if ( 'aims-events' !== $page ) {
+		if ( ! in_array( $page, array( 'aims-events', 'aims-event-customer-demand', 'aims-event-demand-summary' ), true ) ) {
 			return;
 		}
 
@@ -35,8 +44,24 @@ class AIMS_Event_Module {
 
 	public function render_foundation_notice(): void {
 		echo '<div class="notice notice-info"><p>';
-		echo esc_html( 'Events foundation is active. Event bucket assignments and event-centric reporting will use `event_id` as the shared bridge.' );
+		echo esc_html( 'Events foundation is active. Event bucket assignments, customer demand planning, and event-centric reporting will use `event_id` as the shared bridge.' );
 		echo '</p></div>';
+	}
+
+	private function get_public_demand_controller(): AIMS_Event_Demand_Intake_Controller {
+		if ( null === $this->public_demand_controller ) {
+			$this->public_demand_controller = new AIMS_Event_Demand_Intake_Controller();
+		}
+
+		return $this->public_demand_controller;
+	}
+
+	private function get_requests_history_controller(): AIMS_Event_Requests_History_Controller {
+		if ( null === $this->requests_history_controller ) {
+			$this->requests_history_controller = new AIMS_Event_Requests_History_Controller();
+		}
+
+		return $this->requests_history_controller;
 	}
 }
 
