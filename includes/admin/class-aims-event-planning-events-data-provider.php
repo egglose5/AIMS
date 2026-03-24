@@ -57,6 +57,25 @@ class AIMS_Event_Planning_Events_Data_Provider {
 		);
 	}
 
+	public function is_event_authorized( int $event_id ): bool {
+		$event_id = max( 0, $event_id );
+		if ( $event_id <= 0 ) {
+			return false;
+		}
+
+		foreach ( $this->get_authorized_events() as $event ) {
+			if ( ! is_array( $event ) ) {
+				continue;
+			}
+
+			if ( $event_id === (int) ( $event['id'] ?? 0 ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	private function get_authorized_events(): array {
 		if ( ! $this->has_access_service() ) {
 			return array();

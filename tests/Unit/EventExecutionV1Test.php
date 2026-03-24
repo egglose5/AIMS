@@ -156,7 +156,7 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 				'product_id'     => 901,
 				'reference_type' => 'vendor_event_checkin',
 				'reference_id'   => 'CHK-100',
-				'movement_type'  => 'vendor_event_checkin',
+				'movement_type'  => 'allocate_to_event_prepack',
 				'quantity_delta' => 3.0,
 				'position_status' => 'active',
 			)
@@ -165,7 +165,7 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$this->assertSame( 321, $result['movement_id'] );
 		$this->assertSame( 9.5, $result['current_quantity'] );
 		$this->assertCount( 1, $movements->created );
-		$this->assertSame( 'vendor_event_checkin', $movements->created[0]['movement_type'] );
+		$this->assertSame( 'allocate_to_event_prepack', $movements->created[0]['movement_type'] );
 		$this->assertCount( 1, $positions->updated );
 		$this->assertSame( 321, $positions->updated[0]['last_bucket_movement_id'] );
 	}
@@ -213,7 +213,7 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$this->assertSame( 654, $result['movement_id'] );
 		$this->assertSame( 6.0, $result['current_quantity'] );
 		$this->assertCount( 1, $movements->created );
-		$this->assertSame( 'event_return', $movements->created[0]['movement_type'] );
+		$this->assertSame( 'return_from_event', $movements->created[0]['movement_type'] );
 		$this->assertCount( 1, $positions->updated );
 		$this->assertSame( 654, $positions->updated[0]['last_bucket_movement_id'] );
 	}

@@ -7,11 +7,16 @@ namespace AIMS\Tests\Unit;
 use AIMS_Bucket_Inventory_Movement_Repository;
 use AIMS_Bucket_Inventory_Position_Repository;
 use AIMS_Bucket_Movement_Service;
+use AIMS_Bucket_Position_Service;
 
 final class BucketMovementServiceTest extends \AIMS\Tests\TestCase {
 	public function testRecordMovementUsesMovementBalanceAsSourceOfTruth(): void {
 		$movementRepo = new class() extends AIMS_Bucket_Inventory_Movement_Repository {
 			public array $created = array();
+
+			public function has_reference_application( string $reference_type, string $reference_id, int $product_id, int $bucket_id, string $movement_type ): bool {
+				return false;
+			}
 
 			public function create( array $data ): int {
 				$this->created[] = $data;
@@ -41,7 +46,7 @@ final class BucketMovementServiceTest extends \AIMS\Tests\TestCase {
 				'product_id'     => 99,
 				'reference_type' => 'inbound_receipt',
 				'reference_id'   => 'R-123',
-				'movement_type'  => 'stock_in',
+				'movement_type'  => 'origin_inbound',
 				'quantity_delta' => 12.75,
 			)
 		);

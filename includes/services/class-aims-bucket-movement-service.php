@@ -38,7 +38,7 @@ class AIMS_Bucket_Movement_Service {
 	}
 
 	public function record_event_return( array $data ) {
-		$data['movement_type'] = $data['movement_type'] ?? 'event_return';
+		$data['movement_type'] = $data['movement_type'] ?? AIMS_Inventory_Movement_Events::RETURN_FROM_EVENT;
 
 		return $this->record_movement( $data );
 	}

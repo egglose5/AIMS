@@ -43,9 +43,9 @@ This checklist maps release tasks to concrete code areas in this repository.
 
 ## Milestone D - Square Safety and Operator UX
 
-- [ ] Add explicit capability gates and nonce-protected actions for all sync triggers.
-- [ ] Add status telemetry on admin screens (last sync, affected rows, error count).
-- [ ] Enforce idempotency and duplicate protection in visible workflows.
+- [x] Add explicit capability gates and nonce-protected actions for all sync triggers.
+- [x] Add status telemetry on admin screens (last sync, affected rows, error count).
+- [x] Enforce idempotency and duplicate protection in visible workflows.
 - [x] Define and enforce canonical inventory movement events so stock changes only occur on physical movement actions.
 
 ## Milestone E - Packaging and Release Hardening
@@ -53,5 +53,8 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Finalize plugin metadata in `ai-man-sys.php` (name, URI, author, version cadence).
 - [x] Update `readme.txt` for distribution-ready language and changelog discipline.
 - [x] Remove foundation-phase messaging from admin shells and notices.
-- [ ] Run lint/tests for touched areas and document upgrade path.
+- [x] Run lint/tests for touched areas and document upgrade path.
+  - Touched-area test coverage validated via PHPUnit.
+  - Upgrade notes documented in `docs/upgrade-path.md`.
+  - Full-suite run currently has known baseline failures in movement-related tests (tracked separately).
 

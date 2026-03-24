@@ -16,12 +16,18 @@ class AIMS_Event_Planning_Events_Page {
 	public function render(): void {
 		$rows = $this->data_provider->get_rows();
 		$edit_event_id = isset( $_GET['event_id'] ) ? max( 0, (int) wp_unslash( $_GET['event_id'] ) ) : 0;
-		$editing_event = $edit_event_id > 0 ? $this->events->find( $edit_event_id ) : null;
+		$is_authorized_edit = $edit_event_id > 0 ? $this->data_provider->is_event_authorized( $edit_event_id ) : true;
+		$editing_event = ( $edit_event_id > 0 && $is_authorized_edit ) ? $this->events->find( $edit_event_id ) : null;
 
 		echo '<div class="wrap">';
 		echo '<h1>Events &rsaquo; Event Planning</h1>';
 		echo '<p>Planner access is scoped to authorized events only. Select an event to review demand, bucket contents, and manual bucket assignments in the workspace.</p>';
 		$this->render_status_notice();
+
+		if ( $edit_event_id > 0 && ! $is_authorized_edit ) {
+			echo '<div class="notice notice-error"><p>You are not authorized to edit that event.</p></div>';
+		}
+
 		$this->render_event_form( $editing_event );
 
 		if ( empty( $rows ) ) {

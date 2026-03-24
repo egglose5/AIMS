@@ -76,6 +76,21 @@ class AIMS_Sync_Action_Repository {
 		return is_array( $row ) ? $row : null;
 	}
 
+	public function find_latest_for_run_action_type( int $run_id, string $action_type ): ?array {
+		global $wpdb;
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE run_id = %d AND action_type = %s ORDER BY occurred_at DESC, id DESC LIMIT 1',
+				$run_id,
+				sanitize_key( $action_type )
+			),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $row : null;
+	}
+
 	private function normalize_quantity_delta( $value ): float {
 		if ( is_string( $value ) ) {
 			$value = preg_replace( '/[^0-9\.\-]/', '', $value );

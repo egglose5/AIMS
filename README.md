@@ -19,6 +19,8 @@ The repository currently provides:
 - curated public event projection layer with public catalog/detail shortcodes
 - admin demand summary and public projection management pages
 - Square queue/raw event/normalized sale/replay scaffolding
+- capability-gated, nonce-protected replay/undo triggers with duplicate-request protection per sync run
+- Sync Runs operator telemetry (last status, completed timestamp, processed rows, error totals)
 - runtime assignment, attribution, sync effect, and exception table foundations
 - native product cost rule storage for COGS-based profitability
 - PHPUnit harness with passing first unit tests
@@ -79,6 +81,10 @@ The repository currently provides:
 5. Add later physical execution states on assigned buckets without treating planning clicks as stock movements.
 6. Expand Square replay and fulfillment wiring only after the planning and commitment workflow is stable.
 7. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+
+## Upgrade path
+
+- Follow the rollout and rollback procedure in `docs/upgrade-path.md`.
 
 ## Operational backbone
 

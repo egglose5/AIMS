@@ -11,6 +11,11 @@ class AIMS_Event_Module implements AIMS_Module {
 	private $public_projection_controller;
 	private $public_projection_data_provider;
 	private $planning_actions;
+	private $event_planning_access_service;
+
+	public function __construct( $event_planning_access_service = null ) {
+		$this->event_planning_access_service = $event_planning_access_service;
+	}
 
 	public function register(): void {
 		add_action( 'init', array( $this, 'register_public_hooks' ) );
@@ -76,9 +81,13 @@ class AIMS_Event_Module implements AIMS_Module {
 			wp_die( esc_html__( 'You do not have permission to manage events.', 'ai-man-sys' ) );
 		}
 
+		$event_id = isset( $_POST['event_id'] ) ? max( 0, (int) wp_unslash( $_POST['event_id'] ) ) : 0;
+		if ( $event_id > 0 && ! $this->can_current_user_mutate_event( $event_id ) ) {
+			wp_die( esc_html__( 'You do not have permission to edit this event.', 'ai-man-sys' ) );
+		}
+
 		check_admin_referer( 'aims_event_save' );
 
-		$event_id = isset( $_POST['event_id'] ) ? max( 0, (int) wp_unslash( $_POST['event_id'] ) ) : 0;
 		$data     = $this->collect_event_payload();
 
 		if ( '' === $data['event_name'] || '' === $data['start_date'] || '' === $data['end_date'] ) {
@@ -98,9 +107,13 @@ class AIMS_Event_Module implements AIMS_Module {
 			wp_die( esc_html__( 'You do not have permission to manage events.', 'ai-man-sys' ) );
 		}
 
+		$event_id = isset( $_POST['event_id'] ) ? max( 0, (int) wp_unslash( $_POST['event_id'] ) ) : 0;
+		if ( $event_id > 0 && ! $this->can_current_user_mutate_event( $event_id ) ) {
+			wp_die( esc_html__( 'You do not have permission to archive this event.', 'ai-man-sys' ) );
+		}
+
 		check_admin_referer( 'aims_event_archive' );
 
-		$event_id = isset( $_POST['event_id'] ) ? max( 0, (int) wp_unslash( $_POST['event_id'] ) ) : 0;
 		if ( $event_id <= 0 ) {
 			$this->redirect_to_planning( 'error', 'Missing event id.' );
 		}
@@ -160,6 +173,63 @@ class AIMS_Event_Module implements AIMS_Module {
 	private function can_manage_events(): bool {
 		return current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENTS )
 			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING );
+	}
+
+	private function can_current_user_mutate_event( int $event_id ): bool {
+		$event_id = max( 0, $event_id );
+		if ( $event_id <= 0 ) {
+			return false;
+		}
+
+		$access_service = $this->get_event_planning_access_service();
+		if ( ! is_object( $access_service ) ) {
+			return true;
+		}
+
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+
+		if ( method_exists( $access_service, 'can_view_all_events' ) && (bool) $access_service->can_view_all_events( $user_id ) ) {
+			return true;
+		}
+
+		$authorized_event_ids = array();
+
+		foreach ( array( 'get_authorized_event_ids', 'get_authorized_events' ) as $method ) {
+			if ( ! method_exists( $access_service, $method ) ) {
+				continue;
+			}
+
+			$result = $access_service->{$method}( $user_id );
+			if ( ! is_array( $result ) ) {
+				continue;
+			}
+
+			foreach ( $result as $item ) {
+				if ( is_array( $item ) ) {
+					$authorized_event_ids[] = (int) ( $item['id'] ?? 0 );
+					continue;
+				}
+
+				$authorized_event_ids[] = (int) $item;
+			}
+
+			break;
+		}
+
+		$authorized_event_ids = array_values( array_filter( array_unique( $authorized_event_ids ) ) );
+
+		return in_array( $event_id, $authorized_event_ids, true );
+	}
+
+	private function get_event_planning_access_service() {
+		if ( null === $this->event_planning_access_service && class_exists( 'AIMS_Event_Planning_Access_Service' ) ) {
+			$this->event_planning_access_service = new AIMS_Event_Planning_Access_Service();
+		}
+
+		return $this->event_planning_access_service;
 	}
 
 	private function collect_event_payload(): array {
