@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  php-tests:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSER_MEMORY_LIMIT: -1
+    strategy:
+      matrix:
+        php: [8.0, 8.1, 8.2]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Validate composer.json
+        run: composer validate --no-check-publish || true
+      - name: Get composer cache directory
+        id: composer-cache
+        run: |
+          echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-
+      - name: Show PHP runtime
+        run: |
+          php -v || true
+          php -m || true
+          composer --version || true
+      - name: Install dependencies
+        run: composer install --no-progress --prefer-dist --no-interaction
+      - name: Run static analysis (if available)
+        run: |
+          if [ -f ./vendor/bin/phpstan ]; then
+            vendor/bin/phpstan analyse -l 7 || true
+          fi
+      - name: Run PHPUnit
+        run: |
+          if [ -f ./vendor/bin/phpunit ]; then
+            vendor/bin/phpunit --configuration phpunit.xml.dist --colors=always || exit 1
+          else
+            echo "No phpunit found, skipping tests"
+          fi
