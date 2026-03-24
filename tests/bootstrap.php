@@ -153,6 +153,116 @@ if ( ! function_exists( 'esc_html__' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_attr' ) ) {
+	function esc_attr( $text ): string {
+		return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'esc_url_raw' ) ) {
+	function esc_url_raw( $url ): string {
+		return trim( (string) $url );
+	}
+}
+
+if ( ! function_exists( 'esc_url' ) ) {
+	function esc_url( $url ): string {
+		return htmlspecialchars( (string) $url, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'current_user_can' ) ) {
+	function current_user_can( string $cap ): bool {
+		return \AIMS\Tests\Support\TestState::current_user_can( $cap );
+	}
+}
+
+if ( ! function_exists( 'user_can' ) ) {
+	function user_can( $user_id, string $cap ): bool {
+		return \AIMS\Tests\Support\TestState::user_can( (int) $user_id, $cap );
+	}
+}
+
+if ( ! function_exists( 'add_action' ) ) {
+	function add_action( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ): void {
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			$hook,
+			array(
+				'callback'       => $callback,
+				'priority'       => $priority,
+				'accepted_args'   => $accepted_args,
+			)
+		);
+	}
+}
+
+if ( ! function_exists( 'add_menu_page' ) ) {
+	function add_menu_page( ...$args ) {
+		\AIMS\Tests\Support\TestState::record_hook_call( 'add_menu_page', $args );
+		return 'add_menu_page';
+	}
+}
+
+if ( ! function_exists( 'add_submenu_page' ) ) {
+	function add_submenu_page( ...$args ) {
+		\AIMS\Tests\Support\TestState::record_hook_call( 'add_submenu_page', $args );
+		return 'add_submenu_page';
+	}
+}
+
+if ( ! function_exists( 'remove_submenu_page' ) ) {
+	function remove_submenu_page( ...$args ) {
+		\AIMS\Tests\Support\TestState::record_hook_call( 'remove_submenu_page', $args );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'admin_url' ) ) {
+	function admin_url( string $path = '' ): string {
+		return 'http://example.test/wp-admin/' . ltrim( $path, '/' );
+	}
+}
+
+if ( ! function_exists( 'add_query_arg' ) ) {
+	function add_query_arg( $args, string $url = '' ): string {
+		$query = is_array( $args ) ? http_build_query( $args ) : (string) $args;
+		if ( '' === $url ) {
+			return $query;
+		}
+
+		$separator = false !== strpos( $url, '?' ) ? '&' : '?';
+		return $url . $separator . $query;
+	}
+}
+
+if ( ! function_exists( 'wp_unslash' ) ) {
+	function wp_unslash( $value ) {
+		return $value;
+	}
+}
+
+if ( ! function_exists( 'check_admin_referer' ) ) {
+	function check_admin_referer( string $action = '', string $query_arg = '_wpnonce' ): void {
+	}
+}
+
+if ( ! function_exists( 'wp_safe_redirect' ) ) {
+	function wp_safe_redirect( string $location ): void {
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			'wp_safe_redirect',
+			array(
+				'location' => $location,
+			)
+		);
+	}
+}
+
+if ( ! function_exists( 'wp_die' ) ) {
+	function wp_die( $message = '' ): void {
+		throw new RuntimeException( (string) $message );
+	}
+}
+
 if ( ! function_exists( 'wc_get_product' ) ) {
 	function wc_get_product( int $product_id ) {
 		return \AIMS\Tests\Support\TestState::get_product( $product_id );

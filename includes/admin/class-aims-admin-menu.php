@@ -48,6 +48,25 @@ class AIMS_Admin_Menu {
 
 		add_submenu_page(
 			'aims-events',
+			'Event Planning',
+			'Event Planning',
+			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
+			'aims-event-planning',
+			array( $this, 'render_event_planning' )
+		);
+
+		add_submenu_page(
+			'aims-events',
+			'Event Planning Workspace',
+			'Event Planning Workspace',
+			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
+			AIMS_Event_Planning_Workspace_Page::PAGE_SLUG,
+			array( $this, 'render_event_planning_workspace' )
+		);
+		remove_submenu_page( 'aims-events', AIMS_Event_Planning_Workspace_Page::PAGE_SLUG );
+
+		add_submenu_page(
+			'aims-events',
 			'Public Projection',
 			'Public Projection',
 			AIMS_Capabilities::CAP_MANAGE_EVENT_PUBLICATION,
@@ -154,6 +173,16 @@ class AIMS_Admin_Menu {
 
 	public function render_event_demand_summary(): void {
 		$page = new AIMS_Event_Demand_Summary_Page( new AIMS_Event_Demand_Summary_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_event_planning(): void {
+		$page = new AIMS_Event_Planning_Events_Page( new AIMS_Event_Planning_Events_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_event_planning_workspace(): void {
+		$page = new AIMS_Event_Planning_Workspace_Page( new AIMS_Event_Planning_Workspace_Data_Provider() );
 		$page->render();
 	}
 

@@ -9,11 +9,13 @@ class AIMS_Event_Module {
 	private $requests_history_controller;
 	private $public_projection_controller;
 	private $public_projection_data_provider;
+	private $planning_actions;
 
 	public function register(): void {
 		add_action( 'init', array( $this, 'register_public_hooks' ) );
 		add_action( 'admin_init', array( $this, 'register_foundation_notices' ) );
 		add_action( 'admin_post_aims_save_event_public_projection', array( $this, 'handle_public_projection_save' ) );
+		$this->get_planning_actions()->register();
 	}
 
 	public function register_public_hooks(): void {
@@ -120,6 +122,16 @@ class AIMS_Event_Module {
 		}
 
 		return $this->public_projection_data_provider;
+	}
+
+	private function get_planning_actions(): AIMS_Event_Planning_Actions {
+		if ( null === $this->planning_actions ) {
+			$this->planning_actions = new AIMS_Event_Planning_Actions(
+				new AIMS_Event_Planning_Action_Service()
+			);
+		}
+
+		return $this->planning_actions;
 	}
 }
 

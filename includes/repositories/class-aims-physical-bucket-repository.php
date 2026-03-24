@@ -11,6 +11,32 @@ class AIMS_Physical_Bucket_Repository {
 		return $wpdb->prefix . 'aims_physical_buckets';
 	}
 
+	public function get_all( array $args = array() ): array {
+		global $wpdb;
+
+		$query = $this->build_bucket_query( $args );
+
+		return $wpdb->get_results(
+			$wpdb->prepare( $query['sql'], $query['params'] ),
+			ARRAY_A
+		);
+	}
+
+	public function get_all_with_context( array $args = array() ): array {
+		return array_map( array( $this, 'hydrate_bucket_context' ), $this->get_all( $args ) );
+	}
+
+	public function get_available_for_planning( array $args = array() ): array {
+		$args = array_merge(
+			array(
+				'status' => 'available',
+			),
+			$args
+		);
+
+		return $this->get_all_with_context( $args );
+	}
+
 	public function save( array $data, int $bucket_id = 0 ): int {
 		global $wpdb;
 
@@ -76,6 +102,24 @@ class AIMS_Physical_Bucket_Repository {
 		return is_array( $row ) ? $row : null;
 	}
 
+	public function find_with_context( int $bucket_id ): ?array {
+		global $wpdb;
+
+		$query = $this->build_bucket_query(
+			array(
+				'bucket_ids' => array( $bucket_id ),
+				'limit'      => 1,
+			)
+		);
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare( $query['sql'], $query['params'] ),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $this->hydrate_bucket_context( $row ) : null;
+	}
+
 	public function get_for_location( int $location_id ): array {
 		global $wpdb;
 
@@ -127,6 +171,179 @@ class AIMS_Physical_Bucket_Repository {
 			array( 'id' => $bucket_id ),
 			array( '%s', '%s' ),
 			array( '%d' )
+		);
+	}
+
+	private function build_bucket_query( array $args ): array {
+		global $wpdb;
+
+		$bucket_table  = $this->get_table_name();
+		$location_table = $wpdb->prefix . 'aims_storage_locations';
+
+		$sql = 'SELECT b.*, current_loc.id AS current_location_id, current_loc.location_code AS current_location_code, current_loc.location_name AS current_location_name, current_loc.location_type AS current_location_type, current_loc.parent_location_id AS current_location_parent_id, current_loc.sort_order AS current_location_sort_order, current_loc.is_pickable AS current_location_is_pickable, current_loc.is_staging AS current_location_is_staging, current_loc.status AS current_location_status, current_loc.barcode_value AS current_location_barcode, home_loc.id AS home_location_id, home_loc.location_code AS home_location_code, home_loc.location_name AS home_location_name, home_loc.location_type AS home_location_type, home_loc.parent_location_id AS home_location_parent_id, home_loc.sort_order AS home_location_sort_order, home_loc.is_pickable AS home_location_is_pickable, home_loc.is_staging AS home_location_is_staging, home_loc.status AS home_location_status, home_loc.barcode_value AS home_location_barcode FROM ' . $bucket_table . ' b LEFT JOIN ' . $location_table . ' current_loc ON current_loc.id = b.current_storage_location_id LEFT JOIN ' . $location_table . ' home_loc ON home_loc.id = b.home_storage_location_id WHERE 1=1';
+		$params = array();
+
+		if ( isset( $args['status'] ) && '' !== (string) $args['status'] ) {
+			$status = $args['status'];
+
+			if ( is_array( $status ) ) {
+				$status = array_values(
+					array_filter(
+						array_map(
+							static function ( $value ): string {
+								return sanitize_key( (string) $value );
+							},
+							$status
+						)
+					)
+				);
+
+				if ( ! empty( $status ) ) {
+					$sql .= ' AND b.status IN (' . implode( ', ', array_fill( 0, count( $status ), '%s' ) ) . ')';
+					$params = array_merge( $params, $status );
+				}
+			} else {
+				$sql      .= ' AND b.status = %s';
+				$params[] = sanitize_key( (string) $status );
+			}
+		}
+
+		if ( ! empty( $args['bucket_type'] ) ) {
+			$sql      .= ' AND b.bucket_type = %s';
+			$params[] = sanitize_key( (string) $args['bucket_type'] );
+		}
+
+		if ( ! empty( $args['vendor_id'] ) ) {
+			$sql      .= ' AND b.vendor_id = %d';
+			$params[] = (int) $args['vendor_id'];
+		}
+
+		if ( ! empty( $args['vendor_ids'] ) && is_array( $args['vendor_ids'] ) ) {
+			$vendor_ids = array_values(
+				array_filter(
+					array_map(
+						static function ( $value ): int {
+							return (int) $value;
+						},
+						$args['vendor_ids']
+					)
+				)
+			);
+
+			if ( ! empty( $vendor_ids ) ) {
+				$sql .= ' AND b.vendor_id IN (' . implode( ', ', array_fill( 0, count( $vendor_ids ), '%d' ) ) . ')';
+				$params = array_merge( $params, $vendor_ids );
+			}
+		}
+
+		if ( ! empty( $args['location_id'] ) ) {
+			$sql      .= ' AND b.current_storage_location_id = %d';
+			$params[] = (int) $args['location_id'];
+		}
+
+		if ( ! empty( $args['bucket_ids'] ) && is_array( $args['bucket_ids'] ) ) {
+			$bucket_ids = array_values(
+				array_filter(
+					array_map(
+						static function ( $value ): int {
+							return (int) $value;
+						},
+						$args['bucket_ids']
+					)
+				)
+			);
+
+			if ( ! empty( $bucket_ids ) ) {
+				$sql .= ' AND b.id IN (' . implode( ', ', array_fill( 0, count( $bucket_ids ), '%d' ) ) . ')';
+				$params = array_merge( $params, $bucket_ids );
+			}
+		}
+
+		if ( ! empty( $args['search'] ) ) {
+			$search = '%' . $wpdb->esc_like( (string) $args['search'] ) . '%';
+			$sql   .= ' AND (b.bucket_code LIKE %s OR b.bucket_label LIKE %s OR b.barcode_value LIKE %s)';
+			$params[] = $search;
+			$params[] = $search;
+			$params[] = $search;
+		}
+
+		$sql .= ' ORDER BY b.bucket_label ASC, b.bucket_code ASC, b.id ASC';
+
+		if ( isset( $args['limit'] ) ) {
+			$sql      .= ' LIMIT %d';
+			$params[] = max( 1, (int) $args['limit'] );
+		}
+
+		if ( isset( $args['offset'] ) ) {
+			$sql      .= ' OFFSET %d';
+			$params[] = max( 0, (int) $args['offset'] );
+		}
+
+		return array(
+			'sql'    => $sql,
+			'params' => $params,
+		);
+	}
+
+	private function hydrate_bucket_context( array $row ): array {
+		return array_merge(
+			$row,
+			array(
+				'current_storage_location' => $this->build_location_context(
+					(int) ( $row['current_location_id'] ?? 0 ),
+					(string) ( $row['current_location_code'] ?? '' ),
+					(string) ( $row['current_location_name'] ?? '' ),
+					(string) ( $row['current_location_type'] ?? '' ),
+					(int) ( $row['current_location_parent_id'] ?? 0 ),
+					(int) ( $row['current_location_sort_order'] ?? 0 ),
+					! empty( $row['current_location_is_pickable'] ),
+					! empty( $row['current_location_is_staging'] ),
+					(string) ( $row['current_location_status'] ?? '' ),
+					(string) ( $row['current_location_barcode'] ?? '' )
+				),
+				'home_storage_location'    => $this->build_location_context(
+					(int) ( $row['home_location_id'] ?? 0 ),
+					(string) ( $row['home_location_code'] ?? '' ),
+					(string) ( $row['home_location_name'] ?? '' ),
+					(string) ( $row['home_location_type'] ?? '' ),
+					(int) ( $row['home_location_parent_id'] ?? 0 ),
+					(int) ( $row['home_location_sort_order'] ?? 0 ),
+					! empty( $row['home_location_is_pickable'] ),
+					! empty( $row['home_location_is_staging'] ),
+					(string) ( $row['home_location_status'] ?? '' ),
+					(string) ( $row['home_location_barcode'] ?? '' )
+				),
+			)
+		);
+	}
+
+	private function build_location_context(
+		int $location_id,
+		string $location_code,
+		string $location_name,
+		string $location_type,
+		int $parent_location_id,
+		int $sort_order,
+		bool $is_pickable,
+		bool $is_staging,
+		string $status,
+		string $barcode_value
+	): array {
+		if ( 0 === $location_id && '' === $location_code && '' === $location_name ) {
+			return array();
+		}
+
+		return array(
+			'id'                => $location_id,
+			'location_code'     => $location_code,
+			'location_name'     => $location_name,
+			'location_type'     => $location_type,
+			'parent_location_id'=> $parent_location_id,
+			'sort_order'        => $sort_order,
+			'is_pickable'       => $is_pickable ? 1 : 0,
+			'is_staging'        => $is_staging ? 1 : 0,
+			'status'            => sanitize_key( $status ),
+			'barcode_value'     => $barcode_value,
 		);
 	}
 }

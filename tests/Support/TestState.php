@@ -14,6 +14,8 @@ final class TestState {
 			'users'           => array(),
 			'user_meta'       => array(),
 			'products'        => array(),
+			'user_caps'       => array(),
+			'hook_calls'      => array(),
 			'current_time'    => '2026-01-01 00:00:00',
 		);
 	}
@@ -81,6 +83,54 @@ final class TestState {
 		}
 
 		self::$state['user_meta'][ $user_id ][ $key ] = $value;
+	}
+
+	public static function set_user_capabilities( int $user_id, array $caps ): void {
+		self::$state['user_caps'][ $user_id ] = array_fill_keys( array_map( 'sanitize_key', $caps ), true );
+	}
+
+	public static function current_user_can( string $cap ): bool {
+		return self::user_can( self::current_user_id(), $cap );
+	}
+
+	public static function user_can( int $user_id, string $cap ): bool {
+		$cap = sanitize_key( $cap );
+
+		$user = self::get_user_by( 'id', $user_id );
+		if ( is_object( $user ) ) {
+			foreach ( array( 'allcaps', 'caps' ) as $property ) {
+				if ( isset( $user->{$property} ) && is_array( $user->{$property} ) ) {
+					$user_caps = array_change_key_case( $user->{$property}, CASE_LOWER );
+					if ( ! empty( $user_caps[ $cap ] ) ) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return ! empty( self::$state['user_caps'][ $user_id ][ $cap ] );
+	}
+
+	public static function record_hook_call( string $hook, array $args ): void {
+		self::$state['hook_calls'][] = array(
+			'hook' => $hook,
+			'args' => $args,
+		);
+	}
+
+	public static function get_hook_calls( ?string $hook = null ): array {
+		if ( null === $hook ) {
+			return self::$state['hook_calls'];
+		}
+
+		return array_values(
+			array_filter(
+				self::$state['hook_calls'],
+				static function ( array $call ) use ( $hook ): bool {
+					return (string) ( $call['hook'] ?? '' ) === $hook;
+				}
+			)
+		);
 	}
 
 	public static function get_user_meta( int $user_id, string $key, bool $single = true ) {

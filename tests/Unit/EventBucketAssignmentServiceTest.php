@@ -1,0 +1,79 @@
+<?php
+
+declare( strict_types=1 );
+
+namespace AIMS\Tests\Unit;
+
+use AIMS_Event_Bucket_Assignment_Service;
+
+final class EventBucketAssignmentServiceTest extends \AIMS\Tests\TestCase {
+	public function testAssignBucketToEventPersistsNormalizedRecord(): void {
+		$repo = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public array $saved = array();
+
+			public function save( array $data, int $assignment_id = 0 ): int {
+				$this->saved[] = array(
+					'data'          => $data,
+					'assignment_id' => $assignment_id,
+				);
+
+				return 77;
+			}
+		};
+
+		$service = new AIMS_Event_Bucket_Assignment_Service( $repo );
+		$result  = $service->assign_bucket_to_event(
+			array(
+				'event_id'           => 10,
+				'physical_bucket_id' => 200,
+				'assignment_status'  => 'assigned',
+				'assignment_type'    => 'event_stock',
+				'assigned_at'        => '2026-03-20 10:00:00',
+				'assigned_by'        => 42,
+				'display_order'      => 3,
+				'is_active'          => 1,
+				'notes'              => '<strong>planner note</strong>',
+			)
+		);
+
+		$this->assertSame( 77, $result );
+		$this->assertCount( 1, $repo->saved );
+		$this->assertSame( 10, $repo->saved[0]['data']['event_id'] );
+		$this->assertSame( 200, $repo->saved[0]['data']['physical_bucket_id'] );
+		$this->assertSame( 'assigned', $repo->saved[0]['data']['assignment_status'] );
+		$this->assertSame( 'event_stock', $repo->saved[0]['data']['assignment_type'] );
+		$this->assertSame( '<strong>planner note</strong>', $repo->saved[0]['data']['notes'] );
+	}
+
+	public function testReleaseBucketFromEventDelegatesToRepositoryRelease(): void {
+		$repo = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public array $released = array();
+
+			public function release( int $assignment_id, array $data = array() ): bool {
+				$this->released[] = array(
+					'assignment_id' => $assignment_id,
+					'data'          => $data,
+				);
+
+				return true;
+			}
+		};
+
+		$service = new AIMS_Event_Bucket_Assignment_Service( $repo );
+		$result  = $service->release_bucket_from_event(
+			88,
+			array(
+				'assignment_status' => 'released',
+				'released_at'       => '2026-03-21 14:00:00',
+				'released_by'       => 42,
+				'notes'             => '<em>released</em>',
+			)
+		);
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, $repo->released );
+		$this->assertSame( 88, $repo->released[0]['assignment_id'] );
+		$this->assertSame( 'released', $repo->released[0]['data']['assignment_status'] );
+		$this->assertSame( '<em>released</em>', $repo->released[0]['data']['notes'] );
+	}
+}

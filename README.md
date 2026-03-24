@@ -4,40 +4,73 @@ AIMS (`ai-man-sys`) is a modular WordPress operations plugin for vendor manageme
 
 This codebase is a full rebuild. Older plugins are reference material only and are not part of the runtime design, schema, or migration path.
 
-## Phase 1 foundation
+## Current build status
 
 The repository currently provides:
 
 - plugin bootstrap and class loader
 - installer and schema registration
-- explicit custom table definitions with indexes
+- explicit custom table definitions with indexes across events, demand, buckets, inventory, Square sync, attribution, and fulfillment
 - capability and admin menu shells
-- one repository example
-- one service example
-- one vendor module foundation
-- native module placeholders for future implementation
+- vendor, event, Square sync, and reporting module bootstraps
 - ledger-first inventory movement backbone
-- operational tables for customers, addresses, events, event expenses, assignments, stitch jobs, fulfillment allocations, and Square sales
+- physical bucket, storage, and event-bucket assignment architecture
+- Event Demand Intake v1 with account-linked request history
+- curated public event projection layer with public catalog/detail shortcodes
+- admin demand summary and public projection management pages
+- Square queue/raw event/normalized sale/replay scaffolding
+- runtime assignment, attribution, sync effect, and exception table foundations
 - native product cost rule storage for COGS-based profitability
+- PHPUnit harness with passing first unit tests
 
 ## Core rules
 
 - Use custom tables for all AIMS internal entities.
 - Do not use custom post types for vendors, events, stitch jobs, mappings, logs, or inventory.
 - Keep WordPress users, WooCommerce products, and WooCommerce orders as native objects.
-- Treat AIMS as the operations engine.
-- Treat WooCommerce as the catalog and order projection layer.
-- Treat Square as an integration source, not a source of truth.
+- Treat WooCommerce as product truth.
+- Treat AIMS as the operations, event planning, inventory, and physical control truth.
+- Treat Square as payment and sales truth.
 - Write imported Square sales into AIMS tables first.
 - Avoid any design that can double-apply stock changes.
+- Public event pages must never read directly from internal financial or operational tables.
+- Public event output must come from the curated projection layer.
+- Event Demand Intake v1 is a core product feature.
+- Event demand is login-required.
+- No guest demand requests.
+- Event demand requests are planning-only, not reservation, payment, or order flows.
+- AIMS is SKU-first operationally.
+- BOPIS and reservations remain a separate future v2 add-on.
+- Inventory is assigned to events only by explicit manager or supervisor planning action. Never automatically.
 
-## Safest next implementation phase
+## Event planning model
 
-1. Expand the schema for event inventory rules, stitch queue items, and additional operational states.
-2. Build native AIMS repositories and services for vendor buckets, event allocation, and backorder fulfillment.
-3. Implement Square ingestion into AIMS queue and sync tables with dedupe, watermarking, logging, customer capture, and undo-safe stock application.
-4. Add reporting repositories over AIMS sync and operational tables.
-5. Add optional WooCommerce order projection only after AIMS-side reconciliation is stable.
+- Event demand creates planning signals only.
+- Event demand never assigns inventory automatically.
+- Event demand never creates reservations, payments, or Square orders.
+- Inventory is committed to an event only when a manager or supervisor explicitly assigns one or more physical buckets to that event.
+- Event bucket assignment is the planning commitment record.
+- Inventory movements are reserved for actual physical execution such as staging, load-out, transfer, return, and adjustment.
+
+## Current workflow target
+
+1. Manager or supervisor opens Event Planning.
+2. The planner sees only events assigned to them or their subordinates.
+3. The planner selects an event.
+4. AIMS shows event demand summary by SKU, currently assigned buckets, available buckets, and bucket contents.
+5. The planner manually assigns buckets to the event.
+6. AIMS writes event bucket assignment records.
+7. Inventory movement records are created later only when physical actions occur.
+
+## Next implementation phase
+
+1. Build a manager and supervisor Event Planning workspace.
+2. Scope event visibility to the planner and their subordinate assignments.
+3. Reuse existing demand summary, bucket inventory position, and event bucket assignment structures in that workspace.
+4. Support explicit manual bucket-to-event assignment with no automatic inventory commitment.
+5. Add later physical execution states on assigned buckets without treating planning clicks as stock movements.
+6. Expand Square replay and fulfillment wiring only after the planning and commitment workflow is stable.
+7. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
 ## Operational backbone
 
@@ -56,3 +89,5 @@ AIMS now uses a ledger-first inventory design:
 - `aims_sale_fulfillment_allocations` stores event-stock and warehouse-backorder allocations.
 - Square sales are intended to land in `aims_square_sales` before any optional WooCommerce projection.
 - event automation now matches Square sales to events by Square location and sold-at date window, then recalculates event financials.
+- `aims_event_bucket_assignments` is the point where inventory is committed to an event by human planning action.
+- `aims_inventory_movements` should not be used to represent planning intent.

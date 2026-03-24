@@ -83,6 +83,54 @@ class AIMS_Bucket_Inventory_Position_Repository {
 		);
 	}
 
+	public function get_bucket_contents_summary( int $bucket_id ): array {
+		$summary = array();
+
+		foreach ( $this->get_for_bucket( $bucket_id ) as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$product_id = (int) ( $row['product_id'] ?? 0 );
+			$vendor_id   = (int) ( $row['vendor_id'] ?? 0 );
+			$key         = $vendor_id . ':' . $product_id;
+
+			if ( ! isset( $summary[ $key ] ) ) {
+				$summary[ $key ] = array(
+					'bucket_id'               => (int) ( $row['bucket_id'] ?? $bucket_id ),
+					'vendor_id'               => $vendor_id,
+					'product_id'              => $product_id,
+					'quantity'                => 0.0,
+					'reserved_quantity'       => 0.0,
+					'position_status'         => sanitize_key( (string) ( $row['position_status'] ?? 'active' ) ),
+					'last_bucket_movement_id' => (int) ( $row['last_bucket_movement_id'] ?? 0 ),
+					'last_counted_at'         => $this->normalize_datetime( $row['last_counted_at'] ?? null ),
+				);
+			}
+
+			$summary[ $key ]['quantity'] += (float) ( $row['quantity'] ?? 0 );
+			$summary[ $key ]['reserved_quantity'] += (float) ( $row['reserved_quantity'] ?? 0 );
+			$summary[ $key ]['last_bucket_movement_id'] = max(
+				(int) $summary[ $key ]['last_bucket_movement_id'],
+				(int) ( $row['last_bucket_movement_id'] ?? 0 )
+			);
+
+			$row_counted_at = $this->normalize_datetime( $row['last_counted_at'] ?? null );
+			if ( '' !== (string) $row_counted_at ) {
+				$existing_counted_at = (string) ( $summary[ $key ]['last_counted_at'] ?? '' );
+				if ( '' === $existing_counted_at || strcmp( $row_counted_at, $existing_counted_at ) > 0 ) {
+					$summary[ $key ]['last_counted_at'] = $row_counted_at;
+				}
+			}
+
+			if ( 'active' === sanitize_key( (string) ( $row['position_status'] ?? '' ) ) ) {
+				$summary[ $key ]['position_status'] = 'active';
+			}
+		}
+
+		return array_values( $summary );
+	}
+
 	public function upsert_position( array $data ): int {
 		return $this->save( $data );
 	}
