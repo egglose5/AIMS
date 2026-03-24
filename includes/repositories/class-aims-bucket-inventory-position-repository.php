@@ -135,6 +135,25 @@ class AIMS_Bucket_Inventory_Position_Repository {
 		return $this->save( $data );
 	}
 
+	public function synchronize_from_movements( AIMS_Bucket_Inventory_Movement_Repository $movements, int $bucket_id, int $vendor_id, int $product_id ): int {
+		$current_quantity = (float) $movements->get_balance_for_bucket_product( $bucket_id, $vendor_id, $product_id );
+
+		$existing = $this->find_by_bucket_vendor_product( $bucket_id, $vendor_id, $product_id );
+
+		$record = array(
+			'bucket_id'               => $bucket_id,
+			'vendor_id'               => $vendor_id,
+			'product_id'              => $product_id,
+			'quantity'                => $current_quantity,
+			'reserved_quantity'       => (float) ( $existing['reserved_quantity'] ?? 0 ),
+			'position_status'         => sanitize_key( (string) ( $existing['position_status'] ?? 'active' ) ),
+			'last_bucket_movement_id' => (int) ( $existing['last_bucket_movement_id'] ?? 0 ),
+			'last_counted_at'         => $existing['last_counted_at'] ?? null,
+		);
+
+		return $this->save( $record, (int) ( $existing['id'] ?? 0 ) );
+	}
+
 	public function adjust_reserved_quantity( int $position_id, float $reserved_quantity ): bool {
 		global $wpdb;
 

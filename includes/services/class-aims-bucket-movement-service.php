@@ -87,17 +87,21 @@ class AIMS_Bucket_Movement_Service {
 			$current_qty = (float) $this->movements->get_balance_for_bucket_product( $bucket_id, $vendor_id, $product_id );
 		}
 
-		if ( is_object( $this->positions ) && method_exists( $this->positions, 'upsert_position' ) ) {
-			$this->positions->upsert_position(
-				array(
-					'bucket_id'               => $bucket_id,
-					'vendor_id'               => $vendor_id,
-					'product_id'              => $product_id,
-					'quantity'                => $current_qty,
-					'position_status'         => sanitize_key( $data['position_status'] ?? 'active' ),
-					'last_bucket_movement_id' => $movement_id,
-				)
-			);
+		if ( is_object( $this->positions ) ) {
+			if ( method_exists( $this->positions, 'synchronize_from_movements' ) && method_exists( $this->movements, 'get_balance_for_bucket_product' ) ) {
+				$this->positions->synchronize_from_movements( $this->movements, $bucket_id, $vendor_id, $product_id );
+			} elseif ( method_exists( $this->positions, 'upsert_position' ) ) {
+				$this->positions->upsert_position(
+					array(
+						'bucket_id'               => $bucket_id,
+						'vendor_id'               => $vendor_id,
+						'product_id'              => $product_id,
+						'quantity'                => $current_qty,
+						'position_status'         => sanitize_key( $data['position_status'] ?? 'active' ),
+						'last_bucket_movement_id' => $movement_id,
+					)
+				);
+			}
 		}
 
 		return array(

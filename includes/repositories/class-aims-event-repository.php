@@ -125,6 +125,7 @@ class AIMS_Event_Repository {
 			'end_date'           => sanitize_text_field( $data['end_date'] ?? '' ),
 			'location_name'      => sanitize_text_field( $data['location_name'] ?? '' ),
 			'square_location_id' => sanitize_text_field( $data['square_location_id'] ?? '' ),
+			'source'             => AIMS_Source_Of_Truth::normalize( $data['source'] ?? AIMS_Source_Of_Truth::AIMS ),
 			'gross_sales_total'  => number_format( (float) ( $data['gross_sales_total'] ?? 0 ), 2, '.', '' ),
 			'discount_total'     => number_format( (float) ( $data['discount_total'] ?? 0 ), 2, '.', '' ),
 			'tip_total'          => number_format( (float) ( $data['tip_total'] ?? 0 ), 2, '.', '' ),

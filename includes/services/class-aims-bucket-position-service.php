@@ -32,14 +32,26 @@ class AIMS_Bucket_Position_Service {
 	}
 
 	public function recalculate_position( array $data ): int {
+		$bucket_id  = (int) ( $data['bucket_id'] ?? 0 );
+		$vendor_id  = (int) ( $data['vendor_id'] ?? 0 );
+		$product_id = (int) ( $data['product_id'] ?? 0 );
+
+		if ( $bucket_id <= 0 || $vendor_id <= 0 || $product_id <= 0 ) {
+			return 0;
+		}
+
+		if ( is_object( $this->movements ) && method_exists( $this->positions, 'synchronize_from_movements' ) ) {
+			return (int) $this->positions->synchronize_from_movements( $this->movements, $bucket_id, $vendor_id, $product_id );
+		}
+
 		if ( ! method_exists( $this->positions, 'upsert_position' ) ) {
 			return 0;
 		}
 
 		$record = array(
-			'bucket_id'               => (int) ( $data['bucket_id'] ?? 0 ),
-			'vendor_id'               => (int) ( $data['vendor_id'] ?? 0 ),
-			'product_id'              => (int) ( $data['product_id'] ?? 0 ),
+			'bucket_id'               => $bucket_id,
+			'vendor_id'               => $vendor_id,
+			'product_id'              => $product_id,
 			'quantity'                => (float) ( $data['quantity'] ?? 0 ),
 			'reserved_quantity'       => (float) ( $data['reserved_quantity'] ?? 0 ),
 			'position_status'         => sanitize_key( $data['position_status'] ?? 'active' ),

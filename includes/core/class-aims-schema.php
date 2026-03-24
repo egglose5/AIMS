@@ -175,6 +175,7 @@ class AIMS_Schema {
 				end_date date NOT NULL,
 				location_name varchar(191) NOT NULL DEFAULT '',
 				square_location_id varchar(191) NOT NULL DEFAULT '',
+				source varchar(50) NOT NULL DEFAULT 'aims',
 				gross_sales_total decimal(20,2) NOT NULL DEFAULT 0.00,
 				discount_total decimal(20,2) NOT NULL DEFAULT 0.00,
 				tip_total decimal(20,2) NOT NULL DEFAULT 0.00,
