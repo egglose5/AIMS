@@ -40,11 +40,14 @@ class AIMS_Physical_Bucket_Repository {
 	public function save( array $data, int $bucket_id = 0 ): int {
 		global $wpdb;
 
+		$bucket_type = AIMS_Physical_Bucket_Types::normalize( $data['bucket_type'] ?? '' );
+		$status      = $this->normalize_status( $data['status'] ?? 'available', $bucket_type );
+
 		$record = array(
 			'bucket_code'                => sanitize_text_field( $data['bucket_code'] ?? '' ),
 			'bucket_label'               => sanitize_text_field( $data['bucket_label'] ?? '' ),
-			'bucket_type'                => sanitize_key( $data['bucket_type'] ?? 'standard' ),
-			'status'                     => sanitize_key( $data['status'] ?? 'available' ),
+			'bucket_type'                => $bucket_type,
+			'status'                     => $status,
 			'current_storage_location_id' => (int) ( $data['current_storage_location_id'] ?? 0 ),
 			'home_storage_location_id'   => (int) ( $data['home_storage_location_id'] ?? 0 ),
 			'vendor_id'                  => (int) ( $data['vendor_id'] ?? 0 ),
@@ -162,10 +165,19 @@ class AIMS_Physical_Bucket_Repository {
 	public function update_status( int $bucket_id, string $status ): bool {
 		global $wpdb;
 
+		// Fetch the bucket to get its current type for validation.
+		$bucket = $this->find( $bucket_id );
+		if ( ! is_array( $bucket ) ) {
+			return false;
+		}
+
+		// Validate status against bucket type constraints.
+		$normalized_status = $this->normalize_status( $status, $bucket['bucket_type'] );
+
 		return false !== $wpdb->update(
 			$this->get_table_name(),
 			array(
-				'status'     => sanitize_key( $status ),
+				'status'     => $normalized_status,
 				'updated_at' => current_time( 'mysql' ),
 			),
 			array( 'id' => $bucket_id ),
@@ -346,4 +358,36 @@ class AIMS_Physical_Bucket_Repository {
 			'barcode_value'     => $barcode_value,
 		);
 	}
+
+	/**
+	 * Normalize bucket type using canonical constants.
+	 *
+	 * @param string $bucket_type The bucket type to normalize.
+	 * @return string Normalized bucket type.
+	 */
+	private function normalize_bucket_type( string $bucket_type ): string {
+		return AIMS_Physical_Bucket_Types::normalize( $bucket_type );
+	}
+
+	/**
+	 * Normalize bucket status with validation against bucket type.
+	 * Ensures status is allowed for the given bucket type.
+	 *
+	 * @param string $status The status to normalize.
+	 * @param string $bucket_type The bucket type to validate against.
+	 * @return string Normalized status.
+	 */
+	private function normalize_status( string $status, string $bucket_type ): string {
+		$status      = sanitize_key( $status );
+		$bucket_type = sanitize_key( $bucket_type );
+
+		if ( AIMS_Physical_Bucket_Types::is_valid_status_for_type( $bucket_type, $status ) ) {
+			return $status;
+		}
+
+		// Default to the first allowed status for this bucket type.
+		$allowed = AIMS_Physical_Bucket_Types::allowed_statuses_for_type( $bucket_type );
+		return ! empty( $allowed[0] ) ? $allowed[0] : 'available';
+	}
 }
+

@@ -76,4 +76,102 @@ final class EventBucketAssignmentServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'released', $repo->released[0]['data']['assignment_status'] );
 		$this->assertSame( '<em>released</em>', $repo->released[0]['data']['notes'] );
 	}
+
+	public function testAssignBucketToEventRejectsAmbiguousUnownedBucketForMultiVendorEvent(): void {
+		$repo = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public int $save_calls = 0;
+
+			public function save( array $data, int $assignment_id = 0 ): int {
+				++$this->save_calls;
+
+				return 77;
+			}
+		};
+
+		$vendor_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function get_for_event( int $event_id ): array {
+				if ( 10 !== $event_id ) {
+					return array();
+				}
+
+				return array(
+					array( 'vendor_id' => 5 ),
+					array( 'vendor_id' => 9 ),
+				);
+			}
+		};
+
+		$buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find( int $bucket_id ): ?array {
+				if ( 200 !== $bucket_id ) {
+					return null;
+				}
+
+				return array(
+					'id'        => 200,
+					'vendor_id' => 0,
+				);
+			}
+		};
+
+		$service = new AIMS_Event_Bucket_Assignment_Service( $repo, $vendor_assignments, $buckets );
+		$result  = $service->assign_bucket_to_event(
+			array(
+				'event_id'           => 10,
+				'physical_bucket_id' => 200,
+			)
+		);
+
+		$this->assertSame( 0, $result );
+		$this->assertSame( 0, $repo->save_calls );
+	}
+
+	public function testAssignBucketToEventRejectsBucketOwnedByDifferentVendor(): void {
+		$repo = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public int $save_calls = 0;
+
+			public function save( array $data, int $assignment_id = 0 ): int {
+				++$this->save_calls;
+
+				return 77;
+			}
+		};
+
+		$vendor_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function get_for_event( int $event_id ): array {
+				if ( 10 !== $event_id ) {
+					return array();
+				}
+
+				return array(
+					array( 'vendor_id' => 5 ),
+					array( 'vendor_id' => 9 ),
+				);
+			}
+		};
+
+		$buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find( int $bucket_id ): ?array {
+				if ( 200 !== $bucket_id ) {
+					return null;
+				}
+
+				return array(
+					'id'        => 200,
+					'vendor_id' => 77,
+				);
+			}
+		};
+
+		$service = new AIMS_Event_Bucket_Assignment_Service( $repo, $vendor_assignments, $buckets );
+		$result  = $service->assign_bucket_to_event(
+			array(
+				'event_id'           => 10,
+				'physical_bucket_id' => 200,
+			)
+		);
+
+		$this->assertSame( 0, $result );
+		$this->assertSame( 0, $repo->save_calls );
+	}
 }

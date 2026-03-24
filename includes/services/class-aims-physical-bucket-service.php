@@ -63,10 +63,13 @@ class AIMS_Physical_Bucket_Service {
 			return 0;
 		}
 
+		// Use warehouse_stock as sensible default (primary warehouse inventory).
+		$bucket_type = AIMS_Physical_Bucket_Types::normalize( $data['bucket_type'] ?? AIMS_Physical_Bucket_Types::WAREHOUSE_STOCK );
+
 		$record = array(
 			'bucket_code'                => sanitize_text_field( $data['bucket_code'] ?? '' ),
 			'bucket_label'               => sanitize_text_field( $data['bucket_label'] ?? $data['bucket_code'] ?? '' ),
-			'bucket_type'                => sanitize_key( $data['bucket_type'] ?? 'standard' ),
+			'bucket_type'                => $bucket_type,
 			'status'                     => sanitize_key( $data['status'] ?? 'available' ),
 			'current_storage_location_id' => (int) ( $data['current_storage_location_id'] ?? 0 ),
 			'home_storage_location_id'   => (int) ( $data['home_storage_location_id'] ?? 0 ),

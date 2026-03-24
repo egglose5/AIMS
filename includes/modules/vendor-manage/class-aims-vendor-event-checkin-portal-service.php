@@ -16,6 +16,7 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 	private $execution_service;
 	private $public_projection;
 	private $uploader;
+	private $physical_buckets;
 
 	public function __construct(
 		AIMS_Event_Planning_Access_Service $access_service = null,
@@ -26,7 +27,8 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		AIMS_Vendor_Event_Checkin_Media_Repository $checkin_media = null,
 		AIMS_Event_Execution_Service $execution_service = null,
 		AIMS_Public_Event_Projection_Service $public_projection = null,
-		$uploader = null
+		$uploader = null,
+		$physical_buckets = null
 	) {
 		$this->access_service           = $access_service ?: new AIMS_Event_Planning_Access_Service();
 		$this->events                   = $events ?: new AIMS_Event_Repository();
@@ -40,6 +42,7 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 			new AIMS_Public_Event_Update_Repository()
 		);
 		$this->uploader                 = $uploader;
+		$this->physical_buckets         = $physical_buckets ?: ( class_exists( 'AIMS_Physical_Bucket_Repository' ) ? new AIMS_Physical_Bucket_Repository() : null );
 	}
 
 	public function get_page_model( array $request = array() ): array {
@@ -49,7 +52,7 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		$selected_event_id   = $this->resolve_event_id( $request );
 		$selected_event      = $this->find_event_by_id( $selected_event_id, $all_events );
 		$selected_assignment = $this->resolve_vendor_event_assignment( $selected_event_id, $vendor_ids );
-		$bucket_options      = $this->get_bucket_options_for_event( $selected_event_id );
+		$bucket_options      = $this->get_bucket_options_for_event( $selected_event_id, (int) ( $selected_assignment['vendor_id'] ?? 0 ) );
 		$recent_updates      = $this->get_recent_public_updates( $selected_event_id );
 		$is_first_checkin    = ! empty( $selected_event ) && ! empty( $selected_assignment )
 			? $this->checkins->is_first_checkin( $selected_event_id, (int) ( $selected_assignment['vendor_id'] ?? 0 ) )
@@ -85,7 +88,7 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		$event                = $this->find_event_by_id( $event_id );
 		$vendor_id            = (int) ( $vendor_assignment['vendor_id'] ?? 0 );
 		$is_first_checkin     = $event_id > 0 && $vendor_id > 0 ? $this->checkins->is_first_checkin( $event_id, $vendor_id ) : false;
-		$bucket_assignment    = $this->resolve_bucket_assignment( $event_id, $bucket_assignment_id );
+		$bucket_assignment    = $this->resolve_bucket_assignment( $event_id, $bucket_assignment_id, $vendor_id );
 		$checkin_notes        = sanitize_textarea_field( (string) ( $request['checkin_notes'] ?? '' ) );
 		$location_notes       = sanitize_textarea_field( (string) ( $request['location_notes'] ?? '' ) );
 		$combined_notes       = $this->build_combined_notes( $checkin_notes, $location_notes );
@@ -366,13 +369,17 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		return array();
 	}
 
-	private function resolve_bucket_assignment( int $event_id, int $bucket_assignment_id ): array {
+	private function resolve_bucket_assignment( int $event_id, int $bucket_assignment_id, int $vendor_id = 0 ): array {
 		if ( $event_id <= 0 || ! method_exists( $this->bucket_assignments, 'get_active_for_event' ) ) {
 			return array();
 		}
 
 		foreach ( (array) $this->bucket_assignments->get_active_for_event( $event_id ) as $assignment ) {
 			if ( ! is_array( $assignment ) ) {
+				continue;
+			}
+
+			if ( ! $this->assignment_matches_vendor( $assignment, $vendor_id ) ) {
 				continue;
 			}
 
@@ -384,11 +391,15 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		return array();
 	}
 
-	private function get_bucket_options_for_event( int $event_id ): array {
+	private function get_bucket_options_for_event( int $event_id, int $vendor_id = 0 ): array {
 		$options = array();
 
 		foreach ( (array) $this->bucket_assignments->get_active_for_event( $event_id ) as $assignment ) {
 			if ( ! is_array( $assignment ) ) {
+				continue;
+			}
+
+			if ( ! $this->assignment_matches_vendor( $assignment, $vendor_id ) ) {
 				continue;
 			}
 
@@ -407,18 +418,39 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		return $options;
 	}
 
+	private function assignment_matches_vendor( array $assignment, int $vendor_id ): bool {
+		if ( $vendor_id <= 0 ) {
+			return true;
+		}
+
+		$bucket_id = (int) ( $assignment['physical_bucket_id'] ?? 0 );
+		if ( $bucket_id <= 0 ) {
+			return false;
+		}
+
+		$bucket = $this->find_physical_bucket( $bucket_id );
+		if ( empty( $bucket ) ) {
+			// Backward compatibility: unknown bucket ownership does not hard-fail selection.
+			return true;
+		}
+
+		$bucket_vendor_id = (int) ( $bucket['vendor_id'] ?? 0 );
+		if ( $bucket_vendor_id <= 0 ) {
+			// Legacy unowned buckets remain selectable unless explicitly owned by another vendor.
+			return true;
+		}
+
+		return $bucket_vendor_id === $vendor_id;
+	}
+
 	private function find_physical_bucket( int $bucket_id ): array {
-		if ( $bucket_id <= 0 || ! class_exists( 'AIMS_Physical_Bucket_Repository' ) ) {
+		if ( $bucket_id <= 0 || ! is_object( $this->physical_buckets ) || ! method_exists( $this->physical_buckets, 'find' ) ) {
 			return array();
 		}
 
-		$repo = new AIMS_Physical_Bucket_Repository();
-		if ( method_exists( $repo, 'find' ) ) {
-			$bucket = $repo->find( $bucket_id );
-			return is_array( $bucket ) ? $bucket : array();
-		}
+		$bucket = $this->physical_buckets->find( $bucket_id );
 
-		return array();
+		return is_array( $bucket ) ? $bucket : array();
 	}
 
 	private function build_bucket_label( array $bucket ): string {

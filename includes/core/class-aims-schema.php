@@ -44,6 +44,8 @@ class AIMS_Schema {
 			$wpdb->prefix . 'aims_sales_exceptions',
 			$wpdb->prefix . 'aims_vendor_sales_attribution',
 			$wpdb->prefix . 'aims_square_sales',
+			$wpdb->prefix . 'aims_event_reconciliations',
+			$wpdb->prefix . 'aims_event_reconciliation_discrepancies',
 		);
 	}
 
@@ -86,6 +88,8 @@ class AIMS_Schema {
 		$sales_exceptions_table  = $wpdb->prefix . 'aims_sales_exceptions';
 		$vendor_sales_attribution_table = $wpdb->prefix . 'aims_vendor_sales_attribution';
 		$square_sales_table      = $wpdb->prefix . 'aims_square_sales';
+		$event_reconciliations_table = $wpdb->prefix . 'aims_event_reconciliations';
+		$event_reconciliation_discrepancies_table = $wpdb->prefix . 'aims_event_reconciliation_discrepancies';
 
 		return array(
 			"CREATE TABLE {$vendors_table} (
@@ -466,7 +470,7 @@ class AIMS_Schema {
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 				bucket_code varchar(64) NOT NULL DEFAULT '',
 				bucket_label varchar(191) NOT NULL DEFAULT '',
-				bucket_type varchar(32) NOT NULL DEFAULT 'standard',
+				bucket_type varchar(32) NOT NULL DEFAULT 'warehouse_stock',
 				status varchar(32) NOT NULL DEFAULT 'available',
 				current_storage_location_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				home_storage_location_id bigint(20) unsigned NOT NULL DEFAULT 0,
@@ -924,6 +928,57 @@ class AIMS_Schema {
 				KEY tip_amount (tip_amount),
 				KEY fulfillment_status (fulfillment_status),
 				KEY sold_at (sold_at)
+			) {$charset_collate};",
+			"CREATE TABLE {$event_reconciliations_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				event_id bigint(20) unsigned NOT NULL,
+				reconciliation_type varchar(32) NOT NULL DEFAULT 'planned',
+				snapshot_date datetime NOT NULL,
+				planned_inventory_qty decimal(20,4) NOT NULL DEFAULT 0.0000,
+				actual_inventory_qty decimal(20,4) NOT NULL DEFAULT 0.0000,
+				expected_sales_total decimal(20,2) NOT NULL DEFAULT 0.00,
+				actual_sales_total decimal(20,2) NOT NULL DEFAULT 0.00,
+				expected_expense_total decimal(20,2) NOT NULL DEFAULT 0.00,
+				actual_expense_total decimal(20,2) NOT NULL DEFAULT 0.00,
+				discrepancy_status varchar(32) NOT NULL DEFAULT 'pending',
+				discrepancy_count int(11) NOT NULL DEFAULT 0,
+				notes longtext NULL,
+				reconciled_by bigint(20) unsigned DEFAULT NULL,
+				reconciled_at datetime NULL DEFAULT NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				KEY event_id (event_id),
+				KEY reconciliation_type (reconciliation_type),
+				KEY snapshot_date (snapshot_date),
+				KEY discrepancy_status (discrepancy_status),
+				KEY reconciled_at (reconciled_at)
+			) {$charset_collate};",
+			"CREATE TABLE {$event_reconciliation_discrepancies_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				reconciliation_id bigint(20) unsigned NOT NULL,
+				event_id bigint(20) unsigned NOT NULL,
+				discrepancy_type varchar(50) NOT NULL DEFAULT 'inventory',
+				reference_type varchar(50) NOT NULL DEFAULT 'bucket_assignment',
+				reference_id varchar(191) NOT NULL DEFAULT '',
+				expected_value decimal(20,4) NOT NULL DEFAULT 0.0000,
+				actual_value decimal(20,4) NOT NULL DEFAULT 0.0000,
+				variance_amount decimal(20,4) NOT NULL DEFAULT 0.0000,
+				severity varchar(20) NOT NULL DEFAULT 'info',
+				variance_percent decimal(7,4) NOT NULL DEFAULT 0.0000,
+				resolution_notes longtext NULL,
+				resolved_by bigint(20) unsigned DEFAULT NULL,
+				resolved_at datetime NULL DEFAULT NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				KEY reconciliation_id (reconciliation_id),
+				KEY event_id (event_id),
+				KEY discrepancy_type (discrepancy_type),
+				KEY reference_type (reference_type),
+				KEY reference_id (reference_id),
+				KEY severity (severity),
+				KEY resolved_at (resolved_at)
 			) {$charset_collate};",
 		);
 	}

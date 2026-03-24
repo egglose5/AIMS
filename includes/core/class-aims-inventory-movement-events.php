@@ -5,41 +5,56 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Inventory_Movement_Events {
-	// Inbound inventory to a bucket.
-	public const STOCK_IN = 'stock_in';
-	// Outbound inventory from a bucket.
-	public const STOCK_OUT = 'stock_out';
-	// Physical transfer between buckets/locations.
-	public const TRANSFER = 'transfer';
-	// Inventory moved from storage to event floor.
-	public const EVENT_LOAD_OUT = 'event_load_out';
-	// Inventory physically returned from event.
-	public const EVENT_RETURN = 'event_return';
-	// Inventory handed to stitch workflow.
-	public const STITCHER_HANDOFF = 'stitcher_handoff';
-	// Inventory returned from stitch workflow.
-	public const STITCHER_RETURN = 'stitcher_return';
-	// Inventory consumed by a Square sale.
-	public const SQUARE_SALE = 'square_sale';
-	// Inventory consumed by WooCommerce fulfillment.
-	public const WOOCOMMERCE_FULFILLMENT = 'woocommerce_fulfillment';
-	// Inventory physically picked for a fulfillment run.
-	public const WAREHOUSE_PICK = 'warehouse_pick';
-	// Manual audited adjustment (damage, count correction, etc).
+	// ====== ORIGIN INBOUND FLOWS ======
+	// Inventory received from origin/supplier into warehouse.
+	public const ORIGIN_INBOUND = 'origin_inbound';
+
+	// ====== WAREHOUSE INTERNAL FLOWS ======
+	// Physical transfer between buckets/locations within warehouse.
+	public const WAREHOUSE_TRANSFER = 'warehouse_transfer';
+
+	// ====== WAREHOUSE OUTBOUND ALLOCATIONS (to destinations) ======
+	// Inventory allocated from warehouse stock to event-prepack destination.
+	public const ALLOCATE_TO_EVENT_PREPACK = 'allocate_to_event_prepack';
+	// Inventory allocated from warehouse stock to Woo fulfillment destination.
+	public const ALLOCATE_TO_WOO_FULFILLMENT = 'allocate_to_woo_fulfillment';
+	// Inventory allocated from warehouse stock to stitcher workflow.
+	public const ALLOCATE_TO_STITCHER = 'allocate_to_stitcher';
+	// Inventory consumed at show/event point-of-sale.
+	public const SHOW_CONSUMPTION = 'show_consumption';
+
+	// ====== RETURN FLOWS (destinations back to warehouse) ======
+	// Inventory returned from event back to warehouse stock.
+	public const RETURN_FROM_EVENT = 'return_from_event';
+	// Inventory returned from stitcher back to warehouse stock.
+	public const RETURN_FROM_STITCHER = 'return_from_stitcher';
+
+	// ====== MANUAL ADJUSTMENTS ======
+	// Manual audited adjustment (damage, count correction, reconciliation, etc).
 	public const ADJUSTMENT = 'adjustment';
+
+	// ====== LEGACY ALIASES (for backward compatibility) ======
+	public const STOCK_IN = 'origin_inbound';
+	public const STOCK_OUT = 'adjustment';
+	public const TRANSFER = 'warehouse_transfer';
+	public const EVENT_LOAD_OUT = 'allocate_to_event_prepack';
+	public const EVENT_RETURN = 'return_from_event';
+	public const STITCHER_HANDOFF = 'allocate_to_stitcher';
+	public const STITCHER_RETURN = 'return_from_stitcher';
+	public const SQUARE_SALE = 'show_consumption';
+	public const WOOCOMMERCE_FULFILLMENT = 'allocate_to_woo_fulfillment';
+	public const WAREHOUSE_PICK = 'allocate_to_woo_fulfillment';
 
 	public static function allowed(): array {
 		return array(
-			self::STOCK_IN,
-			self::STOCK_OUT,
-			self::TRANSFER,
-			self::EVENT_LOAD_OUT,
-			self::EVENT_RETURN,
-			self::STITCHER_HANDOFF,
-			self::STITCHER_RETURN,
-			self::SQUARE_SALE,
-			self::WOOCOMMERCE_FULFILLMENT,
-			self::WAREHOUSE_PICK,
+			self::ORIGIN_INBOUND,
+			self::WAREHOUSE_TRANSFER,
+			self::ALLOCATE_TO_EVENT_PREPACK,
+			self::ALLOCATE_TO_WOO_FULFILLMENT,
+			self::ALLOCATE_TO_STITCHER,
+			self::SHOW_CONSUMPTION,
+			self::RETURN_FROM_EVENT,
+			self::RETURN_FROM_STITCHER,
 			self::ADJUSTMENT,
 		);
 	}
@@ -65,17 +80,15 @@ class AIMS_Inventory_Movement_Events {
 
 	private static function reference_matrix(): array {
 		return array(
-			self::STOCK_IN               => array( 'inbound_receipt', 'manual_adjustment', 'physical_count' ),
-			self::STOCK_OUT              => array( 'manual_adjustment', 'physical_count', 'shrinkage' ),
-			self::TRANSFER               => array( 'bucket_transfer', 'location_transfer' ),
-			self::EVENT_LOAD_OUT         => array( 'vendor_event_checkin', 'event_execution' ),
-			self::EVENT_RETURN           => array( 'vendor_event_return', 'event_execution' ),
-			self::STITCHER_HANDOFF       => array( 'stitch_job_handoff' ),
-			self::STITCHER_RETURN        => array( 'stitch_job_return' ),
-			self::SQUARE_SALE            => array( 'square_sale_line', 'square_order' ),
-			self::WOOCOMMERCE_FULFILLMENT => array( 'woo_fulfillment_line', 'woo_order_fulfillment' ),
-			self::WAREHOUSE_PICK         => array( 'woo_order_fulfillment', 'warehouse_pick_ticket' ),
-			self::ADJUSTMENT             => array( 'manual_adjustment', 'physical_count', 'reconciliation' ),
+			self::ORIGIN_INBOUND            => array( 'inbound_receipt', 'purchase_order', 'supplier_delivery' ),
+			self::WAREHOUSE_TRANSFER        => array( 'bucket_transfer', 'location_transfer' ),
+			self::ALLOCATE_TO_EVENT_PREPACK => array( 'event_prepack_pickup', 'vendor_event_checkin' ),
+			self::ALLOCATE_TO_WOO_FULFILLMENT => array( 'woo_order_fulfillment', 'fulfillment_pickup_ticket' ),
+			self::ALLOCATE_TO_STITCHER      => array( 'stitch_job_handoff' ),
+			self::SHOW_CONSUMPTION          => array( 'square_sale_line', 'square_order', 'pos_transaction' ),
+			self::RETURN_FROM_EVENT         => array( 'event_return', 'vendor_event_return' ),
+			self::RETURN_FROM_STITCHER      => array( 'stitch_job_return', 'stitch_completion' ),
+			self::ADJUSTMENT                => array( 'manual_adjustment', 'physical_count', 'reconciliation', 'damage_writeoff' ),
 		);
 	}
 }

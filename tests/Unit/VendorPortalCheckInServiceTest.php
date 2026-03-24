@@ -426,6 +426,176 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'Vendor check-in is available starting three days before event start.', $result['message'] );
 	}
 
+	public function testFirstCheckInRejectsBucketAssignedToDifferentVendor(): void {
+		TestState::set_current_user_id( 77 );
+		TestState::set_current_time( '2026-03-23 12:00:00' );
+
+		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
+			new class() extends \AIMS_Event_Planning_Access_Service {
+				public function __construct() {}
+
+				public function get_authorized_vendor_ids( int $user_id = 0 ): array {
+					return array( 5 );
+				}
+			},
+			new class() extends \AIMS_Event_Repository {
+				public function find( int $event_id ): ?array {
+					return array(
+						'id'         => 10,
+						'event_name' => 'Spring Show',
+						'start_date' => '2026-03-25',
+						'end_date'   => '2026-03-27',
+					);
+				}
+
+				public function all(): array {
+					return array( $this->find( 10 ) );
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+				public function get_for_event( int $event_id ): array {
+					return array(
+						array( 'id' => 91, 'event_id' => 10, 'vendor_id' => 5 ),
+						array( 'id' => 92, 'event_id' => 10, 'vendor_id' => 9 ),
+					);
+				}
+			},
+			new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+				public function get_active_for_event( int $event_id ): array {
+					return array(
+						array(
+							'id'                 => 400,
+							'event_id'           => 10,
+							'physical_bucket_id' => 200,
+							'assignment_status'  => self::STATUS_IN_TRANSIT,
+							'is_active'          => 1,
+						),
+					);
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Checkin_Repository {
+				public function is_first_checkin( int $event_id, int $vendor_id, int $bucket_id = 0 ): bool {
+					return true;
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Checkin_Media_Repository {},
+			new class() extends \AIMS_Event_Execution_Service {
+				public function __construct() {}
+			},
+			new class() extends \AIMS_Public_Event_Projection_Service {
+				public function __construct() {}
+			},
+			static function ( array $file, string $field_name ): array {
+				throw new \RuntimeException( 'Uploader should not be reached for invalid vendor bucket selection.' );
+			},
+			new class() extends \AIMS_Physical_Bucket_Repository {
+				public function find( int $bucket_id ): ?array {
+					if ( 200 !== $bucket_id ) {
+						return null;
+					}
+
+					return array(
+						'id'        => 200,
+						'vendor_id' => 9,
+					);
+				}
+			}
+		);
+
+		$result = $service->submit_checkin(
+			array(
+				'event_id'             => 10,
+				'bucket_assignment_id' => 400,
+			),
+			$this->buildUploadFiles()
+		);
+
+		$this->assertFalse( $result['success'] );
+		$this->assertSame( 'Select an assigned event bucket before the first vendor check-in.', $result['message'] );
+	}
+
+	public function testPageModelFiltersBucketOptionsToCurrentVendor(): void {
+		TestState::set_current_user_id( 77 );
+		TestState::set_current_time( '2026-03-23 12:00:00' );
+
+		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
+			new class() extends \AIMS_Event_Planning_Access_Service {
+				public function __construct() {}
+
+				public function get_authorized_vendor_ids( int $user_id = 0 ): array {
+					return array( 5 );
+				}
+			},
+			new class() extends \AIMS_Event_Repository {
+				public function find( int $event_id ): ?array {
+					return array(
+						'id'            => 10,
+						'event_name'    => 'Spring Show',
+						'start_date'    => '2026-03-25',
+						'end_date'      => '2026-03-27',
+						'location_name' => 'Main Hall',
+						'status'        => 'published',
+					);
+				}
+
+				public function all(): array {
+					return array( $this->find( 10 ) );
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+				public function get_for_event( int $event_id ): array {
+					return array(
+						array( 'id' => 91, 'event_id' => 10, 'vendor_id' => 5 ),
+						array( 'id' => 92, 'event_id' => 10, 'vendor_id' => 9 ),
+					);
+				}
+			},
+			new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+				public function get_active_for_event( int $event_id ): array {
+					return array(
+						array( 'id' => 400, 'event_id' => 10, 'physical_bucket_id' => 200, 'assignment_status' => self::STATUS_IN_TRANSIT, 'is_active' => 1 ),
+						array( 'id' => 401, 'event_id' => 10, 'physical_bucket_id' => 201, 'assignment_status' => self::STATUS_IN_TRANSIT, 'is_active' => 1 ),
+					);
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Checkin_Repository {
+				public function is_first_checkin( int $event_id, int $vendor_id, int $bucket_id = 0 ): bool {
+					return true;
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Checkin_Media_Repository {},
+			new class() extends \AIMS_Event_Execution_Service {
+				public function __construct() {}
+			},
+			new class() extends \AIMS_Public_Event_Projection_Service {
+				public function __construct() {}
+
+				public function get_public_event_updates( int $event_id, array $args = array() ): array {
+					return array();
+				}
+			},
+			null,
+			new class() extends \AIMS_Physical_Bucket_Repository {
+				public function find( int $bucket_id ): ?array {
+					if ( 200 === $bucket_id ) {
+						return array( 'id' => 200, 'vendor_id' => 5, 'bucket_label' => 'Vendor 5 Bucket', 'bucket_code' => 'V5-01' );
+					}
+
+					if ( 201 === $bucket_id ) {
+						return array( 'id' => 201, 'vendor_id' => 9, 'bucket_label' => 'Vendor 9 Bucket', 'bucket_code' => 'V9-01' );
+					}
+
+					return null;
+				}
+			}
+		);
+
+		$model = $service->get_page_model( array( 'event_id' => 10 ) );
+
+		$this->assertCount( 1, $model['bucket_options'] );
+		$this->assertSame( 400, $model['bucket_options'][0]['assignment_id'] );
+	}
+
 	private function buildUploadFiles(): array {
 		return array(
 			'selfie_photo' => array(

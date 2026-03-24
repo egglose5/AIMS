@@ -6,9 +6,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Event_Bucket_Assignment_Service {
 	private $assignments;
+	private $vendor_event_assignments;
+	private $physical_buckets;
 
-	public function __construct( $assignments ) {
+	public function __construct( $assignments, $vendor_event_assignments = null, $physical_buckets = null ) {
 		$this->assignments = $assignments;
+		$this->vendor_event_assignments = $vendor_event_assignments ?: ( class_exists( 'AIMS_Vendor_Event_Assignment_Repository' ) ? new AIMS_Vendor_Event_Assignment_Repository() : null );
+		$this->physical_buckets = $physical_buckets ?: ( class_exists( 'AIMS_Physical_Bucket_Repository' ) ? new AIMS_Physical_Bucket_Repository() : null );
 	}
 
 	public function assign_bucket_to_event( array $data ): int {
@@ -16,9 +20,15 @@ class AIMS_Event_Bucket_Assignment_Service {
 			return 0;
 		}
 
+		$event_id  = (int) ( $data['event_id'] ?? 0 );
+		$bucket_id = (int) ( $data['physical_bucket_id'] ?? $data['bucket_id'] ?? 0 );
+		if ( ! $this->is_bucket_vendor_allowed_for_event( $event_id, $bucket_id ) ) {
+			return 0;
+		}
+
 		$record = array(
-			'event_id'           => (int) ( $data['event_id'] ?? 0 ),
-			'physical_bucket_id' => (int) ( $data['physical_bucket_id'] ?? $data['bucket_id'] ?? 0 ),
+			'event_id'           => $event_id,
+			'physical_bucket_id' => $bucket_id,
 			'assignment_status'  => sanitize_key( $data['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT ),
 			'assignment_type'    => sanitize_key( $data['assignment_type'] ?? AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK ),
 			'assigned_at'        => $data['assigned_at'] ?? current_time( 'mysql' ),
@@ -131,5 +141,57 @@ class AIMS_Event_Bucket_Assignment_Service {
 		);
 
 		return in_array( $status, $allowed, true ) ? $status : AIMS_Event_Bucket_Assignment_Repository::STATUS_ASSIGNED;
+	}
+
+	private function is_bucket_vendor_allowed_for_event( int $event_id, int $bucket_id ): bool {
+		if ( $event_id <= 0 || $bucket_id <= 0 ) {
+			return false;
+		}
+
+		$event_vendor_ids = $this->get_event_vendor_ids( $event_id );
+		if ( empty( $event_vendor_ids ) ) {
+			return true;
+		}
+
+		$bucket_vendor_id = $this->get_bucket_vendor_id( $bucket_id );
+		if ( $bucket_vendor_id <= 0 ) {
+			// Ambiguous attribution is only blocked when multiple vendors exist on the event.
+			return count( $event_vendor_ids ) <= 1;
+		}
+
+		return in_array( $bucket_vendor_id, $event_vendor_ids, true );
+	}
+
+	private function get_event_vendor_ids( int $event_id ): array {
+		if ( $event_id <= 0 || ! is_object( $this->vendor_event_assignments ) || ! method_exists( $this->vendor_event_assignments, 'get_for_event' ) ) {
+			return array();
+		}
+
+		$vendor_ids = array();
+		foreach ( (array) $this->vendor_event_assignments->get_for_event( $event_id ) as $assignment ) {
+			if ( ! is_array( $assignment ) ) {
+				continue;
+			}
+
+			$vendor_id = (int) ( $assignment['vendor_id'] ?? 0 );
+			if ( $vendor_id > 0 ) {
+				$vendor_ids[] = $vendor_id;
+			}
+		}
+
+		return array_values( array_unique( $vendor_ids ) );
+	}
+
+	private function get_bucket_vendor_id( int $bucket_id ): int {
+		if ( $bucket_id <= 0 || ! is_object( $this->physical_buckets ) || ! method_exists( $this->physical_buckets, 'find' ) ) {
+			return 0;
+		}
+
+		$bucket = $this->physical_buckets->find( $bucket_id );
+		if ( ! is_array( $bucket ) ) {
+			return 0;
+		}
+
+		return (int) ( $bucket['vendor_id'] ?? 0 );
 	}
 }
