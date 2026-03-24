@@ -3,5 +3,7 @@
 .vscode/
 node_modules/
 vendor/
+composer.phar
+.phpunit.cache/
 *.log
 

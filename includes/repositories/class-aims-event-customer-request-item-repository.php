@@ -101,6 +101,21 @@ class AIMS_Event_Customer_Request_Item_Repository {
 		);
 	}
 
+	public function get_for_request_and_wp_user_id( int $request_id, int $wp_user_id ): array {
+		global $wpdb;
+
+		$requests_table = $wpdb->prefix . 'aims_event_customer_requests';
+
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT items.* FROM ' . $this->get_table_name() . ' items INNER JOIN ' . $requests_table . ' requests ON requests.id = items.request_id WHERE items.request_id = %d AND requests.wp_user_id = %d ORDER BY items.product_sku ASC, items.id ASC',
+				$request_id,
+				$wp_user_id
+			),
+			ARRAY_A
+		);
+	}
+
 	public function get_for_event_by_sku( int $event_id, string $product_sku ): array {
 		global $wpdb;
 

@@ -46,6 +46,15 @@ class AIMS_Admin_Menu {
 			array( $this, 'render_event_demand_summary' )
 		);
 
+		add_submenu_page(
+			'aims-events',
+			'Public Projection',
+			'Public Projection',
+			AIMS_Capabilities::CAP_MANAGE_EVENT_PUBLICATION,
+			'aims-event-public-projection',
+			array( $this, 'render_event_public_projection' )
+		);
+
 		add_menu_page(
 			'Inventory',
 			'Inventory',
@@ -145,6 +154,11 @@ class AIMS_Admin_Menu {
 
 	public function render_event_demand_summary(): void {
 		$page = new AIMS_Event_Demand_Summary_Page( new AIMS_Event_Demand_Summary_Data_Provider() );
+		$page->render();
+	}
+
+	public function render_event_public_projection(): void {
+		$page = new AIMS_Event_Public_Projection_Page( new AIMS_Event_Public_Projection_Data_Provider() );
 		$page->render();
 	}
 

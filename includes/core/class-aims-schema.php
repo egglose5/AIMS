@@ -14,6 +14,7 @@ class AIMS_Schema {
 			$wpdb->prefix . 'aims_customers',
 			$wpdb->prefix . 'aims_customer_addresses',
 			$wpdb->prefix . 'aims_events',
+			$wpdb->prefix . 'aims_public_event_catalog',
 			$wpdb->prefix . 'aims_event_square_locations',
 			$wpdb->prefix . 'aims_event_expenses',
 			$wpdb->prefix . 'aims_event_customer_requests',
@@ -52,6 +53,7 @@ class AIMS_Schema {
 		$customers_table         = $wpdb->prefix . 'aims_customers';
 		$customer_addresses_table = $wpdb->prefix . 'aims_customer_addresses';
 		$events_table            = $wpdb->prefix . 'aims_events';
+		$public_event_catalog_table = $wpdb->prefix . 'aims_public_event_catalog';
 		$event_square_locations_table = $wpdb->prefix . 'aims_event_square_locations';
 		$event_expenses_table    = $wpdb->prefix . 'aims_event_expenses';
 		$event_customer_requests_table = $wpdb->prefix . 'aims_event_customer_requests';
@@ -183,6 +185,36 @@ class AIMS_Schema {
 				KEY start_date (start_date),
 				KEY end_date (end_date),
 				KEY square_location_id (square_location_id)
+			) {$charset_collate};",
+			"CREATE TABLE {$public_event_catalog_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				event_id bigint(20) unsigned NOT NULL,
+				slug varchar(191) NOT NULL DEFAULT '',
+				public_title varchar(255) NOT NULL DEFAULT '',
+				public_summary longtext NULL,
+				venue_name varchar(191) NOT NULL DEFAULT '',
+				city varchar(100) NOT NULL DEFAULT '',
+				state_region varchar(100) NOT NULL DEFAULT '',
+				start_date date NOT NULL,
+				end_date date NOT NULL,
+				public_status varchar(32) NOT NULL DEFAULT 'draft',
+				hero_image_reference varchar(191) NOT NULL DEFAULT '',
+				is_featured tinyint(1) NOT NULL DEFAULT 0,
+				sort_date datetime NULL DEFAULT NULL,
+				request_intake_enabled tinyint(1) NOT NULL DEFAULT 0,
+				last_projected_at datetime NULL DEFAULT NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY event_id (event_id),
+				UNIQUE KEY slug (slug),
+				KEY public_status (public_status),
+				KEY start_date (start_date),
+				KEY end_date (end_date),
+				KEY is_featured (is_featured),
+				KEY sort_date (sort_date),
+				KEY request_intake_enabled (request_intake_enabled),
+				KEY last_projected_at (last_projected_at)
 			) {$charset_collate};",
 			"CREATE TABLE {$event_square_locations_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
