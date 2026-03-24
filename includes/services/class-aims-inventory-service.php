@@ -40,6 +40,14 @@ class AIMS_Inventory_Service {
 			return new WP_Error( 'aims_invalid_inventory_movement', 'Inventory movement is missing required fields.' );
 		}
 
+		if ( ! AIMS_Inventory_Movement_Events::is_allowed( $movement_type ) ) {
+			return new WP_Error( 'aims_invalid_inventory_movement_type', 'Inventory movement type is not allowed by policy.' );
+		}
+
+		if ( ! AIMS_Inventory_Movement_Events::is_allowed_reference_for_movement( $movement_type, $reference_type ) ) {
+			return new WP_Error( 'aims_invalid_inventory_reference_type', 'Reference type is not allowed for this inventory movement type.' );
+		}
+
 		if ( $this->movements->has_reference_application( $reference_type, $reference_id, $product_id, $bucket_code, $movement_type, $bucket_id, $vendor_id ) ) {
 			return new WP_Error( 'aims_duplicate_inventory_movement', 'This inventory movement has already been applied.' );
 		}

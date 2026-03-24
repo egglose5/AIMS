@@ -68,6 +68,14 @@ class AIMS_Bucket_Movement_Service {
 			return new WP_Error( 'aims_invalid_bucket_movement', 'Bucket movement is missing required fields.' );
 		}
 
+		if ( ! AIMS_Inventory_Movement_Events::is_allowed( $movement_type ) ) {
+			return new WP_Error( 'aims_invalid_bucket_movement_type', 'Bucket movement type is not allowed by policy.' );
+		}
+
+		if ( ! AIMS_Inventory_Movement_Events::is_allowed_reference_for_movement( $movement_type, $reference_type ) ) {
+			return new WP_Error( 'aims_invalid_bucket_reference_type', 'Reference type is not allowed for this bucket movement type.' );
+		}
+
 		if ( method_exists( $this->movements, 'has_reference_application' ) && $this->movements->has_reference_application( $reference_type, $reference_id, $product_id, $bucket_id, $movement_type ) ) {
 			return new WP_Error( 'aims_duplicate_bucket_movement', 'This bucket movement has already been applied.' );
 		}

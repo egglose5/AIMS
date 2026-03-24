@@ -46,6 +46,7 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [ ] Add explicit capability gates and nonce-protected actions for all sync triggers.
 - [ ] Add status telemetry on admin screens (last sync, affected rows, error count).
 - [ ] Enforce idempotency and duplicate protection in visible workflows.
+- [x] Define and enforce canonical inventory movement events so stock changes only occur on physical movement actions.
 
 ## Milestone E - Packaging and Release Hardening
 
