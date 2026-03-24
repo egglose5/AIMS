@@ -52,6 +52,14 @@ The repository currently provides:
 - Event bucket assignment is the planning commitment record.
 - Inventory movements are reserved for actual physical execution such as staging, load-out, transfer, return, and adjustment.
 
+## Event execution model
+
+- Assignment to a show can change execution status, but it does not systematically move stock.
+- `vendor_event_checkin` is the stock-at-event movement point.
+- Return is the move-back point.
+- Only physical movement events should write inventory ledger changes.
+- Planning writes stay in event bucket assignment records, not movement tables.
+
 ## Current workflow target
 
 1. Manager or supervisor opens Event Planning.
@@ -91,3 +99,5 @@ AIMS now uses a ledger-first inventory design:
 - event automation now matches Square sales to events by Square location and sold-at date window, then recalculates event financials.
 - `aims_event_bucket_assignments` is the point where inventory is committed to an event by human planning action.
 - `aims_inventory_movements` should not be used to represent planning intent.
+- `vendor_event_checkin` is the execution movement that marks stock arriving at the event.
+- return movement records are the execution point for stock moving back from the event.

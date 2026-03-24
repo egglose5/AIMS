@@ -19,8 +19,8 @@ class AIMS_Event_Bucket_Assignment_Service {
 		$record = array(
 			'event_id'           => (int) ( $data['event_id'] ?? 0 ),
 			'physical_bucket_id' => (int) ( $data['physical_bucket_id'] ?? $data['bucket_id'] ?? 0 ),
-			'assignment_status'  => sanitize_key( $data['assignment_status'] ?? 'assigned' ),
-			'assignment_type'    => sanitize_key( $data['assignment_type'] ?? 'event_stock' ),
+			'assignment_status'  => sanitize_key( $data['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT ),
+			'assignment_type'    => sanitize_key( $data['assignment_type'] ?? AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK ),
 			'assigned_at'        => $data['assigned_at'] ?? current_time( 'mysql' ),
 			'assigned_by'        => (int) ( $data['assigned_by'] ?? get_current_user_id() ),
 			'display_order'      => (int) ( $data['display_order'] ?? 0 ),
@@ -109,12 +109,27 @@ class AIMS_Event_Bucket_Assignment_Service {
 			$current,
 			$data,
 			array(
-				'assignment_status' => sanitize_key( $status ),
+				'assignment_status' => $this->normalize_transition_status( $status ),
 			)
 		);
 
 		$this->assignments->save( $record, $assignment_id );
 
 		return true;
+	}
+
+	private function normalize_transition_status( string $status ): string {
+		$status = sanitize_key( $status );
+		$allowed = array(
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_ASSIGNED,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_RETURNED,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_RELEASED,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_CANCELLED,
+		);
+
+		return in_array( $status, $allowed, true ) ? $status : AIMS_Event_Bucket_Assignment_Repository::STATUS_ASSIGNED;
 	}
 }

@@ -6,13 +6,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Vendor_Module {
 	private $vendor_service;
+	private $vendor_checkin_portal_controller;
 
 	public function __construct( AIMS_Vendor_Service $vendor_service ) {
 		$this->vendor_service = $vendor_service;
 	}
 
 	public function register(): void {
+		add_action( 'init', array( $this, 'register_public_hooks' ) );
 		add_action( 'admin_init', array( $this, 'register_foundation_notices' ) );
+	}
+
+	public function register_public_hooks(): void {
+		$this->get_vendor_checkin_portal_controller()->register();
 	}
 
 	public function register_foundation_notices(): void {
@@ -43,6 +49,14 @@ class AIMS_Vendor_Module {
 			)
 		);
 		echo '</p></div>';
+	}
+
+	private function get_vendor_checkin_portal_controller(): AIMS_Vendor_Event_Checkin_Portal_Controller {
+		if ( null === $this->vendor_checkin_portal_controller ) {
+			$this->vendor_checkin_portal_controller = new AIMS_Vendor_Event_Checkin_Portal_Controller();
+		}
+
+		return $this->vendor_checkin_portal_controller;
 	}
 }
 

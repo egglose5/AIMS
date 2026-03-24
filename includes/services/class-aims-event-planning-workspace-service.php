@@ -465,7 +465,7 @@ class AIMS_Event_Planning_Workspace_Service {
 
 		switch ( $status ) {
 			case 'assigned':
-				return 'Assigned';
+				return 'In Transit';
 			case 'staged':
 				return 'Staged';
 			case 'in_transit':

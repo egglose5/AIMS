@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Plugin {
 	const OPTION_SCHEMA_VERSION = 'aims_schema_version';
 	const OPTION_INSTALLED_AT   = 'aims_installed_at';
-	const SCHEMA_VERSION        = '0.3.5';
+	const SCHEMA_VERSION        = '0.3.7';
 
 	private static $instance = null;
 

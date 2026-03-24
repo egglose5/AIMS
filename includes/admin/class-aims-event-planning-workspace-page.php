@@ -23,7 +23,8 @@ class AIMS_Event_Planning_Workspace_Page {
 
 		echo '<div class="wrap aims-event-planning-workspace">';
 		echo '<h1>Events &rsaquo; Planning</h1>';
-		echo '<p>Manual bucket planning for managers and supervisors. Demand is the signal, bucket assignment is the commitment, and inventory movements remain reserved for physical execution.</p>';
+		echo '<p>Manual bucket planning for managers and supervisors. Demand is the signal, bucket assignment is the commitment, and planning does not move inventory. Planning assignments show as <strong>In Transit</strong>, but physical movement does not happen until <code>vendor_event_checkin</code>.</p>';
+		$this->render_status_notice();
 
 		$this->render_event_selector( $events, $selected_event_id );
 
@@ -149,7 +150,8 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<table class="widefat fixed striped">';
 		echo '<thead><tr>';
 		echo '<th>Bucket</th>';
-		echo '<th>Status</th>';
+		echo '<th>Planning State</th>';
+		echo '<th>Execution State</th>';
 		echo '<th>Contents</th>';
 		echo '<th>Assigned</th>';
 		echo '<th>Action</th>';
@@ -158,12 +160,14 @@ class AIMS_Event_Planning_Workspace_Page {
 
 		foreach ( $rows as $row ) {
 			$assignment_id = (int) ( $row['assignment_id'] ?? 0 );
+			$assignment_status = sanitize_key( (string) ( $row['assignment_status'] ?? '' ) );
 			echo '<tr>';
 			echo '<td>' . esc_html( $this->build_bucket_label( $row ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assignment_label'] ?? $row['assignment_status'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( $this->build_execution_state_label( $assignment_status ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_content_summary_label( (array) ( $row['content_summary'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_at'] ?? '' ) ) . '</td>';
-			echo '<td>' . $this->render_release_form( $event_id, $assignment_id ) . '</td>';
+			echo '<td>' . $this->render_assigned_bucket_actions( $event_id, $row ) . '</td>';
 			echo '</tr>';
 		}
 
@@ -209,6 +213,7 @@ class AIMS_Event_Planning_Workspace_Page {
 			<input type="hidden" name="action" value="aims_event_planning_assign_bucket">
 			<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $event_id ); ?>">
 			<input type="hidden" name="physical_bucket_id" value="<?php echo esc_attr( (string) $bucket_id ); ?>">
+			<input type="hidden" name="return_url" value="<?php echo esc_attr( $this->build_return_url( $event_id ) ); ?>">
 			<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'aims_event_planning_assign_bucket', '_aims_event_planning_assign_nonce' ); } ?>
 			<button type="submit" class="button button-primary">Assign</button>
 		</form>
@@ -223,11 +228,96 @@ class AIMS_Event_Planning_Workspace_Page {
 			<input type="hidden" name="action" value="aims_event_planning_release_bucket">
 			<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $event_id ); ?>">
 			<input type="hidden" name="assignment_id" value="<?php echo esc_attr( (string) $assignment_id ); ?>">
+			<input type="hidden" name="return_url" value="<?php echo esc_attr( $this->build_return_url( $event_id ) ); ?>">
 			<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'aims_event_planning_release_bucket', '_aims_event_planning_release_nonce' ); } ?>
-			<button type="submit" class="button">Release</button>
+			<button type="submit" class="button">Release Planning</button>
 		</form>
 		<?php
 		return (string) ob_get_clean();
+	}
+
+	private function render_assigned_bucket_actions( int $event_id, array $row ): string {
+		$actions = array();
+		$assignment_id = (int) ( $row['assignment_id'] ?? 0 );
+		$bucket_id = (int) ( $row['physical_bucket_id'] ?? 0 );
+		$status = sanitize_key( (string) ( $row['assignment_status'] ?? '' ) );
+
+		if ( in_array( $status, array( 'assigned', 'staged', 'in_transit' ), true ) ) {
+			$actions[] = $this->render_execution_action_form(
+				'aims_event_planning_vendor_event_check_in',
+				'Check In',
+				$event_id,
+				$assignment_id,
+				$bucket_id,
+				'aims_event_planning_vendor_event_check_in',
+				'_aims_event_planning_vendor_event_check_in_nonce'
+			);
+			$actions[] = $this->render_release_form( $event_id, $assignment_id );
+		} elseif ( 'at_event' === $status ) {
+			$actions[] = $this->render_execution_action_form(
+				'aims_event_planning_mark_returned',
+				'Mark Returned',
+				$event_id,
+				$assignment_id,
+				$bucket_id,
+				'aims_event_planning_mark_returned',
+				'_aims_event_planning_mark_returned_nonce'
+			);
+		} elseif ( 'returned' === $status ) {
+			$actions[] = $this->render_execution_action_form(
+				'aims_event_planning_release_after_return',
+				'Release',
+				$event_id,
+				$assignment_id,
+				$bucket_id,
+				'aims_event_planning_release_after_return',
+				'_aims_event_planning_release_after_return_nonce'
+			);
+		} elseif ( ! in_array( $status, array( 'released', 'cancelled' ), true ) ) {
+			$actions[] = $this->render_release_form( $event_id, $assignment_id );
+		}
+
+		return implode( '', array_map( static function ( string $html ): string {
+			return '<div style="margin-bottom:6px;">' . $html . '</div>';
+		}, array_filter( $actions ) ) );
+	}
+
+	private function render_execution_action_form( string $action, string $label, int $event_id, int $assignment_id, int $bucket_id, string $nonce_action, string $nonce_name ): string {
+		ob_start();
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="<?php echo esc_attr( $action ); ?>">
+			<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $event_id ); ?>">
+			<input type="hidden" name="assignment_id" value="<?php echo esc_attr( (string) $assignment_id ); ?>">
+			<input type="hidden" name="physical_bucket_id" value="<?php echo esc_attr( (string) $bucket_id ); ?>">
+			<input type="hidden" name="return_url" value="<?php echo esc_attr( $this->build_return_url( $event_id ) ); ?>">
+			<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( $nonce_action, $nonce_name ); } ?>
+			<button type="submit" class="button button-secondary"><?php echo esc_html( $label ); ?></button>
+		</form>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	private function render_status_notice(): void {
+		$status  = isset( $_GET['aims_event_planning_status'] ) ? sanitize_key( wp_unslash( $_GET['aims_event_planning_status'] ) ) : '';
+		$message = isset( $_GET['aims_event_planning_message'] ) ? sanitize_text_field( wp_unslash( $_GET['aims_event_planning_message'] ) ) : '';
+
+		if ( '' === $status || '' === $message ) {
+			return;
+		}
+
+		$notice_class = 'success' === $status ? 'notice-success' : 'notice-error';
+		echo '<div class="notice ' . esc_attr( $notice_class ) . ' inline"><p>' . esc_html( $message ) . '</p></div>';
+	}
+
+	private function build_return_url( int $event_id ): string {
+		return add_query_arg(
+			array(
+				'page'     => self::PAGE_SLUG,
+				'event_id' => $event_id,
+			),
+			admin_url( 'admin.php' )
+		);
 	}
 
 	private function build_event_label( array $event ): string {
@@ -273,6 +363,27 @@ class AIMS_Event_Planning_Workspace_Page {
 		}
 
 		return empty( $parts ) ? 'Not assigned' : implode( ' | ', $parts );
+	}
+
+	private function build_execution_state_label( string $status ): string {
+		switch ( $status ) {
+			case 'assigned':
+				return 'Awaiting check-in';
+			case 'staged':
+				return 'Ready for check-in';
+			case 'in_transit':
+				return 'In transit';
+			case 'at_event':
+				return 'Checked in';
+			case 'returned':
+				return 'Returned';
+			case 'released':
+				return 'Released';
+			case 'cancelled':
+				return 'Cancelled';
+			default:
+				return '' !== $status ? ucfirst( str_replace( '_', ' ', $status ) ) : 'Not started';
+		}
 	}
 
 	private function format_quantity( float $quantity ): string {

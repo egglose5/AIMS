@@ -8,11 +8,11 @@ Stable tag: 0.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-AIMS is a modular operations plugin for vendors, events, stitching, Square sync, and reporting using custom database tables.
+AIMS is a modular operations plugin for vendors, events, stitching, Square sync, reporting, and event execution using custom database tables.
 
 == Description ==
 
-This repository contains the phase 1 foundation for a full AIMS rebuild.
+This repository contains the current AIMS rebuild foundation, including Event Demand Intake v1, public event projection, and the manual event planning and execution model.
 
 == Installation ==
 
@@ -23,3 +23,4 @@ This repository contains the phase 1 foundation for a full AIMS rebuild.
 
 = 0.1.0 =
 * Initial AIMS rebuild foundation.
+* Event planning and execution model clarified: assignment changes status only, `vendor_event_checkin` is the stock-at-event movement point, and return is the move-back point.

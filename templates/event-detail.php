@@ -21,6 +21,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 		</div>
 	<?php endif; ?>
 
+	<?php if ( ! empty( $detail_public_updates ) || ! empty( $detail_updates_empty_message ) ) : ?>
+		<?php include AIMS_PLUGIN_PATH . 'templates/event-updates-feed.php'; ?>
+	<?php endif; ?>
+
 	<?php if ( ! empty( $detail_demand_shortcode ) ) : ?>
 		<div class="aims-event-detail-demand">
 			<?php echo $detail_demand_shortcode; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>

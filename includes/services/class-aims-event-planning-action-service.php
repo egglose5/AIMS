@@ -8,17 +8,20 @@ class AIMS_Event_Planning_Action_Service {
 	private $assignment_service;
 	private $access_service;
 	private $assignment_repository;
+	private $execution_service;
 
 	public function __construct(
 		AIMS_Event_Bucket_Assignment_Service $assignment_service = null,
 		$access_service = null,
-		AIMS_Event_Bucket_Assignment_Repository $assignment_repository = null
+		AIMS_Event_Bucket_Assignment_Repository $assignment_repository = null,
+		AIMS_Event_Execution_Service $execution_service = null
 	) {
-		$this->assignment_service = $assignment_service ?: new AIMS_Event_Bucket_Assignment_Service(
+		$this->assignment_service    = $assignment_service ?: new AIMS_Event_Bucket_Assignment_Service(
 			new AIMS_Event_Bucket_Assignment_Repository()
 		);
-		$this->access_service     = $access_service ?: ( class_exists( 'AIMS_Event_Planning_Access_Service' ) ? new AIMS_Event_Planning_Access_Service() : null );
+		$this->access_service        = $access_service ?: ( class_exists( 'AIMS_Event_Planning_Access_Service' ) ? new AIMS_Event_Planning_Access_Service() : null );
 		$this->assignment_repository = $assignment_repository ?: new AIMS_Event_Bucket_Assignment_Repository();
+		$this->execution_service     = $execution_service ?: ( class_exists( 'AIMS_Event_Execution_Service' ) ? new AIMS_Event_Execution_Service() : null );
 	}
 
 	public function can_current_user_manage_planning(): bool {
@@ -52,23 +55,23 @@ class AIMS_Event_Planning_Action_Service {
 	}
 
 	public function assign_bucket( array $request ): array {
-		$event_id     = (int) ( $request['event_id'] ?? 0 );
-		$bucket_id    = (int) ( $request['physical_bucket_id'] ?? $request['bucket_id'] ?? 0 );
-		$assignment_type = sanitize_key( $request['assignment_type'] ?? AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK );
-		$assignment_status = sanitize_key( $request['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_ASSIGNED );
+		$event_id          = (int) ( $request['event_id'] ?? 0 );
+		$bucket_id         = (int) ( $request['physical_bucket_id'] ?? $request['bucket_id'] ?? 0 );
+		$assignment_type   = sanitize_key( $request['assignment_type'] ?? AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK );
+		$assignment_status = sanitize_key( $request['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT );
 
 		if ( $event_id <= 0 || $bucket_id <= 0 ) {
 			return array(
-				'success' => false,
-				'message' => 'A valid event and bucket are required to assign planning inventory.',
+				'success'  => false,
+				'message'  => 'A valid event and bucket are required to assign planning inventory.',
 				'event_id' => $event_id,
 			);
 		}
 
 		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
 			return array(
-				'success' => false,
-				'message' => 'You are not authorized to assign buckets to this event.',
+				'success'  => false,
+				'message'  => 'You are not authorized to assign buckets to this event.',
 				'event_id' => $event_id,
 			);
 		}
@@ -78,7 +81,7 @@ class AIMS_Event_Planning_Action_Service {
 				'event_id'           => $event_id,
 				'physical_bucket_id' => $bucket_id,
 				'assignment_type'    => '' !== $assignment_type ? $assignment_type : AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK,
-				'assignment_status'  => '' !== $assignment_status ? $assignment_status : AIMS_Event_Bucket_Assignment_Repository::STATUS_ASSIGNED,
+				'assignment_status'  => '' !== $assignment_status ? $assignment_status : AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT,
 				'assigned_at'        => $request['assigned_at'] ?? current_time( 'mysql' ),
 				'assigned_by'        => get_current_user_id(),
 				'display_order'      => (int) ( $request['display_order'] ?? 0 ),
@@ -89,8 +92,8 @@ class AIMS_Event_Planning_Action_Service {
 
 		if ( $assignment_id <= 0 ) {
 			return array(
-				'success' => false,
-				'message' => 'Bucket assignment could not be saved.',
+				'success'  => false,
+				'message'  => 'Bucket assignment could not be saved.',
 				'event_id' => $event_id,
 			);
 		}
@@ -103,22 +106,113 @@ class AIMS_Event_Planning_Action_Service {
 		);
 	}
 
-	public function release_bucket( array $request ): array {
+	public function mark_in_transit( array $request ): array {
+		return $this->transition_assignment_status_from_request(
+			$request,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT,
+			'Bucket marked in transit.',
+			'You are not authorized to mark this event as in transit.'
+		);
+	}
+
+	public function vendor_event_check_in( array $request ): array {
+		$assignment = $this->load_assignment_from_request( $request );
+		if ( ! is_array( $assignment ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A valid assignment is required for vendor event check-in.',
+				'event_id' => (int) ( $request['event_id'] ?? 0 ),
+			);
+		}
+
+		$event_id = (int) ( $assignment['event_id'] ?? 0 );
+		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'You are not authorized to check in this event.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$movement_result = $this->execute_vendor_event_check_in(
+			$request,
+			$assignment
+		);
+
+		if ( is_wp_error( $movement_result ) || ! is_array( $movement_result ) || empty( $movement_result['success'] ) ) {
+			return array(
+				'success'  => false,
+				'message'  => is_wp_error( $movement_result ) ? $movement_result->get_error_message() : (string) ( $movement_result['message'] ?? 'Vendor event check-in could not be recorded.' ),
+				'event_id' => $event_id,
+			);
+		}
+
+		return array(
+			'success'       => true,
+			'message'       => (string) ( $movement_result['message'] ?? 'Vendor event check-in recorded.' ),
+			'event_id'      => $event_id,
+			'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
+			'result'        => $movement_result,
+		);
+	}
+
+	public function mark_returned( array $request ): array {
+		$assignment = $this->load_assignment_from_request( $request );
+		if ( ! is_array( $assignment ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A valid assignment is required to mark an event returned.',
+				'event_id' => (int) ( $request['event_id'] ?? 0 ),
+			);
+		}
+
+		$event_id = (int) ( $assignment['event_id'] ?? 0 );
+		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'You are not authorized to mark this event returned.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$movement_result = $this->execute_event_return(
+			$request,
+			$assignment
+		);
+
+		if ( is_wp_error( $movement_result ) || ! is_array( $movement_result ) || empty( $movement_result['success'] ) ) {
+			return array(
+				'success'  => false,
+				'message'  => is_wp_error( $movement_result ) ? $movement_result->get_error_message() : (string) ( $movement_result['message'] ?? 'Event return could not be recorded.' ),
+				'event_id' => $event_id,
+			);
+		}
+
+		return array(
+			'success'       => true,
+			'message'       => (string) ( $movement_result['message'] ?? 'Event return recorded.' ),
+			'event_id'      => $event_id,
+			'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
+			'result'        => $movement_result,
+		);
+	}
+
+	public function release_after_return( array $request ): array {
 		$assignment_id = (int) ( $request['assignment_id'] ?? 0 );
 		$event_id      = (int) ( $request['event_id'] ?? 0 );
 
 		if ( $assignment_id <= 0 || $event_id <= 0 ) {
 			return array(
-				'success' => false,
-				'message' => 'A valid event and assignment_id are required to release planning inventory.',
+				'success'  => false,
+				'message'  => 'A valid event and assignment_id are required to release event execution inventory.',
 				'event_id' => $event_id,
 			);
 		}
 
 		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
 			return array(
-				'success' => false,
-				'message' => 'You are not authorized to release buckets for this event.',
+				'success'  => false,
+				'message'  => 'You are not authorized to release this event inventory.',
 				'event_id' => $event_id,
 			);
 		}
@@ -126,8 +220,23 @@ class AIMS_Event_Planning_Action_Service {
 		$assignment_event_id = $this->get_assignment_event_id( $assignment_id );
 		if ( $assignment_event_id <= 0 || $assignment_event_id !== $event_id ) {
 			return array(
-				'success' => false,
-				'message' => 'The submitted assignment does not belong to the selected event.',
+				'success'  => false,
+				'message'  => 'The submitted assignment does not belong to the selected event.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$current_assignment = $this->load_assignment_from_request(
+			array(
+				'assignment_id' => $assignment_id,
+				'event_id'      => $event_id,
+			)
+		);
+
+		if ( is_array( $current_assignment ) && AIMS_Event_Bucket_Assignment_Repository::STATUS_RETURNED !== (string) ( $current_assignment['assignment_status'] ?? '' ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'Event inventory can only be released after it has been marked returned.',
 				'event_id' => $event_id,
 			);
 		}
@@ -135,16 +244,75 @@ class AIMS_Event_Planning_Action_Service {
 		$released = $this->assignment_service->release_bucket_from_event(
 			$assignment_id,
 			array(
-				'released_at' => $request['released_at'] ?? current_time( 'mysql' ),
-				'released_by' => get_current_user_id(),
-				'notes'       => isset( $request['notes'] ) ? wp_kses_post( $request['notes'] ) : '',
+				'released_at'       => $request['released_at'] ?? current_time( 'mysql' ),
+				'released_by'       => get_current_user_id(),
+				'assignment_status' => AIMS_Event_Bucket_Assignment_Repository::STATUS_RELEASED,
+				'notes'             => isset( $request['notes'] ) ? wp_kses_post( $request['notes'] ) : '',
 			)
 		);
 
 		if ( ! $released ) {
 			return array(
-				'success' => false,
-				'message' => 'Bucket assignment could not be released.',
+				'success'  => false,
+				'message'  => 'Bucket assignment could not be released.',
+				'event_id' => $event_id,
+			);
+		}
+
+		return array(
+			'success'       => true,
+			'message'       => 'Bucket released from event execution.',
+			'event_id'      => $event_id,
+			'assignment_id' => $assignment_id,
+		);
+	}
+
+	public function release_bucket( array $request ): array {
+		$assignment = $this->load_assignment_from_request( $request );
+		if ( ! is_array( $assignment ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A valid assignment is required to release planning inventory.',
+				'event_id' => (int) ( $request['event_id'] ?? 0 ),
+			);
+		}
+
+		$event_id = (int) ( $assignment['event_id'] ?? 0 );
+		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'You are not authorized to release buckets for this event.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$status = sanitize_key( (string) ( $assignment['assignment_status'] ?? '' ) );
+		if ( AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT === $status ) {
+			return array(
+				'success'  => false,
+				'message'  => 'Event inventory must be marked returned before it can be released.',
+				'event_id' => $event_id,
+			);
+		}
+
+		if ( AIMS_Event_Bucket_Assignment_Repository::STATUS_RETURNED === $status ) {
+			return $this->release_after_return( $request );
+		}
+
+		$released = $this->assignment_service->release_bucket_from_event(
+			(int) ( $assignment['id'] ?? 0 ),
+			array(
+				'released_at'       => $request['released_at'] ?? current_time( 'mysql' ),
+				'released_by'       => get_current_user_id(),
+				'assignment_status' => AIMS_Event_Bucket_Assignment_Repository::STATUS_RELEASED,
+				'notes'             => isset( $request['notes'] ) ? wp_kses_post( $request['notes'] ) : '',
+			)
+		);
+
+		if ( ! $released ) {
+			return array(
+				'success'  => false,
+				'message'  => 'Bucket assignment could not be released.',
 				'event_id' => $event_id,
 			);
 		}
@@ -153,8 +321,77 @@ class AIMS_Event_Planning_Action_Service {
 			'success'       => true,
 			'message'       => 'Bucket released from event planning.',
 			'event_id'      => $event_id,
-			'assignment_id' => $assignment_id,
+			'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
 		);
+	}
+
+	public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
+		if ( $assignment_id <= 0 || ! method_exists( $this->assignment_service, 'transition_assignment_status' ) ) {
+			return false;
+		}
+
+		return (bool) $this->assignment_service->transition_assignment_status( $assignment_id, $status, $data );
+	}
+
+	private function transition_assignment_status_from_request( array $request, string $status, string $success_message, string $failure_message ): array {
+		$assignment = $this->load_assignment_from_request( $request );
+		if ( ! is_array( $assignment ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A valid assignment is required to update event execution status.',
+				'event_id' => (int) ( $request['event_id'] ?? 0 ),
+			);
+		}
+
+		$event_id = (int) ( $assignment['event_id'] ?? 0 );
+		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
+			return array(
+				'success'  => false,
+				'message'  => $failure_message,
+				'event_id' => $event_id,
+			);
+		}
+
+		if ( ! $this->transition_assignment_status(
+			(int) ( $assignment['id'] ?? 0 ),
+			$status,
+			array(
+				'event_id' => $event_id,
+			)
+		) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'Event execution status could not be updated.',
+				'event_id' => $event_id,
+			);
+		}
+
+		return array(
+			'success'       => true,
+			'message'       => $success_message,
+			'event_id'      => $event_id,
+			'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
+		);
+	}
+
+	private function load_assignment_from_request( array $request ): ?array {
+		$assignment_id = (int) ( $request['assignment_id'] ?? 0 );
+		$event_id      = (int) ( $request['event_id'] ?? 0 );
+
+		if ( $assignment_id <= 0 || ! is_object( $this->assignment_repository ) || ! method_exists( $this->assignment_repository, 'find' ) ) {
+			return null;
+		}
+
+		$assignment = $this->assignment_repository->find( $assignment_id );
+		if ( ! is_array( $assignment ) ) {
+			return null;
+		}
+
+		if ( $event_id > 0 && (int) ( $assignment['event_id'] ?? 0 ) !== $event_id ) {
+			return null;
+		}
+
+		return $assignment;
 	}
 
 	private function get_authorized_event_ids_for_current_user(): array {
@@ -202,5 +439,35 @@ class AIMS_Event_Planning_Action_Service {
 		}
 
 		return (int) ( $assignment['event_id'] ?? 0 );
+	}
+
+	private function execute_vendor_event_check_in( array $request, array $assignment ) {
+		if ( ! is_object( $this->execution_service ) || ! method_exists( $this->execution_service, 'vendor_event_checkin' ) ) {
+			return new WP_Error( 'aims_missing_event_execution_service', 'Event execution service is not available.' );
+		}
+
+		return $this->execution_service->vendor_event_checkin(
+			array(
+				'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
+				'reference_id'  => isset( $request['reference_id'] ) ? sanitize_text_field( (string) $request['reference_id'] ) : '',
+				'applied_by'    => get_current_user_id(),
+				'note'          => isset( $request['note'] ) ? sanitize_textarea_field( (string) $request['note'] ) : ( isset( $request['notes'] ) ? sanitize_textarea_field( (string) $request['notes'] ) : '' ),
+			)
+		);
+	}
+
+	private function execute_event_return( array $request, array $assignment ) {
+		if ( ! is_object( $this->execution_service ) || ! method_exists( $this->execution_service, 'event_return' ) ) {
+			return new WP_Error( 'aims_missing_event_execution_service', 'Event execution service is not available.' );
+		}
+
+		return $this->execution_service->event_return(
+			array(
+				'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
+				'reference_id'  => isset( $request['reference_id'] ) ? sanitize_text_field( (string) $request['reference_id'] ) : '',
+				'applied_by'    => get_current_user_id(),
+				'note'          => isset( $request['note'] ) ? sanitize_textarea_field( (string) $request['note'] ) : ( isset( $request['notes'] ) ? sanitize_textarea_field( (string) $request['notes'] ) : '' ),
+			)
+		);
 	}
 }

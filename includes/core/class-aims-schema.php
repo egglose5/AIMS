@@ -15,11 +15,14 @@ class AIMS_Schema {
 			$wpdb->prefix . 'aims_customer_addresses',
 			$wpdb->prefix . 'aims_events',
 			$wpdb->prefix . 'aims_public_event_catalog',
+			$wpdb->prefix . 'aims_public_event_updates',
 			$wpdb->prefix . 'aims_event_square_locations',
 			$wpdb->prefix . 'aims_event_expenses',
 			$wpdb->prefix . 'aims_event_customer_requests',
 			$wpdb->prefix . 'aims_event_customer_request_items',
 			$wpdb->prefix . 'aims_vendor_event_assignments',
+			$wpdb->prefix . 'aims_vendor_event_checkins',
+			$wpdb->prefix . 'aims_vendor_event_checkin_media',
 			$wpdb->prefix . 'aims_stitch_jobs',
 			$wpdb->prefix . 'aims_storage_locations',
 			$wpdb->prefix . 'aims_physical_buckets',
@@ -54,11 +57,14 @@ class AIMS_Schema {
 		$customer_addresses_table = $wpdb->prefix . 'aims_customer_addresses';
 		$events_table            = $wpdb->prefix . 'aims_events';
 		$public_event_catalog_table = $wpdb->prefix . 'aims_public_event_catalog';
+		$public_event_updates_table = $wpdb->prefix . 'aims_public_event_updates';
 		$event_square_locations_table = $wpdb->prefix . 'aims_event_square_locations';
 		$event_expenses_table    = $wpdb->prefix . 'aims_event_expenses';
 		$event_customer_requests_table = $wpdb->prefix . 'aims_event_customer_requests';
 		$event_customer_request_items_table = $wpdb->prefix . 'aims_event_customer_request_items';
 		$event_assignments_table = $wpdb->prefix . 'aims_vendor_event_assignments';
+		$vendor_event_checkins_table = $wpdb->prefix . 'aims_vendor_event_checkins';
+		$vendor_event_checkin_media_table = $wpdb->prefix . 'aims_vendor_event_checkin_media';
 		$stitch_jobs_table       = $wpdb->prefix . 'aims_stitch_jobs';
 		$storage_locations_table = $wpdb->prefix . 'aims_storage_locations';
 		$physical_buckets_table  = $wpdb->prefix . 'aims_physical_buckets';
@@ -216,6 +222,33 @@ class AIMS_Schema {
 				KEY request_intake_enabled (request_intake_enabled),
 				KEY last_projected_at (last_projected_at)
 			) {$charset_collate};",
+			"CREATE TABLE {$public_event_updates_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				event_id bigint(20) unsigned NOT NULL,
+				update_slug varchar(191) NOT NULL DEFAULT '',
+				update_type varchar(50) NOT NULL DEFAULT 'update',
+				update_title varchar(255) NOT NULL DEFAULT '',
+				update_summary longtext NULL,
+				update_body longtext NULL,
+				public_status varchar(32) NOT NULL DEFAULT 'published',
+				is_pinned tinyint(1) NOT NULL DEFAULT 0,
+				hero_image_reference varchar(191) NOT NULL DEFAULT '',
+				source_label varchar(191) NOT NULL DEFAULT '',
+				source_reference varchar(191) NOT NULL DEFAULT '',
+				published_at datetime NULL DEFAULT NULL,
+				last_projected_at datetime NULL DEFAULT NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY event_update_slug (event_id, update_slug),
+				KEY event_id (event_id),
+				KEY update_slug (update_slug),
+				KEY update_type (update_type),
+				KEY public_status (public_status),
+				KEY is_pinned (is_pinned),
+				KEY published_at (published_at),
+				KEY last_projected_at (last_projected_at)
+			) {$charset_collate};",
 			"CREATE TABLE {$event_square_locations_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 				event_id bigint(20) unsigned NOT NULL,
@@ -315,6 +348,76 @@ class AIMS_Schema {
 				KEY vendor_id (vendor_id),
 				KEY assignment_status (assignment_status),
 				KEY fulfillment_status (fulfillment_status)
+			) {$charset_collate};",
+			"CREATE TABLE {$vendor_event_checkins_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				event_id bigint(20) unsigned NOT NULL,
+				vendor_id bigint(20) unsigned NOT NULL,
+				vendor_event_assignment_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				physical_bucket_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				public_event_update_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				checkin_source varchar(50) NOT NULL DEFAULT 'vendor_portal',
+				checkin_status varchar(32) NOT NULL DEFAULT 'recorded',
+				visibility_status varchar(32) NOT NULL DEFAULT 'internal',
+				is_first_checkin tinyint(1) NOT NULL DEFAULT 1,
+				movement_applied tinyint(1) NOT NULL DEFAULT 0,
+				movement_applied_at datetime NULL DEFAULT NULL,
+				movement_reference_type varchar(50) NOT NULL DEFAULT '',
+				movement_reference_id varchar(191) NOT NULL DEFAULT '',
+				checkin_notes longtext NULL,
+				checkin_comment longtext NULL,
+				mobile_photo_reference varchar(191) NOT NULL DEFAULT '',
+				checked_in_by bigint(20) unsigned NOT NULL DEFAULT 0,
+				checked_in_at datetime NULL DEFAULT NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY event_vendor_bucket (event_id, vendor_id, physical_bucket_id),
+				KEY event_id (event_id),
+				KEY vendor_id (vendor_id),
+				KEY vendor_event_assignment_id (vendor_event_assignment_id),
+				KEY physical_bucket_id (physical_bucket_id),
+				KEY public_event_update_id (public_event_update_id),
+				KEY checkin_source (checkin_source),
+				KEY checkin_status (checkin_status),
+				KEY visibility_status (visibility_status),
+				KEY is_first_checkin (is_first_checkin),
+				KEY movement_applied (movement_applied),
+				KEY movement_reference_type (movement_reference_type),
+				KEY movement_reference_id (movement_reference_id),
+				KEY checked_in_at (checked_in_at)
+			) {$charset_collate};",
+			"CREATE TABLE {$vendor_event_checkin_media_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				checkin_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				public_event_update_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				event_id bigint(20) unsigned NOT NULL,
+				vendor_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				media_type varchar(32) NOT NULL DEFAULT 'photo',
+				media_source varchar(50) NOT NULL DEFAULT 'mobile_upload',
+				media_reference varchar(191) NOT NULL DEFAULT '',
+				media_url varchar(255) NOT NULL DEFAULT '',
+				attachment_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				caption longtext NULL,
+				alt_text varchar(191) NOT NULL DEFAULT '',
+				visibility_status varchar(32) NOT NULL DEFAULT 'internal',
+				is_primary tinyint(1) NOT NULL DEFAULT 0,
+				sort_order int(11) NOT NULL DEFAULT 0,
+				uploaded_by bigint(20) unsigned NOT NULL DEFAULT 0,
+				uploaded_at datetime NULL DEFAULT NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				KEY checkin_id (checkin_id),
+				KEY public_event_update_id (public_event_update_id),
+				KEY event_id (event_id),
+				KEY vendor_id (vendor_id),
+				KEY media_type (media_type),
+				KEY media_source (media_source),
+				KEY media_reference (media_reference),
+				KEY visibility_status (visibility_status),
+				KEY is_primary (is_primary),
+				KEY sort_order (sort_order)
 			) {$charset_collate};",
 			"CREATE TABLE {$stitch_jobs_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

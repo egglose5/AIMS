@@ -1,0 +1,291 @@
+<?php
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class AIMS_Event_Execution_Service {
+	private $assignment_service;
+	private $assignment_repository;
+	private $bucket_positions;
+	private $bucket_movement_service;
+
+	public function __construct(
+		AIMS_Event_Bucket_Assignment_Service $assignment_service = null,
+		AIMS_Event_Bucket_Assignment_Repository $assignment_repository = null,
+		AIMS_Bucket_Inventory_Position_Repository $bucket_positions = null,
+		AIMS_Bucket_Movement_Service $bucket_movement_service = null
+	) {
+		$this->assignment_service    = $assignment_service ?: new AIMS_Event_Bucket_Assignment_Service( new AIMS_Event_Bucket_Assignment_Repository() );
+		$this->assignment_repository = $assignment_repository ?: new AIMS_Event_Bucket_Assignment_Repository();
+		$this->bucket_positions      = $bucket_positions ?: new AIMS_Bucket_Inventory_Position_Repository();
+		$this->bucket_movement_service = $bucket_movement_service ?: new AIMS_Bucket_Movement_Service(
+			new AIMS_Bucket_Inventory_Movement_Repository(),
+			new AIMS_Bucket_Inventory_Position_Repository()
+		);
+	}
+
+	public function get_planning_default_status(): string {
+		return AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT;
+	}
+
+	public function get_execution_statuses(): array {
+		return array(
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_ASSIGNED,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_RETURNED,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_RELEASED,
+			AIMS_Event_Bucket_Assignment_Repository::STATUS_CANCELLED,
+		);
+	}
+
+	public function is_execution_status( string $status ): bool {
+		return in_array( sanitize_key( $status ), $this->get_execution_statuses(), true );
+	}
+
+	public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
+		if ( $assignment_id <= 0 || ! is_object( $this->assignment_service ) || ! method_exists( $this->assignment_service, 'transition_assignment_status' ) ) {
+			return false;
+		}
+
+		$status = sanitize_key( $status );
+		if ( ! $this->is_execution_status( $status ) ) {
+			$status = $this->get_planning_default_status();
+		}
+
+		return (bool) $this->assignment_service->transition_assignment_status( $assignment_id, $status, $data );
+	}
+
+	public function mark_assignment_in_transit( int $assignment_id, array $data = array() ): bool {
+		return $this->transition_assignment_status( $assignment_id, AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT, $data );
+	}
+
+	public function mark_assignment_staged( int $assignment_id, array $data = array() ): bool {
+		return $this->transition_assignment_status( $assignment_id, AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED, $data );
+	}
+
+	public function mark_assignment_at_event( int $assignment_id, array $data = array() ): bool {
+		return $this->transition_assignment_status( $assignment_id, AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT, $data );
+	}
+
+	public function mark_assignment_returned( int $assignment_id, array $data = array() ): bool {
+		return $this->transition_assignment_status( $assignment_id, AIMS_Event_Bucket_Assignment_Repository::STATUS_RETURNED, $data );
+	}
+
+	public function vendor_event_checkin( array $data ): array {
+		return $this->apply_event_execution_movement(
+			$data,
+			array(
+				'status'         => AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT,
+				'reference_type'  => 'vendor_event_checkin',
+				'movement_type'   => 'event_load_out',
+				'quantity_delta'  => -1,
+				'message'         => 'Vendor event check-in recorded.',
+			)
+		);
+	}
+
+	public function event_return( array $data ): array {
+		return $this->apply_event_execution_movement(
+			$data,
+			array(
+				'status'         => AIMS_Event_Bucket_Assignment_Repository::STATUS_RETURNED,
+				'reference_type' => 'vendor_event_return',
+				'movement_type'  => 'event_return',
+				'quantity_delta' => 1,
+				'message'        => 'Event return recorded.',
+			)
+		);
+	}
+
+	private function apply_event_execution_movement( array $data, array $config ): array {
+		$assignment_id = (int) ( $data['assignment_id'] ?? 0 );
+		$assignment    = $this->get_assignment( $assignment_id );
+
+		if ( $assignment_id <= 0 || empty( $assignment ) ) {
+			return $this->failure_response( $config['message'], 0, 0 );
+		}
+
+		$event_id = (int) ( $assignment['event_id'] ?? 0 );
+		if ( $event_id <= 0 ) {
+			return $this->failure_response( $config['message'], $assignment_id, 0 );
+		}
+
+		$bucket_id = (int) ( $assignment['physical_bucket_id'] ?? $assignment['bucket_id'] ?? 0 );
+		if ( $bucket_id <= 0 ) {
+			return $this->failure_response( $config['message'], $assignment_id, $event_id );
+		}
+
+		$current_status = sanitize_key( (string) ( $assignment['assignment_status'] ?? '' ) );
+		if ( in_array( $current_status, array( AIMS_Event_Bucket_Assignment_Repository::STATUS_RELEASED, AIMS_Event_Bucket_Assignment_Repository::STATUS_CANCELLED ), true ) ) {
+			return $this->failure_response( 'The selected bucket assignment is no longer active.', $assignment_id, $event_id );
+		}
+
+		$reference_id = sanitize_text_field(
+			(string) ( $data['reference_id'] ?? ( 'assignment-' . $assignment_id . '-' . $config['reference_type'] ) )
+		);
+		$applied_by = (int) ( $data['applied_by'] ?? get_current_user_id() );
+		$note       = isset( $data['note'] ) ? sanitize_textarea_field( $data['note'] ) : '';
+
+		$positions = $this->get_bucket_positions( $bucket_id );
+		$movements  = array();
+		$errors     = array();
+
+		foreach ( $positions as $position ) {
+			$product_id = (int) ( $position['product_id'] ?? 0 );
+			$vendor_id   = (int) ( $position['vendor_id'] ?? 0 );
+			$quantity    = (float) ( $position['quantity'] ?? 0 );
+
+			if ( $product_id <= 0 || $vendor_id <= 0 || 0.0 === $quantity ) {
+				continue;
+			}
+
+			$movement = $this->record_execution_movement(
+				array(
+					'reference_type' => $config['reference_type'],
+					'reference_id'   => $reference_id,
+					'vendor_id'      => $vendor_id,
+					'event_id'       => $event_id,
+					'product_id'     => $product_id,
+					'bucket_id'      => $bucket_id,
+					'movement_type'  => $config['movement_type'],
+					'quantity_delta' => abs( $quantity ) * (float) $config['quantity_delta'],
+					'applied_by'     => $applied_by,
+					'note'           => $note,
+				)
+			);
+
+			if ( is_wp_error( $movement ) ) {
+				if ( 'aims_duplicate_bucket_movement' === $movement->get_error_code() ) {
+					$movements[] = array(
+						'product_id'  => $product_id,
+						'vendor_id'   => $vendor_id,
+						'duplicate'   => true,
+					);
+					continue;
+				}
+
+				$errors[] = $movement;
+				break;
+			}
+
+			$movements[] = array_merge(
+				$movement,
+				array(
+					'product_id'  => $product_id,
+					'vendor_id'   => $vendor_id,
+					'duplicate'   => false,
+				)
+			);
+		}
+
+		if ( ! empty( $errors ) ) {
+			return $this->failure_response(
+				$errors[0]->get_error_message(),
+				$assignment_id,
+				$event_id,
+				array(
+					'error_code' => $errors[0]->get_error_code(),
+				)
+			);
+		}
+
+		if ( ! $this->transition_assignment_status(
+			$assignment_id,
+			$config['status'],
+			array(
+				'notes'         => $note,
+				'updated_by'    => $applied_by,
+				'updated_at'    => current_time( 'mysql' ),
+			)
+		) ) {
+			return $this->failure_response( 'The assignment status could not be updated.', $assignment_id, $event_id );
+		}
+
+		return array(
+			'success'            => true,
+			'message'            => $config['message'],
+			'assignment_id'      => $assignment_id,
+			'event_id'           => $event_id,
+			'physical_bucket_id' => $bucket_id,
+			'status'             => $config['status'],
+			'movements'          => $movements,
+			'movements_applied'  => count(
+				array_filter(
+					$movements,
+					static function ( array $movement ): bool {
+						return empty( $movement['duplicate'] );
+					}
+				)
+			),
+			'duplicate_count'    => count(
+				array_filter(
+					$movements,
+					static function ( array $movement ): bool {
+						return ! empty( $movement['duplicate'] );
+					}
+				)
+			),
+		);
+	}
+
+	private function record_execution_movement( array $data ) {
+		if ( ! is_object( $this->bucket_movement_service ) ) {
+			return new WP_Error( 'aims_missing_bucket_movement_service', 'Bucket movement service is unavailable.' );
+		}
+
+		$movement_type = sanitize_key( $data['movement_type'] ?? '' );
+		if ( 'event_return' === $movement_type && method_exists( $this->bucket_movement_service, 'record_event_return' ) ) {
+			return $this->bucket_movement_service->record_event_return( $data );
+		}
+
+		if ( method_exists( $this->bucket_movement_service, 'record_event_load_out' ) ) {
+			return $this->bucket_movement_service->record_event_load_out( $data );
+		}
+
+		if ( method_exists( $this->bucket_movement_service, 'record_movement' ) ) {
+			return $this->bucket_movement_service->record_movement( $data );
+		}
+
+		return new WP_Error( 'aims_invalid_bucket_movement_service', 'Bucket movement service cannot record execution movements.' );
+	}
+
+	private function get_assignment( int $assignment_id ): array {
+		if ( $assignment_id <= 0 || ! is_object( $this->assignment_repository ) || ! method_exists( $this->assignment_repository, 'find' ) ) {
+			return array();
+		}
+
+		$assignment = $this->assignment_repository->find( $assignment_id );
+
+		return is_array( $assignment ) ? $assignment : array();
+	}
+
+	private function get_bucket_positions( int $bucket_id ): array {
+		if ( $bucket_id <= 0 || ! is_object( $this->bucket_positions ) || ! method_exists( $this->bucket_positions, 'get_for_bucket' ) ) {
+			return array();
+		}
+
+		$rows = array();
+		foreach ( (array) $this->bucket_positions->get_for_bucket( $bucket_id ) as $row ) {
+			if ( is_array( $row ) ) {
+				$rows[] = $row;
+			}
+		}
+
+		return $rows;
+	}
+
+	private function failure_response( string $message, int $assignment_id, int $event_id, array $extra = array() ): array {
+		return array_merge(
+			array(
+				'success'       => false,
+				'message'       => $message,
+				'assignment_id' => $assignment_id,
+				'event_id'      => $event_id,
+			),
+			$extra
+		);
+	}
+}
