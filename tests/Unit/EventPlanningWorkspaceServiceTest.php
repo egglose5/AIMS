@@ -373,4 +373,68 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'No authorized events are available for planning.', $model['selection_message'] );
 		$this->assertSame( array(), $model['workspace'] );
 	}
+
+	public function testGetPageModelCanFilterToTeamEvents(): void {
+		TestState::set_current_user_id( 77 );
+
+		$events = new class() extends \AIMS_Event_Repository {
+			public function get_table_name(): string {
+				return 'wp_aims_events';
+			}
+		};
+
+		$this->wpdb()->queue_results(
+			array(
+				array(
+					'id' => 10,
+					'event_name' => 'My Event',
+					'start_date' => '2026-04-01',
+					'end_date' => '2026-04-03',
+					'location_name' => 'Main Hall',
+				),
+				array(
+					'id' => 20,
+					'event_name' => 'Team Event',
+					'start_date' => '2026-05-01',
+					'end_date' => '2026-05-03',
+					'location_name' => 'Team Hall',
+				),
+			)
+		);
+
+		$access_service = new class() {
+			public function get_authorized_event_contexts( int $user_id ): array {
+				return array(
+					10 => array( 'event_id' => 10, 'source' => 'self' ),
+					20 => array( 'event_id' => 20, 'source' => 'team' ),
+				);
+			}
+
+			public function get_subordinate_user_ids( int $user_id, int $max_depth = 5 ): array {
+				return array( 88 );
+			}
+		};
+
+		$service = new AIMS_Event_Planning_Workspace_Service(
+			$events,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			$access_service
+		);
+
+		$model = $service->get_page_model(
+			array(
+				'event_scope' => 'team',
+			)
+		);
+
+		$this->assertCount( 1, $model['authorized_events'] );
+		$this->assertSame( 20, $model['authorized_events'][0]['id'] );
+		$this->assertSame( 'team', $model['authorized_events'][0]['visibility_source'] );
+		$this->assertTrue( (bool) ( $model['team_context']['is_supervisor'] ?? false ) );
+	}
 }

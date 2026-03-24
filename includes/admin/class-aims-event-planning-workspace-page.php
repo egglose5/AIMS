@@ -8,6 +8,7 @@ class AIMS_Event_Planning_Workspace_Page {
 	public const PAGE_SLUG = 'aims-event-planning-workspace';
 
 	private $data_provider;
+	private $current_filter_state = array();
 
 	public function __construct( AIMS_Event_Planning_Workspace_Data_Provider $data_provider ) {
 		$this->data_provider = $data_provider;
@@ -18,15 +19,19 @@ class AIMS_Event_Planning_Workspace_Page {
 		$events           = (array) ( $model['authorized_events'] ?? array() );
 		$selected_event   = is_array( $model['selected_event'] ?? null ) ? $model['selected_event'] : array();
 		$workspace        = (array) ( $model['workspace'] ?? array() );
+		$filter_state     = (array) ( $model['filter_state'] ?? array() );
+		$team_context     = (array) ( $model['team_context'] ?? array() );
 		$selection_message = (string) ( $model['selection_message'] ?? '' );
 		$selected_event_id = (int) ( $model['selected_event_id'] ?? 0 );
+		$this->current_filter_state = $filter_state;
 
 		echo '<div class="wrap aims-event-planning-workspace">';
 		echo '<h1>Events &rsaquo; Planning</h1>';
 		echo '<p>Manual bucket planning for managers and supervisors. Demand is the signal, bucket assignment is the commitment, and planning does not move inventory. Planning assignments show as <strong>In Transit</strong>, but physical movement does not happen until <code>vendor_event_checkin</code>.</p>';
 		$this->render_status_notice();
 
-		$this->render_event_selector( $events, $selected_event_id );
+		$this->render_event_selector( $events, $selected_event_id, $filter_state );
+		$this->render_team_context_notice( $team_context );
 
 		if ( '' !== $selection_message ) {
 			echo '<div class="notice notice-info inline"><p>' . esc_html( $selection_message ) . '</p></div>';
@@ -39,21 +44,31 @@ class AIMS_Event_Planning_Workspace_Page {
 
 		$this->render_event_header( $selected_event );
 		$this->render_demand_panel( (array) ( $workspace['demand_rows'] ?? array() ) );
-		$this->render_assigned_buckets_panel( $selected_event_id, (array) ( $workspace['assigned_buckets'] ?? array() ) );
-		$this->render_available_buckets_panel( $selected_event_id, (array) ( $workspace['available_buckets'] ?? array() ) );
+		$this->render_assigned_buckets_panel( $selected_event_id, (array) ( $workspace['assigned_buckets'] ?? array() ), $team_context, $filter_state );
+		$this->render_available_buckets_panel( $selected_event_id, (array) ( $workspace['available_buckets'] ?? array() ), $team_context, $filter_state );
 
 		echo '</div>';
 	}
 
-	private function render_event_selector( array $events, int $selected_event_id ): void {
+	private function render_event_selector( array $events, int $selected_event_id, array $filter_state ): void {
 		if ( empty( $events ) ) {
 			echo '<div class="notice notice-warning inline"><p>No authorized events are available for planning.</p></div>';
 			return;
 		}
 
-		echo '<p><strong>Authorized Events:</strong> ';
+		echo '<form method="get" action="' . esc_url( admin_url( 'admin.php' ) ) . '" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin: 12px 0;">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::PAGE_SLUG ) . '">';
 
-		$links = array();
+		echo '<label><strong>Event Scope</strong><br>';
+		echo '<select name="event_scope">';
+		foreach ( array( 'all' => 'All Authorized', 'my' => 'My Events', 'team' => 'Team Events' ) as $value => $label ) {
+			$is_selected = (string) ( $filter_state['event_scope'] ?? 'all' ) === $value ? ' selected="selected"' : '';
+			echo '<option value="' . esc_attr( $value ) . '"' . $is_selected . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select></label>';
+
+		echo '<label><strong>Event</strong><br>';
+		echo '<select name="event_id">';
 		foreach ( $events as $event ) {
 			if ( ! is_array( $event ) ) {
 				continue;
@@ -64,21 +79,16 @@ class AIMS_Event_Planning_Workspace_Page {
 				continue;
 			}
 
-			$label = $this->build_event_label( $event );
-			if ( $event_id === $selected_event_id ) {
-				$links[] = '<strong>' . esc_html( $label ) . '</strong>';
-				continue;
-			}
-
-			$links[] = sprintf(
-				'<a href="%s">%s</a>',
-				esc_url( add_query_arg( array( 'page' => self::PAGE_SLUG, 'event_id' => $event_id ), admin_url( 'admin.php' ) ) ),
-				esc_html( $label )
-			);
+			$is_selected = $selected_event_id === $event_id ? ' selected="selected"' : '';
+			echo '<option value="' . esc_attr( (string) $event_id ) . '"' . $is_selected . '>' . esc_html( $this->build_event_label( $event ) ) . '</option>';
 		}
+		echo '</select></label>';
 
-		echo implode( ' | ', $links );
-		echo '</p>';
+		echo '<label><strong>Search Events</strong><br><input type="search" name="event_search" value="' . esc_attr( (string) ( $filter_state['event_search'] ?? '' ) ) . '" placeholder="Name, code, or venue"></label>';
+		echo '<label><strong>Search Buckets</strong><br><input type="search" name="bucket_search" value="' . esc_attr( (string) ( $filter_state['bucket_search'] ?? '' ) ) . '" placeholder="Bucket label or code"></label>';
+
+		echo '<button type="submit" class="button button-primary">Apply Filters</button>';
+		echo '</form>';
 	}
 
 	private function render_event_header( array $event ): void {
@@ -139,7 +149,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '</tbody></table>';
 	}
 
-	private function render_assigned_buckets_panel( int $event_id, array $rows ): void {
+	private function render_assigned_buckets_panel( int $event_id, array $rows, array $team_context, array $filter_state ): void {
 		echo '<h2>Assigned Buckets</h2>';
 
 		if ( empty( $rows ) ) {
@@ -147,13 +157,21 @@ class AIMS_Event_Planning_Workspace_Page {
 			return;
 		}
 
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="aims_event_planning_bulk_release_buckets">';
+		echo '<input type="hidden" name="event_id" value="' . esc_attr( (string) $event_id ) . '">';
+		echo '<input type="hidden" name="return_url" value="' . esc_attr( $this->build_return_url( $event_id, $filter_state ) ) . '">';
+		if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'aims_event_planning_bulk_release_buckets', '_aims_event_planning_bulk_release_nonce' ); }
+
 		echo '<table class="widefat fixed striped">';
 		echo '<thead><tr>';
+		echo '<th style="width:30px;"><input type="checkbox" onclick="jQuery(this).closest(\'table\').find(\'tbody .aims-bulk-release\').prop(\'checked\', this.checked);"></th>';
 		echo '<th>Bucket</th>';
 		echo '<th>Planning State</th>';
 		echo '<th>Execution State</th>';
 		echo '<th>Contents</th>';
 		echo '<th>Assigned</th>';
+		echo '<th>Assigned By</th>';
 		echo '<th>Action</th>';
 		echo '</tr></thead>';
 		echo '<tbody>';
@@ -162,19 +180,23 @@ class AIMS_Event_Planning_Workspace_Page {
 			$assignment_id = (int) ( $row['assignment_id'] ?? 0 );
 			$assignment_status = sanitize_key( (string) ( $row['assignment_status'] ?? '' ) );
 			echo '<tr>';
+			echo '<td><input class="aims-bulk-release" type="checkbox" name="assignment_ids[]" value="' . esc_attr( (string) $assignment_id ) . '"></td>';
 			echo '<td>' . esc_html( $this->build_bucket_label( $row ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assignment_label'] ?? $row['assignment_status'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_execution_state_label( $assignment_status ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_content_summary_label( (array) ( $row['content_summary'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_at'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['assigned_by_label'] ?? '' ) ) . '</td>';
 			echo '<td>' . $this->render_assigned_bucket_actions( $event_id, $row ) . '</td>';
 			echo '</tr>';
 		}
 
 		echo '</tbody></table>';
+		echo '<p><button type="submit" class="button">Release Selected</button></p>';
+		echo '</form>';
 	}
 
-	private function render_available_buckets_panel( int $event_id, array $rows ): void {
+	private function render_available_buckets_panel( int $event_id, array $rows, array $team_context, array $filter_state ): void {
 		echo '<h2>Available Buckets</h2>';
 
 		if ( empty( $rows ) ) {
@@ -182,8 +204,36 @@ class AIMS_Event_Planning_Workspace_Page {
 			return;
 		}
 
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="aims_event_planning_bulk_assign_buckets">';
+		echo '<input type="hidden" name="event_id" value="' . esc_attr( (string) $event_id ) . '">';
+		echo '<input type="hidden" name="return_url" value="' . esc_attr( $this->build_return_url( $event_id, $filter_state ) ) . '">';
+		if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'aims_event_planning_bulk_assign_buckets', '_aims_event_planning_bulk_assign_nonce' ); }
+
+		$subordinates = (array) ( $team_context['subordinates'] ?? array() );
+		if ( ! empty( $subordinates ) ) {
+			echo '<p><label><strong>Delegate To Team Member</strong> ';
+			echo '<select name="delegated_to_user_id">';
+			echo '<option value="">Assign as current planner</option>';
+			foreach ( $subordinates as $team_member ) {
+				if ( ! is_array( $team_member ) ) {
+					continue;
+				}
+
+				$team_user_id = (int) ( $team_member['user_id'] ?? 0 );
+				if ( $team_user_id <= 0 ) {
+					continue;
+				}
+
+				echo '<option value="' . esc_attr( (string) $team_user_id ) . '">' . esc_html( (string) ( $team_member['display_name'] ?? '' ) ) . '</option>';
+			}
+			echo '</select>';
+			echo '</label></p>';
+		}
+
 		echo '<table class="widefat fixed striped">';
 		echo '<thead><tr>';
+		echo '<th style="width:30px;"><input type="checkbox" onclick="jQuery(this).closest(\'table\').find(\'tbody .aims-bulk-assign\').prop(\'checked\', this.checked);"></th>';
 		echo '<th>Bucket</th>';
 		echo '<th>Status</th>';
 		echo '<th>Contents</th>';
@@ -195,6 +245,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		foreach ( $rows as $row ) {
 			$bucket_id = (int) ( $row['physical_bucket_id'] ?? 0 );
 			echo '<tr>';
+			echo '<td><input class="aims-bulk-assign" type="checkbox" name="physical_bucket_ids[]" value="' . esc_attr( (string) $bucket_id ) . '"></td>';
 			echo '<td>' . esc_html( $this->build_bucket_label( $row ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['status'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_content_summary_label( (array) ( $row['content_summary'] ?? array() ) ) ) . '</td>';
@@ -204,6 +255,8 @@ class AIMS_Event_Planning_Workspace_Page {
 		}
 
 		echo '</tbody></table>';
+		echo '<p><button type="submit" class="button button-primary">Assign Selected</button></p>';
+		echo '</form>';
 	}
 
 	private function render_assign_form( int $event_id, int $bucket_id ): string {
@@ -310,12 +363,51 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<div class="notice ' . esc_attr( $notice_class ) . ' inline"><p>' . esc_html( $message ) . '</p></div>';
 	}
 
-	private function build_return_url( int $event_id ): string {
+	private function render_team_context_notice( array $team_context ): void {
+		$subordinates = (array) ( $team_context['subordinates'] ?? array() );
+		if ( empty( $subordinates ) ) {
+			return;
+		}
+
+		$names = array();
+		foreach ( $subordinates as $team_member ) {
+			if ( ! is_array( $team_member ) ) {
+				continue;
+			}
+
+			$label = (string) ( $team_member['display_name'] ?? '' );
+			if ( '' !== $label ) {
+				$names[] = $label;
+			}
+		}
+
+		echo '<div class="notice notice-info inline"><p><strong>Team Scope:</strong> You can view and plan for subordinate events. Team members: ' . esc_html( implode( ', ', $names ) ) . '</p></div>';
+	}
+
+	private function build_return_url( int $event_id, array $filter_state = array() ): string {
+		if ( empty( $filter_state ) ) {
+			$filter_state = $this->current_filter_state;
+		}
+
+		$params = array(
+			'page'     => self::PAGE_SLUG,
+			'event_id' => $event_id,
+		);
+
+		if ( '' !== (string) ( $filter_state['event_scope'] ?? '' ) ) {
+			$params['event_scope'] = (string) $filter_state['event_scope'];
+		}
+
+		if ( '' !== (string) ( $filter_state['event_search'] ?? '' ) ) {
+			$params['event_search'] = (string) $filter_state['event_search'];
+		}
+
+		if ( '' !== (string) ( $filter_state['bucket_search'] ?? '' ) ) {
+			$params['bucket_search'] = (string) $filter_state['bucket_search'];
+		}
+
 		return add_query_arg(
-			array(
-				'page'     => self::PAGE_SLUG,
-				'event_id' => $event_id,
-			),
+			$params,
 			admin_url( 'admin.php' )
 		);
 	}
@@ -323,9 +415,14 @@ class AIMS_Event_Planning_Workspace_Page {
 	private function build_event_label( array $event ): string {
 		$label = sanitize_text_field( (string) ( $event['event_name'] ?? '' ) );
 		$date_range = sanitize_text_field( (string) ( $event['date_range_label'] ?? '' ) );
+		$source = sanitize_key( (string) ( $event['visibility_source'] ?? '' ) );
 
 		if ( '' !== $date_range ) {
 			$label .= ' - ' . $date_range;
+		}
+
+		if ( 'team' === $source ) {
+			$label .= ' [Team]';
 		}
 
 		return $label;

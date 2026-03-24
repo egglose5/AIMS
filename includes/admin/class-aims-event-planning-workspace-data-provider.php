@@ -43,4 +43,16 @@ class AIMS_Event_Planning_Workspace_Data_Provider {
 
 		return (string) ( $model['selection_message'] ?? '' );
 	}
+
+	public function get_filter_state(): array {
+		$model = $this->get_page_model();
+
+		return (array) ( $model['filter_state'] ?? array() );
+	}
+
+	public function get_team_context(): array {
+		$model = $this->get_page_model();
+
+		return (array) ( $model['team_context'] ?? array() );
+	}
 }

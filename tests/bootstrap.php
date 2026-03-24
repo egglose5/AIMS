@@ -300,6 +300,13 @@ if ( ! function_exists( 'wp_unslash' ) ) {
 
 if ( ! function_exists( 'check_admin_referer' ) ) {
 	function check_admin_referer( string $action = '', string $query_arg = '_wpnonce' ): void {
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			'check_admin_referer',
+			array(
+				'action'    => $action,
+				'query_arg' => $query_arg,
+			)
+		);
 	}
 }
 
@@ -328,6 +335,10 @@ if ( ! function_exists( 'wp_safe_redirect' ) ) {
 				'location' => $location,
 			)
 		);
+
+		if ( \AIMS\Tests\Support\TestState::should_throw_on_redirect() ) {
+			throw new RuntimeException( 'redirect:' . $location );
+		}
 	}
 }
 

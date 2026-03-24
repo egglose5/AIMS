@@ -14,6 +14,7 @@ class AIMS_Event_Planning_Workspace_Service {
 	private $vendor_event_assignments;
 	private $access_service;
 	private $bucket_availability_service;
+	private $event_context_map = array();
 
 	public function __construct(
 		AIMS_Event_Repository $events = null,
@@ -38,24 +39,34 @@ class AIMS_Event_Planning_Workspace_Service {
 	}
 
 	public function get_page_model( array $request = array() ): array {
-		$authorized_events  = $this->get_authorized_events();
+		$filter_state       = $this->normalize_filter_state( $request );
+		$authorized_events  = $this->get_authorized_events( $filter_state );
 		$selected_event_id  = $this->resolve_selected_event_id( $request, $authorized_events );
 		$selected_event     = $this->find_authorized_event( $selected_event_id, $authorized_events );
-		$workspace          = ! empty( $selected_event ) ? $this->build_workspace( $selected_event ) : array();
+		$workspace          = ! empty( $selected_event ) ? $this->build_workspace( $selected_event, $filter_state ) : array();
 
 		return array(
 			'authorized_events' => $authorized_events,
 			'selected_event_id'  => $selected_event_id,
 			'selected_event'     => $selected_event,
 			'workspace'          => $workspace,
+			'filter_state'       => $filter_state,
+			'team_context'       => $this->build_team_context(),
 			'selection_message'  => $this->build_selection_message( $selected_event, $authorized_events, $selected_event_id ),
 		);
 	}
 
-	public function get_authorized_events(): array {
+	public function get_authorized_events( array $filter_state = array() ): array {
 		$events = array();
+		$this->event_context_map = array();
+		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 
-		if ( is_object( $this->access_service ) ) {
+		if ( is_object( $this->access_service ) && method_exists( $this->access_service, 'get_authorized_event_contexts' ) ) {
+			$this->event_context_map = (array) $this->access_service->get_authorized_event_contexts( $current_user_id );
+			$events = $this->load_events_from_context_map( $this->event_context_map );
+		}
+
+		if ( empty( $events ) && is_object( $this->access_service ) ) {
 			if ( method_exists( $this->access_service, 'get_current_user_authorized_events' ) ) {
 				$events = (array) $this->access_service->get_current_user_authorized_events();
 			}
@@ -79,12 +90,13 @@ class AIMS_Event_Planning_Workspace_Service {
 			}
 
 			if ( empty( $events ) && method_exists( $this->access_service, 'get_visible_events_for_user' ) ) {
-				$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 				$events          = (array) $this->access_service->get_visible_events_for_user( $current_user_id );
 			}
 		}
 
-		return $this->normalize_event_list( $events );
+		$normalized_events = $this->normalize_event_list( $events );
+
+		return $this->apply_event_filters( $normalized_events, $filter_state );
 	}
 
 	public function resolve_selected_event_id( array $request, array $authorized_events ): int {
@@ -115,12 +127,14 @@ class AIMS_Event_Planning_Workspace_Service {
 		return null;
 	}
 
-	public function build_workspace( array $event ): array {
+	public function build_workspace( array $event, array $filter_state = array() ): array {
 		$event_id      = (int) ( $event['id'] ?? 0 );
 		$vendor_ids    = $this->get_event_vendor_ids( $event_id );
 		$demand_rows   = $this->get_demand_rows( $event_id );
 		$assigned      = $this->get_assigned_bucket_rows( $event_id );
 		$available     = $this->get_available_bucket_rows( $event_id, $vendor_ids, $assigned );
+		$assigned      = $this->filter_bucket_rows_by_search( $assigned, (string) ( $filter_state['bucket_search'] ?? '' ) );
+		$available     = $this->filter_bucket_rows_by_search( $available, (string) ( $filter_state['bucket_search'] ?? '' ) );
 
 		return array(
 			'event'           => $event,
@@ -295,6 +309,8 @@ class AIMS_Event_Planning_Workspace_Service {
 				'released_at'      => sanitize_text_field( (string) ( $assignment['released_at'] ?? '' ) ),
 				'assigned_by'      => (int) ( $assignment['assigned_by'] ?? 0 ),
 				'released_by'      => (int) ( $assignment['released_by'] ?? 0 ),
+				'assigned_by_label' => $this->resolve_user_display_name( (int) ( $assignment['assigned_by'] ?? 0 ) ),
+				'released_by_label' => $this->resolve_user_display_name( (int) ( $assignment['released_by'] ?? 0 ) ),
 				'display_order'    => (int) ( $assignment['display_order'] ?? 0 ),
 				'contents'         => $contents,
 				'content_summary'  => $summary,
@@ -525,6 +541,24 @@ class AIMS_Event_Planning_Workspace_Service {
 		return $normalized;
 	}
 
+	private function load_events_by_ids( array $event_ids ): array {
+		$event_ids = array_values( array_unique( array_filter( array_map( 'intval', $event_ids ) ) ) );
+
+		if ( empty( $event_ids ) || ! is_object( $this->events ) ) {
+			return array();
+		}
+
+		$rows = array();
+		foreach ( $event_ids as $event_id ) {
+			$event = $this->find_event_by_id( $event_id );
+			if ( ! empty( $event ) ) {
+				$rows[] = $event;
+			}
+		}
+
+		return $rows;
+	}
+
 	private function find_event_by_id( int $event_id ): array {
 		if ( $event_id <= 0 || ! is_object( $this->events ) ) {
 			return array();
@@ -553,9 +587,10 @@ class AIMS_Event_Planning_Workspace_Service {
 	private function normalize_event_record( array $event ): array {
 		$start_date = sanitize_text_field( (string) ( $event['start_date'] ?? '' ) );
 		$end_date   = sanitize_text_field( (string) ( $event['end_date'] ?? '' ) );
+		$event_id   = (int) ( $event['id'] ?? 0 );
 
 		return array(
-			'id'                => (int) ( $event['id'] ?? 0 ),
+			'id'                => $event_id,
 			'event_code'        => sanitize_text_field( (string) ( $event['event_code'] ?? '' ) ),
 			'event_name'        => sanitize_text_field( (string) ( $event['event_name'] ?? '' ) ),
 			'status'            => sanitize_key( (string) ( $event['status'] ?? '' ) ),
@@ -563,6 +598,7 @@ class AIMS_Event_Planning_Workspace_Service {
 			'end_date'          => $end_date,
 			'location_name'     => sanitize_text_field( (string) ( $event['location_name'] ?? '' ) ),
 			'square_location_id' => sanitize_text_field( (string) ( $event['square_location_id'] ?? '' ) ),
+			'visibility_source'  => $this->get_event_visibility_source( $event_id ),
 			'date_range_label'   => $this->format_date_range( $start_date, $end_date ),
 		);
 	}
@@ -584,6 +620,165 @@ class AIMS_Event_Planning_Workspace_Service {
 		}
 
 		return $start ? gmdate( 'F j, Y', $start ) : gmdate( 'F j, Y', $end );
+	}
+
+	private function normalize_filter_state( array $request ): array {
+		$event_scope = sanitize_key( (string) ( $request['event_scope'] ?? 'all' ) );
+		if ( ! in_array( $event_scope, array( 'all', 'my', 'team' ), true ) ) {
+			$event_scope = 'all';
+		}
+
+		return array(
+			'event_scope'   => $event_scope,
+			'event_search'  => sanitize_text_field( (string) ( $request['event_search'] ?? '' ) ),
+			'bucket_search' => sanitize_text_field( (string) ( $request['bucket_search'] ?? '' ) ),
+		);
+	}
+
+	private function apply_event_filters( array $events, array $filter_state ): array {
+		$scope  = (string) ( $filter_state['event_scope'] ?? 'all' );
+		$search = strtolower( trim( (string) ( $filter_state['event_search'] ?? '' ) ) );
+
+		$filtered = array_values(
+			array_filter(
+				$events,
+				function ( array $event ) use ( $scope, $search ): bool {
+					$source = (string) ( $event['visibility_source'] ?? 'self' );
+
+					if ( 'my' === $scope && 'self' !== $source ) {
+						return false;
+					}
+
+					if ( 'team' === $scope && 'team' !== $source ) {
+						return false;
+					}
+
+					if ( '' === $search ) {
+						return true;
+					}
+
+					$haystack = strtolower(
+						implode(
+							' ',
+							array(
+								(string) ( $event['event_name'] ?? '' ),
+								(string) ( $event['event_code'] ?? '' ),
+								(string) ( $event['location_name'] ?? '' ),
+								(string) ( $event['date_range_label'] ?? '' ),
+							)
+						)
+					);
+
+					return false !== strpos( $haystack, $search );
+				}
+			)
+		);
+
+		return $filtered;
+	}
+
+	private function filter_bucket_rows_by_search( array $rows, string $search ): array {
+		$search = strtolower( trim( $search ) );
+
+		if ( '' === $search ) {
+			return $rows;
+		}
+
+		return array_values(
+			array_filter(
+				$rows,
+				static function ( array $row ) use ( $search ): bool {
+					$haystack = strtolower(
+						implode(
+							' ',
+							array(
+								(string) ( $row['bucket_label'] ?? '' ),
+								(string) ( $row['bucket_code'] ?? '' ),
+								(string) ( $row['barcode_value'] ?? '' ),
+								(string) ( $row['status'] ?? '' ),
+							)
+						)
+					);
+
+					return false !== strpos( $haystack, $search );
+				}
+			)
+		);
+	}
+
+	private function load_events_from_context_map( array $context_map ): array {
+		$event_ids = array();
+		foreach ( $context_map as $context ) {
+			if ( ! is_array( $context ) ) {
+				continue;
+			}
+
+			$event_id = (int) ( $context['event_id'] ?? 0 );
+			if ( $event_id > 0 ) {
+				$event_ids[] = $event_id;
+			}
+		}
+
+		if ( empty( $event_ids ) ) {
+			return array();
+		}
+
+		return $this->load_events_by_ids( $event_ids );
+	}
+
+	private function build_team_context(): array {
+		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		$subordinates    = array();
+
+		if ( is_object( $this->access_service ) && method_exists( $this->access_service, 'get_subordinate_user_ids' ) ) {
+			$subordinates = (array) $this->access_service->get_subordinate_user_ids( $current_user_id );
+		}
+
+		$team_members = array();
+		foreach ( array_values( array_unique( array_filter( array_map( 'intval', $subordinates ) ) ) ) as $user_id ) {
+			$team_members[] = array(
+				'user_id'      => $user_id,
+				'display_name' => $this->resolve_user_display_name( $user_id ),
+			);
+		}
+
+		return array(
+			'current_user_id'    => $current_user_id,
+			'current_user_label' => $this->resolve_user_display_name( $current_user_id ),
+			'subordinates'       => $team_members,
+			'is_supervisor'      => ! empty( $team_members ),
+		);
+	}
+
+	private function resolve_user_display_name( int $user_id ): string {
+		if ( $user_id <= 0 || ! function_exists( 'get_user_by' ) ) {
+			return '';
+		}
+
+		$user = get_user_by( 'id', $user_id );
+		if ( ! is_object( $user ) ) {
+			return '';
+		}
+
+		foreach ( array( 'display_name', 'user_login', 'user_email' ) as $field ) {
+			if ( isset( $user->{$field} ) && '' !== (string) $user->{$field} ) {
+				return sanitize_text_field( (string) $user->{$field} );
+			}
+		}
+
+		return '';
+	}
+
+	private function get_event_visibility_source( int $event_id ): string {
+		$context = $this->event_context_map[ $event_id ] ?? array();
+
+		if ( ! is_array( $context ) ) {
+			return 'self';
+		}
+
+		$source = sanitize_key( (string) ( $context['source'] ?? 'self' ) );
+
+		return in_array( $source, array( 'self', 'team', 'all' ), true ) ? $source : 'self';
 	}
 
 	private function build_selection_message( ?array $selected_event, array $authorized_events, int $selected_event_id ): string {

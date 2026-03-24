@@ -11,6 +11,7 @@ class AIMS_Schema {
 		return array(
 			$wpdb->prefix . 'aims_vendors',
 			$wpdb->prefix . 'aims_vendor_user_access',
+			$wpdb->prefix . 'aims_supervisor_user_relationships',
 			$wpdb->prefix . 'aims_customers',
 			$wpdb->prefix . 'aims_customer_addresses',
 			$wpdb->prefix . 'aims_events',
@@ -55,6 +56,7 @@ class AIMS_Schema {
 		$charset_collate         = $wpdb->get_charset_collate();
 		$vendors_table           = $wpdb->prefix . 'aims_vendors';
 		$vendor_access_table     = $wpdb->prefix . 'aims_vendor_user_access';
+		$supervisor_relationships_table = $wpdb->prefix . 'aims_supervisor_user_relationships';
 		$customers_table         = $wpdb->prefix . 'aims_customers';
 		$customer_addresses_table = $wpdb->prefix . 'aims_customer_addresses';
 		$events_table            = $wpdb->prefix . 'aims_events';
@@ -133,6 +135,20 @@ class AIMS_Schema {
 				UNIQUE KEY vendor_user (vendor_id, user_id),
 				KEY user_id (user_id),
 				KEY access_role (access_role)
+			) {$charset_collate};",
+			"CREATE TABLE {$supervisor_relationships_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				supervisor_user_id bigint(20) unsigned NOT NULL,
+				subordinate_user_id bigint(20) unsigned NOT NULL,
+				hierarchy_level int(11) NOT NULL DEFAULT 1,
+				status varchar(32) NOT NULL DEFAULT 'active',
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY supervisor_subordinate (supervisor_user_id, subordinate_user_id),
+				KEY supervisor_user_id (supervisor_user_id),
+				KEY subordinate_user_id (subordinate_user_id),
+				KEY status (status)
 			) {$charset_collate};",
 			"CREATE TABLE {$customers_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

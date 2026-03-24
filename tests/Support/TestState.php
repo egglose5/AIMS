@@ -16,8 +16,17 @@ final class TestState {
 			'products'        => array(),
 			'user_caps'       => array(),
 			'hook_calls'      => array(),
+			'throw_on_redirect' => false,
 			'current_time'    => '2026-01-01 00:00:00',
 		);
+	}
+
+	public static function set_throw_on_redirect( bool $value ): void {
+		self::$state['throw_on_redirect'] = $value;
+	}
+
+	public static function should_throw_on_redirect(): bool {
+		return (bool) ( self::$state['throw_on_redirect'] ?? false );
 	}
 
 	public static function current_time(): string {

@@ -6,13 +6,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Event_Planning_Actions {
 	private const ACTION_ASSIGN = 'aims_event_planning_assign_bucket';
+	private const ACTION_BULK_ASSIGN = 'aims_event_planning_bulk_assign_buckets';
 	private const ACTION_RELEASE = 'aims_event_planning_release_bucket';
+	private const ACTION_BULK_RELEASE = 'aims_event_planning_bulk_release_buckets';
 	private const ACTION_MARK_IN_TRANSIT = 'aims_event_planning_mark_in_transit';
 	private const ACTION_VENDOR_EVENT_CHECK_IN = 'aims_event_planning_vendor_event_check_in';
 	private const ACTION_MARK_RETURNED = 'aims_event_planning_mark_returned';
 	private const ACTION_RELEASE_AFTER_RETURN = 'aims_event_planning_release_after_return';
 	private const NONCE_ASSIGN   = '_aims_event_planning_assign_nonce';
+	private const NONCE_BULK_ASSIGN = '_aims_event_planning_bulk_assign_nonce';
 	private const NONCE_RELEASE  = '_aims_event_planning_release_nonce';
+	private const NONCE_BULK_RELEASE = '_aims_event_planning_bulk_release_nonce';
 	private const NONCE_MARK_IN_TRANSIT = '_aims_event_planning_mark_in_transit_nonce';
 	private const NONCE_VENDOR_EVENT_CHECK_IN = '_aims_event_planning_vendor_event_check_in_nonce';
 	private const NONCE_MARK_RETURNED = '_aims_event_planning_mark_returned_nonce';
@@ -26,7 +30,9 @@ class AIMS_Event_Planning_Actions {
 
 	public function register(): void {
 		add_action( 'admin_post_' . self::ACTION_ASSIGN, array( $this, 'handle_assign_bucket' ) );
+		add_action( 'admin_post_' . self::ACTION_BULK_ASSIGN, array( $this, 'handle_bulk_assign_buckets' ) );
 		add_action( 'admin_post_' . self::ACTION_RELEASE, array( $this, 'handle_release_bucket' ) );
+		add_action( 'admin_post_' . self::ACTION_BULK_RELEASE, array( $this, 'handle_bulk_release_buckets' ) );
 		add_action( 'admin_post_' . self::ACTION_MARK_IN_TRANSIT, array( $this, 'handle_mark_in_transit' ) );
 		add_action( 'admin_post_' . self::ACTION_VENDOR_EVENT_CHECK_IN, array( $this, 'handle_vendor_event_check_in' ) );
 		add_action( 'admin_post_' . self::ACTION_MARK_RETURNED, array( $this, 'handle_mark_returned' ) );
@@ -37,8 +43,16 @@ class AIMS_Event_Planning_Actions {
 		$this->handle_action( self::ACTION_ASSIGN, self::NONCE_ASSIGN, 'assign' );
 	}
 
+	public function handle_bulk_assign_buckets(): void {
+		$this->handle_action( self::ACTION_BULK_ASSIGN, self::NONCE_BULK_ASSIGN, 'bulk_assign' );
+	}
+
 	public function handle_release_bucket(): void {
 		$this->handle_action( self::ACTION_RELEASE, self::NONCE_RELEASE, 'release' );
+	}
+
+	public function handle_bulk_release_buckets(): void {
+		$this->handle_action( self::ACTION_BULK_RELEASE, self::NONCE_BULK_RELEASE, 'bulk_release' );
 	}
 
 	public function handle_mark_in_transit(): void {
@@ -85,7 +99,9 @@ class AIMS_Event_Planning_Actions {
 	private function dispatch_action( string $mode, array $request ): array {
 		$map = array(
 			'assign'              => 'assign_bucket',
+			'bulk_assign'         => 'assign_buckets_bulk',
 			'release'             => 'release_bucket',
+			'bulk_release'        => 'release_buckets_bulk',
 			'release_after_return' => 'release_after_return',
 			'mark_in_transit'     => 'mark_in_transit',
 			'vendor_event_check_in' => 'vendor_event_check_in',

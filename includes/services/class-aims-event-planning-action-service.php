@@ -106,6 +106,89 @@ class AIMS_Event_Planning_Action_Service {
 		);
 	}
 
+	public function assign_buckets_bulk( array $request ): array {
+		$event_id          = (int) ( $request['event_id'] ?? 0 );
+		$delegated_to_user_id = (int) ( $request['delegated_to_user_id'] ?? 0 );
+		$bucket_ids        = array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						'intval',
+						(array) ( $request['physical_bucket_ids'] ?? array() )
+					)
+				)
+			)
+		);
+
+		if ( $event_id <= 0 || empty( $bucket_ids ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A valid event and at least one bucket are required for bulk assignment.',
+				'event_id' => $event_id,
+			);
+		}
+
+		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'You are not authorized to assign buckets to this event.',
+				'event_id' => $event_id,
+			);
+		}
+
+		if ( $delegated_to_user_id > 0 && ! $this->can_delegate_to_user( $delegated_to_user_id ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'Delegation target must be one of your subordinates.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$assigned_count = 0;
+		$failed_count   = 0;
+		$assignment_ids = array();
+
+		foreach ( $bucket_ids as $bucket_id ) {
+			$result = $this->assign_bucket(
+				array(
+					'event_id'           => $event_id,
+					'physical_bucket_id' => $bucket_id,
+					'notes'              => $this->merge_notes_with_delegation( (string) ( $request['notes'] ?? '' ), $delegated_to_user_id ),
+				)
+			);
+
+			if ( ! empty( $result['success'] ) ) {
+				++$assigned_count;
+				$assignment_ids[] = (int) ( $result['assignment_id'] ?? 0 );
+				continue;
+			}
+
+			++$failed_count;
+		}
+
+		if ( $assigned_count <= 0 ) {
+			return array(
+				'success'  => false,
+				'message'  => 'Bulk assignment failed for all selected buckets.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$message = sprintf( 'Assigned %d bucket(s).', $assigned_count );
+		if ( $failed_count > 0 ) {
+			$message .= ' ' . sprintf( '%d bucket(s) were skipped or failed.', $failed_count );
+		}
+
+		return array(
+			'success'        => true,
+			'message'        => $message,
+			'event_id'       => $event_id,
+			'assigned_count' => $assigned_count,
+			'failed_count'   => $failed_count,
+			'assignment_ids' => array_values( array_filter( $assignment_ids ) ),
+		);
+	}
+
 	public function mark_in_transit( array $request ): array {
 		return $this->transition_assignment_status_from_request(
 			$request,
@@ -325,6 +408,76 @@ class AIMS_Event_Planning_Action_Service {
 		);
 	}
 
+	public function release_buckets_bulk( array $request ): array {
+		$event_id = (int) ( $request['event_id'] ?? 0 );
+		$assignment_ids = array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						'intval',
+						(array) ( $request['assignment_ids'] ?? array() )
+					)
+				)
+			)
+		);
+
+		if ( $event_id <= 0 || empty( $assignment_ids ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A valid event and at least one assignment are required for bulk release.',
+				'event_id' => $event_id,
+			);
+		}
+
+		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'You are not authorized to release buckets for this event.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$released_count = 0;
+		$failed_count   = 0;
+
+		foreach ( $assignment_ids as $assignment_id ) {
+			$result = $this->release_bucket(
+				array(
+					'event_id'      => $event_id,
+					'assignment_id' => $assignment_id,
+				)
+			);
+
+			if ( ! empty( $result['success'] ) ) {
+				++$released_count;
+				continue;
+			}
+
+			++$failed_count;
+		}
+
+		if ( $released_count <= 0 ) {
+			return array(
+				'success'  => false,
+				'message'  => 'Bulk release failed for all selected assignments.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$message = sprintf( 'Released %d assignment(s).', $released_count );
+		if ( $failed_count > 0 ) {
+			$message .= ' ' . sprintf( '%d assignment(s) were skipped or failed.', $failed_count );
+		}
+
+		return array(
+			'success'        => true,
+			'message'        => $message,
+			'event_id'       => $event_id,
+			'released_count' => $released_count,
+			'failed_count'   => $failed_count,
+		);
+	}
+
 	public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
 		if ( $assignment_id <= 0 || ! method_exists( $this->assignment_service, 'transition_assignment_status' ) ) {
 			return false;
@@ -401,7 +554,7 @@ class AIMS_Event_Planning_Action_Service {
 			return array();
 		}
 
-		foreach ( array( 'get_authorized_event_ids', 'get_authorized_events' ) as $method ) {
+		foreach ( array( 'get_authorized_event_ids_including_subordinates', 'get_authorized_event_ids', 'get_authorized_events' ) as $method ) {
 			if ( ! method_exists( $this->access_service, $method ) ) {
 				continue;
 			}
@@ -426,6 +579,45 @@ class AIMS_Event_Planning_Action_Service {
 		}
 
 		return array();
+	}
+
+	private function can_delegate_to_user( int $delegated_to_user_id ): bool {
+		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+
+		if ( $delegated_to_user_id <= 0 || $current_user_id <= 0 ) {
+			return false;
+		}
+
+		if ( ! is_object( $this->access_service ) ) {
+			return false;
+		}
+
+		if ( method_exists( $this->access_service, 'is_subordinate_user' ) ) {
+			return (bool) $this->access_service->is_subordinate_user( $current_user_id, $delegated_to_user_id );
+		}
+
+		if ( method_exists( $this->access_service, 'get_subordinate_user_ids' ) ) {
+			$subordinates = (array) $this->access_service->get_subordinate_user_ids( $current_user_id );
+			return in_array( $delegated_to_user_id, array_map( 'intval', $subordinates ), true );
+		}
+
+		return false;
+	}
+
+	private function merge_notes_with_delegation( string $notes, int $delegated_to_user_id ): string {
+		$notes = trim( $notes );
+
+		if ( $delegated_to_user_id <= 0 ) {
+			return $notes;
+		}
+
+		$delegation_note = sprintf( 'Delegated to user_id:%d', $delegated_to_user_id );
+
+		if ( '' === $notes ) {
+			return $delegation_note;
+		}
+
+		return $notes . ' | ' . $delegation_note;
 	}
 
 	private function get_assignment_event_id( int $assignment_id ): int {
