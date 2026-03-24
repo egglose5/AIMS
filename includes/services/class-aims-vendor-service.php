@@ -19,6 +19,18 @@ class AIMS_Vendor_Service {
 		return $this->vendors->save( $data );
 	}
 
+	public function get_vendor( int $vendor_id ): ?array {
+		return $this->vendors->find( $vendor_id );
+	}
+
+	public function update_vendor( int $vendor_id, array $data ): int {
+		return $this->vendors->save( $data, $vendor_id );
+	}
+
+	public function archive_vendor( int $vendor_id ): bool {
+		return $this->vendors->archive( $vendor_id );
+	}
+
 	public function get_sync_mapping_by_square_location( string $square_location_id ): ?array {
 		$vendor = $this->vendors->find_by_square_location_id( $square_location_id );
 

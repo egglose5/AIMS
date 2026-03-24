@@ -20,6 +20,20 @@ class AIMS_Event_Repository {
 		);
 	}
 
+	public function find( int $event_id ): ?array {
+		global $wpdb;
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE id = %d',
+				$event_id
+			),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $row : null;
+	}
+
 	public function find_matching_event( string $square_location_id, string $sold_at ): ?array {
 		global $wpdb;
 

@@ -18,6 +18,7 @@ class AIMS_Plugin {
 	private $event_module;
 	private $square_sync_module;
 	private $reports_module;
+	private $modules = array();
 
 	public static function instance(): AIMS_Plugin {
 		if ( null === self::$instance ) {
@@ -47,17 +48,27 @@ class AIMS_Plugin {
 	}
 
 	private function __construct() {
-		$this->installer         = new AIMS_Installer( new AIMS_Schema() );
-		$this->capabilities      = new AIMS_Capabilities();
-		$this->admin_menu        = new AIMS_Admin_Menu();
-		$this->vendor_module     = new AIMS_Vendor_Module(
+		$this->installer          = new AIMS_Installer( new AIMS_Schema() );
+		$this->capabilities       = new AIMS_Capabilities();
+		$this->vendor_module      = new AIMS_Vendor_Module(
 			new AIMS_Vendor_Service(
 				new AIMS_Vendor_Repository()
 			)
 		);
-		$this->event_module      = new AIMS_Event_Module();
+		$this->event_module       = new AIMS_Event_Module();
 		$this->square_sync_module = new AIMS_Square_Sync_Module();
 		$this->reports_module     = new AIMS_Reports_Module();
+		$this->modules            = array(
+			$this->vendor_module,
+			$this->event_module,
+			$this->square_sync_module,
+			$this->reports_module,
+		);
+		$this->admin_menu         = new AIMS_Admin_Menu(
+			$this->vendor_module,
+			$this->square_sync_module,
+			$this->reports_module
+		);
 	}
 
 	public function boot(): void {
@@ -67,10 +78,11 @@ class AIMS_Plugin {
 		add_action( 'admin_menu', array( $this->admin_menu, 'register' ) );
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
 
-		$this->vendor_module->register();
-		$this->event_module->register();
-		$this->square_sync_module->register();
-		$this->reports_module->register();
+		foreach ( $this->modules as $module ) {
+			if ( $module instanceof AIMS_Module ) {
+				$module->register();
+			}
+		}
 	}
 
 	public function load_textdomain(): void {

@@ -6,6 +6,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Admin_Menu {
 	const MENU_SLUG = 'aims';
+	private $vendor_module;
+	private $square_sync_module;
+	private $reports_module;
+
+	public function __construct(
+		?AIMS_Vendor_Module $vendor_module = null,
+		?AIMS_Square_Sync_Module $square_sync_module = null,
+		?AIMS_Reports_Module $reports_module = null
+	) {
+		$this->vendor_module      = $vendor_module ? $vendor_module : new AIMS_Vendor_Module( new AIMS_Vendor_Service( new AIMS_Vendor_Repository() ) );
+		$this->square_sync_module = $square_sync_module ? $square_sync_module : new AIMS_Square_Sync_Module();
+		$this->reports_module     = $reports_module ? $reports_module : new AIMS_Reports_Module();
+	}
 
 	public function register(): void {
 		add_menu_page(
@@ -158,7 +171,7 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_dashboard(): void {
-		echo '<div class="wrap"><h1>AIMS</h1><p>Current implementation phase: Phase 1 schema and runtime hardening. Events, inventory, and reporting are being reshaped so Square flows into `event_id` first and physical inventory stays separate.</p></div>';
+		echo '<div class="wrap"><h1>AIMS</h1><p>AIMS centralizes vendor operations, event planning and execution, Square ingestion, and reporting through a shared event-centric data model.</p></div>';
 	}
 
 	public function render_events_shell(): void {
@@ -197,12 +210,11 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_vendors_shell(): void {
-		echo '<div class="wrap"><h1>Vendor Manage</h1><p>The vendor module foundation is active. Vendor access control and Square team-member reconciliation remain here, while bucket assignment is handled through Events and Inventory.</p></div>';
+		$this->vendor_module->render_shell();
 	}
 
 	public function render_square_sync_shell(): void {
-		$module = new AIMS_Square_Sync_Module();
-		$module->render_shell();
+		$this->square_sync_module->render_shell();
 	}
 
 	public function render_needs_shipping_queue(): void {
@@ -231,7 +243,6 @@ class AIMS_Admin_Menu {
 	}
 
 	public function render_reports_shell(): void {
-		$module = new AIMS_Reports_Module();
-		$module->render_shell();
+		$this->reports_module->render_shell();
 	}
 }

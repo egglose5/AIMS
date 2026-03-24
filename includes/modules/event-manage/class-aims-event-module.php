@@ -4,7 +4,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class AIMS_Event_Module {
+class AIMS_Event_Module implements AIMS_Module {
+	private const PLANNING_PAGE = 'aims-event-planning';
 	private $public_demand_controller;
 	private $requests_history_controller;
 	private $public_projection_controller;
@@ -13,8 +14,9 @@ class AIMS_Event_Module {
 
 	public function register(): void {
 		add_action( 'init', array( $this, 'register_public_hooks' ) );
-		add_action( 'admin_init', array( $this, 'register_foundation_notices' ) );
 		add_action( 'admin_post_aims_save_event_public_projection', array( $this, 'handle_public_projection_save' ) );
+		add_action( 'admin_post_aims_event_save', array( $this, 'handle_event_save' ) );
+		add_action( 'admin_post_aims_event_archive', array( $this, 'handle_event_archive' ) );
 		$this->get_planning_actions()->register();
 	}
 
@@ -24,34 +26,11 @@ class AIMS_Event_Module {
 		$this->get_public_projection_controller()->register();
 	}
 
-	public function register_foundation_notices(): void {
-		if ( ! is_admin() ) {
-			return;
-		}
-
-		if ( ! current_user_can( AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL ) ) {
-			return;
-		}
-
-		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
-		if ( ! in_array( $page, array( 'aims-events', 'aims-event-customer-demand', 'aims-event-demand-summary', 'aims-event-public-projection' ), true ) ) {
-			return;
-		}
-
-		add_action( 'admin_notices', array( $this, 'render_foundation_notice' ) );
-	}
-
 	public function render_shell(): void {
 		echo '<div class="wrap">';
 		echo '<h1>Events</h1>';
 		echo '<p>Events are the bridge between Square runtime assignment, vendor participation, physical bucket commitment, and public projection. Every operational path should resolve through `event_id` rather than direct Square-to-bucket coupling.</p>';
 		echo '</div>';
-	}
-
-	public function render_foundation_notice(): void {
-		echo '<div class="notice notice-info"><p>';
-		echo esc_html( 'Events foundation is active. Event bucket assignments, customer demand planning, public projection, and event-centric reporting will use `event_id` as the shared bridge.' );
-		echo '</p></div>';
 	}
 
 	public function handle_public_projection_save(): void {
@@ -90,6 +69,50 @@ class AIMS_Event_Module {
 
 		wp_safe_redirect( $redirect );
 		exit;
+	}
+
+	public function handle_event_save(): void {
+		if ( ! $this->can_manage_events() ) {
+			wp_die( esc_html__( 'You do not have permission to manage events.', 'ai-man-sys' ) );
+		}
+
+		check_admin_referer( 'aims_event_save' );
+
+		$event_id = isset( $_POST['event_id'] ) ? max( 0, (int) wp_unslash( $_POST['event_id'] ) ) : 0;
+		$data     = $this->collect_event_payload();
+
+		if ( '' === $data['event_name'] || '' === $data['start_date'] || '' === $data['end_date'] ) {
+			$this->redirect_to_planning( 'error', 'Event name, start date, and end date are required.', $event_id );
+		}
+
+		$saved_id = ( new AIMS_Event_Repository() )->save( $data, $event_id );
+		$this->redirect_to_planning(
+			'success',
+			$event_id > 0 ? 'Event updated.' : 'Event created.',
+			$saved_id
+		);
+	}
+
+	public function handle_event_archive(): void {
+		if ( ! $this->can_manage_events() ) {
+			wp_die( esc_html__( 'You do not have permission to manage events.', 'ai-man-sys' ) );
+		}
+
+		check_admin_referer( 'aims_event_archive' );
+
+		$event_id = isset( $_POST['event_id'] ) ? max( 0, (int) wp_unslash( $_POST['event_id'] ) ) : 0;
+		if ( $event_id <= 0 ) {
+			$this->redirect_to_planning( 'error', 'Missing event id.' );
+		}
+
+		$event = ( new AIMS_Event_Repository() )->find( $event_id );
+		if ( ! is_array( $event ) ) {
+			$this->redirect_to_planning( 'error', 'Event not found.' );
+		}
+
+		$event['status'] = 'archived';
+		( new AIMS_Event_Repository() )->save( $event, $event_id );
+		$this->redirect_to_planning( 'success', 'Event archived.' );
 	}
 
 	private function get_public_demand_controller(): AIMS_Event_Demand_Intake_Controller {
@@ -132,6 +155,39 @@ class AIMS_Event_Module {
 		}
 
 		return $this->planning_actions;
+	}
+
+	private function can_manage_events(): bool {
+		return current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENTS )
+			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING );
+	}
+
+	private function collect_event_payload(): array {
+		return array(
+			'event_name'         => sanitize_text_field( wp_unslash( $_POST['event_name'] ?? '' ) ),
+			'event_code'         => sanitize_key( wp_unslash( $_POST['event_code'] ?? '' ) ),
+			'status'             => sanitize_key( wp_unslash( $_POST['status'] ?? 'draft' ) ),
+			'start_date'         => sanitize_text_field( wp_unslash( $_POST['start_date'] ?? '' ) ),
+			'end_date'           => sanitize_text_field( wp_unslash( $_POST['end_date'] ?? '' ) ),
+			'location_name'      => sanitize_text_field( wp_unslash( $_POST['location_name'] ?? '' ) ),
+			'square_location_id' => sanitize_text_field( wp_unslash( $_POST['square_location_id'] ?? '' ) ),
+		);
+	}
+
+	private function redirect_to_planning( string $status, string $message, int $event_id = 0 ): void {
+		$params = array(
+			'page'                      => self::PLANNING_PAGE,
+			'aims_event_manage_status'  => $status,
+			'aims_event_manage_message' => $message,
+		);
+
+		if ( $event_id > 0 && 'error' === $status ) {
+			$params['event_id'] = $event_id;
+		}
+
+		$redirect = add_query_arg( $params, admin_url( 'admin.php' ) );
+		wp_safe_redirect( $redirect );
+		exit;
 	}
 }
 

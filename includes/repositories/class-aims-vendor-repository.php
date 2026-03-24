@@ -100,6 +100,23 @@ class AIMS_Vendor_Repository {
 		return (int) $wpdb->insert_id;
 	}
 
+	public function archive( int $vendor_id ): bool {
+		global $wpdb;
+
+		$updated = $wpdb->update(
+			$this->get_table_name(),
+			array(
+				'status'     => 'archived',
+				'updated_at' => current_time( 'mysql' ),
+			),
+			array( 'id' => $vendor_id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		return false !== $updated;
+	}
+
 	private function get_formats(): array {
 		return array(
 			'%s',
