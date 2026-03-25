@@ -185,14 +185,16 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 				);
 			}
 
-			$this->checkins->mark_movement_applied(
-				$checkin_id,
-				array(
-					'movement_reference_type' => 'vendor_event_checkin',
-					'movement_reference_id'   => 'vendor-checkin-' . $checkin_id,
-					'checkin_status'          => AIMS_Vendor_Event_Checkin_Repository::STATUS_COMPLETED,
-				)
-			);
+			if ( ! empty( $movement_result['movement_triggered'] ) ) {
+				$this->checkins->mark_movement_applied(
+					$checkin_id,
+					array(
+						'movement_reference_type' => 'vendor_event_checkin',
+						'movement_reference_id'   => 'vendor-checkin-' . $checkin_id,
+						'checkin_status'          => AIMS_Vendor_Event_Checkin_Repository::STATUS_COMPLETED,
+					)
+				);
+			}
 		}
 
 		$public_update = $this->save_public_update(

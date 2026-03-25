@@ -9,12 +9,16 @@ class AIMS_Event_Execution_Service {
 	private $assignment_repository;
 	private $bucket_positions;
 	private $bucket_movement_service;
+	private $vendor_event_assignments;
+	private $physical_buckets;
 
 	public function __construct(
 		AIMS_Event_Bucket_Assignment_Service $assignment_service = null,
 		AIMS_Event_Bucket_Assignment_Repository $assignment_repository = null,
 		AIMS_Bucket_Inventory_Position_Repository $bucket_positions = null,
-		AIMS_Bucket_Movement_Service $bucket_movement_service = null
+		AIMS_Bucket_Movement_Service $bucket_movement_service = null,
+		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
+		AIMS_Physical_Bucket_Repository $physical_buckets = null
 	) {
 		$this->assignment_service    = $assignment_service ?: new AIMS_Event_Bucket_Assignment_Service( new AIMS_Event_Bucket_Assignment_Repository() );
 		$this->assignment_repository = $assignment_repository ?: new AIMS_Event_Bucket_Assignment_Repository();
@@ -23,10 +27,12 @@ class AIMS_Event_Execution_Service {
 			new AIMS_Bucket_Inventory_Movement_Repository(),
 			new AIMS_Bucket_Inventory_Position_Repository()
 		);
+		$this->vendor_event_assignments = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
+		$this->physical_buckets         = $physical_buckets ?: new AIMS_Physical_Bucket_Repository();
 	}
 
 	public function get_planning_default_status(): string {
-		return AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT;
+		return AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED;
 	}
 
 	public function get_execution_statuses(): array {
@@ -129,7 +135,15 @@ class AIMS_Event_Execution_Service {
 		$applied_by = (int) ( $data['applied_by'] ?? get_current_user_id() );
 		$note       = isset( $data['note'] ) ? sanitize_textarea_field( $data['note'] ) : '';
 
-		$positions = $this->get_bucket_positions( $bucket_id );
+		$movement_triggered = true;
+		$movement_message   = (string) $config['message'];
+
+		if ( 'vendor_event_checkin' === sanitize_key( (string) ( $config['reference_type'] ?? '' ) ) && ! $this->is_primary_vendor_checkin( $event_id, $assignment, $bucket_id ) ) {
+			$movement_triggered = false;
+			$movement_message   = 'Check-in recorded. Inventory movement and ledger posting will run when the primary vendor checks in.';
+		}
+
+		$positions = $movement_triggered ? $this->get_bucket_positions( $bucket_id ) : array();
 		$movements  = array();
 		$errors     = array();
 
@@ -206,11 +220,12 @@ class AIMS_Event_Execution_Service {
 
 		return array(
 			'success'            => true,
-			'message'            => $config['message'],
+			'message'            => $movement_message,
 			'assignment_id'      => $assignment_id,
 			'event_id'           => $event_id,
 			'physical_bucket_id' => $bucket_id,
 			'status'             => $config['status'],
+			'movement_triggered' => $movement_triggered,
 			'movements'          => $movements,
 			'movements_applied'  => count(
 				array_filter(
@@ -229,6 +244,48 @@ class AIMS_Event_Execution_Service {
 				)
 			),
 		);
+	}
+
+	private function is_primary_vendor_checkin( int $event_id, array $assignment, int $bucket_id ): bool {
+		$primary_vendor_id = $this->get_primary_vendor_id_for_event( $event_id );
+		$assignment_vendor_id = $this->get_assignment_vendor_id( $assignment, $bucket_id );
+
+		if ( $primary_vendor_id <= 0 || $assignment_vendor_id <= 0 ) {
+			return false;
+		}
+
+		return $primary_vendor_id === $assignment_vendor_id;
+	}
+
+	private function get_primary_vendor_id_for_event( int $event_id ): int {
+		if ( $event_id <= 0 || ! is_object( $this->vendor_event_assignments ) || ! method_exists( $this->vendor_event_assignments, 'get_primary_for_event' ) ) {
+			return 0;
+		}
+
+		$assignment = $this->vendor_event_assignments->get_primary_for_event( $event_id );
+		if ( ! is_array( $assignment ) ) {
+			return 0;
+		}
+
+		return (int) ( $assignment['vendor_id'] ?? 0 );
+	}
+
+	private function get_assignment_vendor_id( array $assignment, int $bucket_id ): int {
+		$vendor_id = (int) ( $assignment['vendor_id'] ?? 0 );
+		if ( $vendor_id > 0 ) {
+			return $vendor_id;
+		}
+
+		if ( $bucket_id <= 0 || ! is_object( $this->physical_buckets ) || ! method_exists( $this->physical_buckets, 'find' ) ) {
+			return 0;
+		}
+
+		$bucket = $this->physical_buckets->find( $bucket_id );
+		if ( ! is_array( $bucket ) ) {
+			return 0;
+		}
+
+		return (int) ( $bucket['vendor_id'] ?? 0 );
 	}
 
 	private function record_execution_movement( array $data ) {

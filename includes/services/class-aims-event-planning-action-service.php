@@ -58,7 +58,7 @@ class AIMS_Event_Planning_Action_Service {
 		$event_id          = (int) ( $request['event_id'] ?? 0 );
 		$bucket_id         = (int) ( $request['physical_bucket_id'] ?? $request['bucket_id'] ?? 0 );
 		$assignment_type   = sanitize_key( $request['assignment_type'] ?? AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK );
-		$assignment_status = sanitize_key( $request['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT );
+		$assignment_status = sanitize_key( $request['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED );
 
 		if ( $event_id <= 0 || $bucket_id <= 0 ) {
 			return array(
@@ -81,7 +81,7 @@ class AIMS_Event_Planning_Action_Service {
 				'event_id'           => $event_id,
 				'physical_bucket_id' => $bucket_id,
 				'assignment_type'    => '' !== $assignment_type ? $assignment_type : AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK,
-				'assignment_status'  => '' !== $assignment_status ? $assignment_status : AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT,
+				'assignment_status'  => '' !== $assignment_status ? $assignment_status : AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED,
 				'assigned_at'        => $request['assigned_at'] ?? current_time( 'mysql' ),
 				'assigned_by'        => get_current_user_id(),
 				'display_order'      => (int) ( $request['display_order'] ?? 0 ),

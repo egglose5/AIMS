@@ -29,7 +29,7 @@ class AIMS_Event_Bucket_Assignment_Service {
 		$record = array(
 			'event_id'           => $event_id,
 			'physical_bucket_id' => $bucket_id,
-			'assignment_status'  => sanitize_key( $data['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT ),
+			'assignment_status'  => sanitize_key( $data['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED ),
 			'assignment_type'    => sanitize_key( $data['assignment_type'] ?? AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK ),
 			'assigned_at'        => $data['assigned_at'] ?? current_time( 'mysql' ),
 			'assigned_by'        => (int) ( $data['assigned_by'] ?? get_current_user_id() ),

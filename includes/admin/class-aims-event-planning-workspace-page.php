@@ -27,7 +27,7 @@ class AIMS_Event_Planning_Workspace_Page {
 
 		echo '<div class="wrap aims-event-planning-workspace">';
 		echo '<h1>Events &rsaquo; Planning</h1>';
-		echo '<p>Manual bucket planning for managers and supervisors. Demand is the signal, bucket assignment is the commitment, and planning does not move inventory. Planning assignments show as <strong>In Transit</strong>, but physical movement does not happen until <code>vendor_event_checkin</code>.</p>';
+		echo '<p>Manual bucket planning for managers and supervisors. Demand is the signal, bucket assignment is the commitment, and planning does not move inventory. Planning assignments are marked <strong>Staged</strong>, and physical movement/ledger updates are triggered when the primary vendor checks in at the event.</p>';
 		$this->render_status_notice();
 
 		$this->render_event_selector( $events, $selected_event_id, $filter_state );

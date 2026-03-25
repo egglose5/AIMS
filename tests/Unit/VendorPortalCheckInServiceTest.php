@@ -126,6 +126,7 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 						'assignment_id' => (int) ( $data['assignment_id'] ?? 0 ),
 						'event_id'      => 10,
 						'status'        => 'at_event',
+						'movement_triggered' => true,
 					);
 				}
 			},
@@ -287,7 +288,10 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 
 				public function vendor_event_checkin( array $data ): array {
 					++$this->call_count;
-					return array( 'success' => true );
+					return array(
+						'success' => true,
+						'movement_triggered' => true,
+					);
 				}
 			},
 			new class() extends \AIMS_Public_Event_Projection_Service {

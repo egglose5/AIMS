@@ -481,7 +481,7 @@ class AIMS_Event_Planning_Workspace_Service {
 
 		switch ( $status ) {
 			case 'assigned':
-				return 'In Transit';
+				return 'Assigned';
 			case 'staged':
 				return 'Staged';
 			case 'in_transit':
@@ -546,6 +546,18 @@ class AIMS_Event_Planning_Workspace_Service {
 
 		if ( empty( $event_ids ) || ! is_object( $this->events ) ) {
 			return array();
+		}
+
+		if ( method_exists( $this->events, 'get_table_name' ) ) {
+			global $wpdb;
+
+			$placeholders = implode( ', ', array_fill( 0, count( $event_ids ), '%d' ) );
+			$sql = 'SELECT * FROM ' . $this->events->get_table_name() . ' WHERE id IN (' . $placeholders . ') ORDER BY start_date DESC, id DESC';
+			$rows = $wpdb->get_results( $wpdb->prepare( $sql, $event_ids ), ARRAY_A );
+
+			if ( is_array( $rows ) && ! empty( $rows ) ) {
+				return $rows;
+			}
 		}
 
 		$rows = array();

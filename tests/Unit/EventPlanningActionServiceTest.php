@@ -49,7 +49,7 @@ final class EventPlanningActionServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 0, $assignment_service->assign_calls );
 	}
 
-	public function testAssignBucketDefaultsToInTransitStatus(): void {
+	public function testAssignBucketDefaultsToStagedStatus(): void {
 		TestState::set_current_user_id( 77 );
 
 		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
@@ -87,7 +87,7 @@ final class EventPlanningActionServiceTest extends \AIMS\Tests\TestCase {
 		);
 
 		$this->assertTrue( $result['success'] );
-		$this->assertSame( 'in_transit', $assignment_service->saved[0]['assignment_status'] );
+		$this->assertSame( 'staged', $assignment_service->saved[0]['assignment_status'] );
 	}
 
 	public function testReleaseBucketRejectsAssignmentFromDifferentEvent(): void {

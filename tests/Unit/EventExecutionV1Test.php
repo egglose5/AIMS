@@ -10,7 +10,7 @@ use AIMS_Event_Planning_Action_Service;
 use AIMS\Tests\Support\TestState;
 
 final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
-	public function testPlanningAssignmentDefaultsBucketStatusToInTransit(): void {
+	public function testPlanningAssignmentDefaultsBucketStatusToStaged(): void {
 		TestState::set_current_user_id( 77 );
 
 		$assignment_repo = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
@@ -54,7 +54,7 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$this->assertCount( 1, $assignment_repo->saved );
 		$this->assertSame( 10, $assignment_repo->saved[0]['data']['event_id'] );
 		$this->assertSame( 200, $assignment_repo->saved[0]['data']['physical_bucket_id'] );
-		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT, $assignment_repo->saved[0]['data']['assignment_status'] );
+		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED, $assignment_repo->saved[0]['data']['assignment_status'] );
 	}
 
 	public function testTransitionAssignmentStatusPersistsValidStatusWithoutLedgerSideEffects(): void {
@@ -216,5 +216,189 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'return_from_event', $movements->created[0]['movement_type'] );
 		$this->assertCount( 1, $positions->updated );
 		$this->assertSame( 654, $positions->updated[0]['last_bucket_movement_id'] );
+	}
+
+	public function testVendorEventCheckinTriggersLedgerOnlyForPrimaryVendor(): void {
+		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public array $transitions = array();
+
+			public function __construct() {}
+
+			public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
+				$this->transitions[] = compact( 'assignment_id', 'status', 'data' );
+				return true;
+			}
+		};
+
+		$assignment_repository = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 10,
+					'physical_bucket_id' => 200,
+					'assignment_status'  => 'staged',
+					'is_active'          => 1,
+				);
+			}
+		};
+
+		$bucket_positions = new class() extends \AIMS_Bucket_Inventory_Position_Repository {
+			public function get_for_bucket( int $bucket_id ): array {
+				return array(
+					array(
+						'product_id' => 901,
+						'vendor_id'  => 5,
+						'quantity'   => 3.0,
+					),
+				);
+			}
+		};
+
+		$bucket_movement_service = new class() extends \AIMS_Bucket_Movement_Service {
+			public array $calls = array();
+
+			public function __construct() {}
+
+			public function record_event_load_out( array $data ) {
+				$this->calls[] = $data;
+
+				return array(
+					'movement_id'      => 321,
+					'current_quantity' => 7.0,
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function get_primary_for_event( int $event_id ): ?array {
+				return array(
+					'vendor_id' => 5,
+				);
+			}
+		};
+
+		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find( int $bucket_id ): ?array {
+				return array(
+					'id'        => $bucket_id,
+					'vendor_id' => 5,
+				);
+			}
+		};
+
+		$execution = new \AIMS_Event_Execution_Service(
+			$assignment_service,
+			$assignment_repository,
+			$bucket_positions,
+			$bucket_movement_service,
+			$vendor_event_assignments,
+			$physical_buckets
+		);
+
+		$result = $execution->vendor_event_checkin(
+			array(
+				'assignment_id' => 400,
+				'reference_id'  => 'CHK-400',
+			)
+		);
+
+		$this->assertTrue( $result['success'] );
+		$this->assertTrue( $result['movement_triggered'] );
+		$this->assertSame( 1, $result['movements_applied'] );
+		$this->assertCount( 1, $bucket_movement_service->calls );
+		$this->assertCount( 1, $assignment_service->transitions );
+		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT, $assignment_service->transitions[0]['status'] );
+	}
+
+	public function testVendorEventCheckinSkipsLedgerForNonPrimaryVendor(): void {
+		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public array $transitions = array();
+
+			public function __construct() {}
+
+			public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
+				$this->transitions[] = compact( 'assignment_id', 'status', 'data' );
+				return true;
+			}
+		};
+
+		$assignment_repository = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 10,
+					'physical_bucket_id' => 200,
+					'assignment_status'  => 'staged',
+					'is_active'          => 1,
+				);
+			}
+		};
+
+		$bucket_positions = new class() extends \AIMS_Bucket_Inventory_Position_Repository {
+			public function get_for_bucket( int $bucket_id ): array {
+				return array(
+					array(
+						'product_id' => 901,
+						'vendor_id'  => 5,
+						'quantity'   => 3.0,
+					),
+				);
+			}
+		};
+
+		$bucket_movement_service = new class() extends \AIMS_Bucket_Movement_Service {
+			public array $calls = array();
+
+			public function __construct() {}
+
+			public function record_event_load_out( array $data ) {
+				$this->calls[] = $data;
+
+				return array(
+					'movement_id'      => 321,
+					'current_quantity' => 7.0,
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function get_primary_for_event( int $event_id ): ?array {
+				return array(
+					'vendor_id' => 99,
+				);
+			}
+		};
+
+		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find( int $bucket_id ): ?array {
+				return array(
+					'id'        => $bucket_id,
+					'vendor_id' => 5,
+				);
+			}
+		};
+
+		$execution = new \AIMS_Event_Execution_Service(
+			$assignment_service,
+			$assignment_repository,
+			$bucket_positions,
+			$bucket_movement_service,
+			$vendor_event_assignments,
+			$physical_buckets
+		);
+
+		$result = $execution->vendor_event_checkin(
+			array(
+				'assignment_id' => 400,
+				'reference_id'  => 'CHK-400',
+			)
+		);
+
+		$this->assertTrue( $result['success'] );
+		$this->assertFalse( $result['movement_triggered'] );
+		$this->assertSame( 0, $result['movements_applied'] );
+		$this->assertCount( 0, $bucket_movement_service->calls );
+		$this->assertCount( 1, $assignment_service->transitions );
+		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT, $assignment_service->transitions[0]['status'] );
 	}
 }
