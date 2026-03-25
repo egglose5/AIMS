@@ -16,6 +16,14 @@ use AIMS\Tests\Support\TestState;
 
 final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 	public function testBuildPageModelScopesSelectedEventAndWorkspaceData(): void {
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID' => 77,
+				'display_name' => 'Manager One',
+			)
+		);
+
 		TestState::set_product(
 			901,
 			new class() {
@@ -92,9 +100,10 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'id'                 => 400,
 						'event_id'           => $event_id,
 						'physical_bucket_id' => 200,
-						'assignment_status'   => 'assigned',
+						'assignment_status'   => 'staged',
 						'assignment_type'     => 'event_stock',
 						'assigned_at'         => '2026-03-20 10:00:00',
+						'assigned_by'         => 77,
 						'is_active'          => 1,
 					),
 				);
@@ -106,9 +115,10 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'id'                 => 400,
 						'event_id'           => 10,
 						'physical_bucket_id' => 200,
-						'assignment_status'   => 'assigned',
+						'assignment_status'   => 'staged',
 						'assignment_type'     => 'event_stock',
 						'assigned_at'         => '2026-03-20 10:00:00',
+						'assigned_by'         => 77,
 						'is_active'          => 1,
 					);
 				}
@@ -301,6 +311,15 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'B-300', $model['workspace']['available_buckets'][0]['bucket_code'] );
 		$this->assertSame( 3.0, $model['workspace']['assigned_buckets'][0]['content_summary']['total_available_quantity'] );
 		$this->assertSame( 'Staging A', $model['workspace']['available_buckets'][0]['storage']['current']['label'] );
+		$this->assertSame( 1, $model['workspace']['summary']['assigned_bucket_count'] );
+		$this->assertSame( 1, $model['workspace']['summary']['assigned_staged_bucket_count'] );
+		$this->assertSame( 1, $model['workspace']['summary']['available_bucket_count'] );
+		$this->assertSame( 3.0, $model['workspace']['summary']['assigned_available_quantity'] );
+		$this->assertSame( 6.0, $model['workspace']['summary']['available_pool_quantity'] );
+		$this->assertCount( 1, $model['workspace']['team_activity'] );
+		$this->assertSame( 'Manager One', $model['workspace']['team_activity'][0]['display_name'] );
+		$this->assertSame( 1, $model['workspace']['team_activity'][0]['assigned_count'] );
+		$this->assertSame( 1, $model['workspace']['team_activity'][0]['staged_count'] );
 	}
 
 	public function testGetAuthorizedEventsUsesPlanningAccessServiceShape(): void {
@@ -436,5 +455,110 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 20, $model['authorized_events'][0]['id'] );
 		$this->assertSame( 'team', $model['authorized_events'][0]['visibility_source'] );
 		$this->assertTrue( (bool) ( $model['team_context']['is_supervisor'] ?? false ) );
+	}
+
+	public function testGetPageModelCanFilterAssignedBucketsByPlanner(): void {
+		TestState::set_current_user_id( 77 );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID' => 77,
+				'display_name' => 'Manager One',
+			)
+		);
+		TestState::set_user(
+			88,
+			(object) array(
+				'ID' => 88,
+				'display_name' => 'Planner Two',
+			)
+		);
+
+		$events = new class() extends \AIMS_Event_Repository {
+			public function all(): array {
+				return array(
+					array(
+						'id' => 10,
+						'event_name' => 'Spring Show',
+					),
+				);
+			}
+		};
+
+		$bucket_assignments = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public function __construct() {}
+
+			public function get_active_buckets_for_event( int $event_id ): array {
+				return array(
+					array(
+						'id' => 401,
+						'event_id' => $event_id,
+						'physical_bucket_id' => 200,
+						'assignment_status' => 'staged',
+						'assigned_by' => 77,
+					),
+					array(
+						'id' => 402,
+						'event_id' => $event_id,
+						'physical_bucket_id' => 201,
+						'assignment_status' => 'staged',
+						'assigned_by' => 88,
+					),
+				);
+			}
+
+			public function get_active_for_bucket( int $bucket_id ): ?array {
+				return null;
+			}
+		};
+
+		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find( int $bucket_id ): ?array {
+				return array(
+					'id' => $bucket_id,
+					'bucket_code' => 'B-' . $bucket_id,
+					'bucket_label' => 'Bucket ' . $bucket_id,
+					'bucket_type' => 'standard',
+					'status' => 'available',
+					'vendor_id' => 5,
+				);
+			}
+		};
+
+		$access_service = new class() {
+			public function get_current_user_authorized_events(): array {
+				return array(
+					array(
+						'id' => 10,
+						'event_name' => 'Spring Show',
+					),
+				);
+			}
+		};
+
+		$service = new AIMS_Event_Planning_Workspace_Service(
+			$events,
+			null,
+			$bucket_assignments,
+			$physical_buckets,
+			null,
+			null,
+			null,
+			$access_service
+		);
+
+		$model = $service->get_page_model(
+			array(
+				'event_id' => 10,
+				'planner_user_id' => 88,
+			)
+		);
+
+		$this->assertSame( 88, $model['filter_state']['planner_user_id'] );
+		$this->assertCount( 1, $model['workspace']['assigned_buckets'] );
+		$this->assertSame( 201, $model['workspace']['assigned_buckets'][0]['physical_bucket_id'] );
+		$this->assertCount( 1, $model['workspace']['team_activity'] );
+		$this->assertSame( 'Planner Two', $model['workspace']['team_activity'][0]['display_name'] );
+		$this->assertSame( 1, $model['workspace']['summary']['assigned_bucket_count'] );
 	}
 }

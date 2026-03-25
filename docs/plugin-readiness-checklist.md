@@ -40,6 +40,7 @@ This checklist maps release tasks to concrete code areas in this repository.
   - `includes/services/class-aims-event-planning-workspace-service.php`
   - `includes/services/class-aims-event-execution-service.php`
 - [x] Validate end-to-end event CRUD and assignment lifecycle capabilities and nonce protections.
+  - Planning workspace now includes hierarchy-scoped team visibility, bulk actions, manager summary metrics, team activity visibility, and planner-level filtering.
 
 ## Milestone D - Square Safety and Operator UX
 
@@ -56,5 +57,5 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Run lint/tests for touched areas and document upgrade path.
   - Touched-area test coverage validated via PHPUnit.
   - Upgrade notes documented in `docs/upgrade-path.md`.
-  - Full-suite run currently passes (`60/60`).
+  - Full-suite run currently passes (`76/76`).
 

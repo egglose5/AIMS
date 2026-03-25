@@ -66,21 +66,19 @@ The repository currently provides:
 
 1. Manager or supervisor opens Event Planning.
 2. The planner sees only events assigned to them or their subordinates.
-3. The planner selects an event.
-4. AIMS shows event demand summary by SKU, currently assigned buckets, available buckets, and bucket contents.
-5. The planner manually assigns buckets to the event.
-6. AIMS writes event bucket assignment records.
-7. Inventory movement records are created later only when physical actions occur.
+3. The planner can filter by event scope, event search, bucket search, and planner ownership (all/me/subordinate planner).
+4. AIMS shows event demand summary by SKU, planning summary metrics, team activity, currently assigned buckets, available buckets, and bucket contents.
+5. The planner manually assigns buckets to the event (single or bulk, with optional delegation to subordinate planners).
+6. AIMS writes staged event bucket assignment records.
+7. Inventory movement records are created later only when physical actions occur (primary vendor check-in and return flows).
 
 ## Next implementation phase
 
-1. Build a manager and supervisor Event Planning workspace.
-2. Scope event visibility to the planner and their subordinate assignments.
-3. Reuse existing demand summary, bucket inventory position, and event bucket assignment structures in that workspace.
-4. Support explicit manual bucket-to-event assignment with no automatic inventory commitment.
-5. Add later physical execution states on assigned buckets without treating planning clicks as stock movements.
-6. Expand Square replay and fulfillment wiring only after the planning and commitment workflow is stable.
-7. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+1. Add assignment timeline and status transition auditing to the planning workspace for supervisor review.
+2. Add planner-level workload and SLA indicators (staged aging, check-in lag) to the manager summary panel.
+3. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
+4. Expand Square replay and fulfillment wiring only after the planning and commitment workflow remains stable under team usage.
+5. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
 ## Upgrade path
 

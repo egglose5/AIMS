@@ -133,8 +133,11 @@ class AIMS_Event_Planning_Workspace_Service {
 		$demand_rows   = $this->get_demand_rows( $event_id );
 		$assigned      = $this->get_assigned_bucket_rows( $event_id );
 		$available     = $this->get_available_bucket_rows( $event_id, $vendor_ids, $assigned );
+		$assigned      = $this->filter_assigned_rows_by_planner( $assigned, (int) ( $filter_state['planner_user_id'] ?? 0 ) );
 		$assigned      = $this->filter_bucket_rows_by_search( $assigned, (string) ( $filter_state['bucket_search'] ?? '' ) );
 		$available     = $this->filter_bucket_rows_by_search( $available, (string) ( $filter_state['bucket_search'] ?? '' ) );
+		$summary       = $this->build_workspace_summary( $demand_rows, $assigned, $available );
+		$team_activity = $this->build_team_activity_rows( $assigned );
 
 		return array(
 			'event'           => $event,
@@ -142,7 +145,121 @@ class AIMS_Event_Planning_Workspace_Service {
 			'demand_rows'     => $demand_rows,
 			'assigned_buckets' => $assigned,
 			'available_buckets' => $available,
+			'summary'         => $summary,
+			'team_activity'   => $team_activity,
 		);
+	}
+
+	private function build_workspace_summary( array $demand_rows, array $assigned_rows, array $available_rows ): array {
+		$requested_quantity = 0.0;
+		$open_quantity      = 0.0;
+		$assigned_available = 0.0;
+		$available_pool     = 0.0;
+		$staged_count       = 0;
+		$at_event_count     = 0;
+
+		foreach ( $demand_rows as $demand_row ) {
+			if ( ! is_array( $demand_row ) ) {
+				continue;
+			}
+
+			$requested_quantity += (float) ( $demand_row['quantity_requested'] ?? $demand_row['demand_quantity'] ?? $demand_row['total_quantity_requested'] ?? 0 );
+			$open_quantity      += (float) ( $demand_row['open_quantity'] ?? 0 );
+		}
+
+		foreach ( $assigned_rows as $assigned_row ) {
+			if ( ! is_array( $assigned_row ) ) {
+				continue;
+			}
+
+			$status = sanitize_key( (string) ( $assigned_row['assignment_status'] ?? '' ) );
+			if ( 'staged' === $status ) {
+				++$staged_count;
+			}
+
+			if ( 'at_event' === $status ) {
+				++$at_event_count;
+			}
+
+			$summary            = (array) ( $assigned_row['content_summary'] ?? array() );
+			$assigned_available += (float) ( $summary['total_available_quantity'] ?? 0 );
+		}
+
+		foreach ( $available_rows as $available_row ) {
+			if ( ! is_array( $available_row ) ) {
+				continue;
+			}
+
+			$summary         = (array) ( $available_row['content_summary'] ?? array() );
+			$available_pool += (float) ( $summary['total_available_quantity'] ?? 0 );
+		}
+
+		return array(
+			'demand_requested_quantity'      => $requested_quantity,
+			'demand_open_quantity'           => $open_quantity,
+			'assigned_bucket_count'          => count( $assigned_rows ),
+			'assigned_staged_bucket_count'   => $staged_count,
+			'assigned_at_event_bucket_count' => $at_event_count,
+			'available_bucket_count'         => count( $available_rows ),
+			'assigned_available_quantity'    => $assigned_available,
+			'available_pool_quantity'        => $available_pool,
+		);
+	}
+
+	private function build_team_activity_rows( array $assigned_rows ): array {
+		$activity = array();
+
+		foreach ( $assigned_rows as $assigned_row ) {
+			if ( ! is_array( $assigned_row ) ) {
+				continue;
+			}
+
+			$user_id = (int) ( $assigned_row['assigned_by'] ?? 0 );
+			if ( $user_id <= 0 ) {
+				continue;
+			}
+
+			if ( ! isset( $activity[ $user_id ] ) ) {
+				$activity[ $user_id ] = array(
+					'user_id'          => $user_id,
+					'display_name'     => (string) ( $assigned_row['assigned_by_label'] ?? '' ),
+					'assigned_count'   => 0,
+					'staged_count'     => 0,
+					'at_event_count'   => 0,
+					'last_assigned_at' => '',
+				);
+			}
+
+			++$activity[ $user_id ]['assigned_count'];
+			$status = sanitize_key( (string) ( $assigned_row['assignment_status'] ?? '' ) );
+			if ( 'staged' === $status ) {
+				++$activity[ $user_id ]['staged_count'];
+			}
+
+			if ( 'at_event' === $status ) {
+				++$activity[ $user_id ]['at_event_count'];
+			}
+
+			$assigned_at = sanitize_text_field( (string) ( $assigned_row['assigned_at'] ?? '' ) );
+			if ( '' !== $assigned_at && ( '' === $activity[ $user_id ]['last_assigned_at'] || $assigned_at > $activity[ $user_id ]['last_assigned_at'] ) ) {
+				$activity[ $user_id ]['last_assigned_at'] = $assigned_at;
+			}
+		}
+
+		$rows = array_values( $activity );
+
+		usort(
+			$rows,
+			static function ( array $left, array $right ): int {
+				if ( (int) ( $left['assigned_count'] ?? 0 ) !== (int) ( $right['assigned_count'] ?? 0 ) ) {
+					return (int) ( $right['assigned_count'] ?? 0 ) <=> (int) ( $left['assigned_count'] ?? 0 );
+				}
+
+				return strcasecmp( (string) ( $left['display_name'] ?? '' ), (string) ( $right['display_name'] ?? '' ) );
+			}
+		);
+
+		return $rows;
 	}
 
 	private function get_demand_rows( int $event_id ): array {
@@ -305,6 +422,9 @@ class AIMS_Event_Planning_Workspace_Service {
 				'physical_bucket_id' => $bucket_id,
 				'assignment_id'    => (int) ( $assignment['id'] ?? 0 ),
 				'event_id'         => (int) ( $assignment['event_id'] ?? 0 ),
+				'assignment_status' => sanitize_key( (string) ( $assignment['assignment_status'] ?? '' ) ),
+				'assignment_type'  => sanitize_key( (string) ( $assignment['assignment_type'] ?? '' ) ),
+				'is_active'        => ! empty( $assignment['is_active'] ),
 				'assigned_at'      => sanitize_text_field( (string) ( $assignment['assigned_at'] ?? '' ) ),
 				'released_at'      => sanitize_text_field( (string) ( $assignment['released_at'] ?? '' ) ),
 				'assigned_by'      => (int) ( $assignment['assigned_by'] ?? 0 ),
@@ -640,10 +760,31 @@ class AIMS_Event_Planning_Workspace_Service {
 			$event_scope = 'all';
 		}
 
+		$planner_user_id = isset( $request['planner_user_id'] ) ? (int) $request['planner_user_id'] : 0;
+		if ( $planner_user_id < 0 ) {
+			$planner_user_id = 0;
+		}
+
 		return array(
 			'event_scope'   => $event_scope,
 			'event_search'  => sanitize_text_field( (string) ( $request['event_search'] ?? '' ) ),
 			'bucket_search' => sanitize_text_field( (string) ( $request['bucket_search'] ?? '' ) ),
+			'planner_user_id' => $planner_user_id,
+		);
+	}
+
+	private function filter_assigned_rows_by_planner( array $rows, int $planner_user_id ): array {
+		if ( $planner_user_id <= 0 ) {
+			return $rows;
+		}
+
+		return array_values(
+			array_filter(
+				$rows,
+				static function ( array $row ) use ( $planner_user_id ): bool {
+					return (int) ( $row['assigned_by'] ?? 0 ) === $planner_user_id;
+				}
+			)
 		);
 	}
 

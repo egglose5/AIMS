@@ -30,7 +30,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<p>Manual bucket planning for managers and supervisors. Demand is the signal, bucket assignment is the commitment, and planning does not move inventory. Planning assignments are marked <strong>Staged</strong>, and physical movement/ledger updates are triggered when the primary vendor checks in at the event.</p>';
 		$this->render_status_notice();
 
-		$this->render_event_selector( $events, $selected_event_id, $filter_state );
+		$this->render_event_selector( $events, $selected_event_id, $filter_state, $team_context );
 		$this->render_team_context_notice( $team_context );
 
 		if ( '' !== $selection_message ) {
@@ -43,6 +43,8 @@ class AIMS_Event_Planning_Workspace_Page {
 		}
 
 		$this->render_event_header( $selected_event );
+		$this->render_workspace_summary_panel( (array) ( $workspace['summary'] ?? array() ) );
+		$this->render_team_activity_panel( (array) ( $workspace['team_activity'] ?? array() ) );
 		$this->render_demand_panel( (array) ( $workspace['demand_rows'] ?? array() ) );
 		$this->render_assigned_buckets_panel( $selected_event_id, (array) ( $workspace['assigned_buckets'] ?? array() ), $team_context, $filter_state );
 		$this->render_available_buckets_panel( $selected_event_id, (array) ( $workspace['available_buckets'] ?? array() ), $team_context, $filter_state );
@@ -50,11 +52,13 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '</div>';
 	}
 
-	private function render_event_selector( array $events, int $selected_event_id, array $filter_state ): void {
+	private function render_event_selector( array $events, int $selected_event_id, array $filter_state, array $team_context ): void {
 		if ( empty( $events ) ) {
 			echo '<div class="notice notice-warning inline"><p>No authorized events are available for planning.</p></div>';
 			return;
 		}
+
+		$planner_options = $this->build_planner_filter_options( $team_context );
 
 		echo '<form method="get" action="' . esc_url( admin_url( 'admin.php' ) ) . '" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin: 12px 0;">';
 		echo '<input type="hidden" name="page" value="' . esc_attr( self::PAGE_SLUG ) . '">';
@@ -86,6 +90,23 @@ class AIMS_Event_Planning_Workspace_Page {
 
 		echo '<label><strong>Search Events</strong><br><input type="search" name="event_search" value="' . esc_attr( (string) ( $filter_state['event_search'] ?? '' ) ) . '" placeholder="Name, code, or venue"></label>';
 		echo '<label><strong>Search Buckets</strong><br><input type="search" name="bucket_search" value="' . esc_attr( (string) ( $filter_state['bucket_search'] ?? '' ) ) . '" placeholder="Bucket label or code"></label>';
+
+		if ( count( $planner_options ) > 1 ) {
+			echo '<label><strong>Planner</strong><br>';
+			echo '<select name="planner_user_id">';
+			$selected_planner_user_id = (int) ( $filter_state['planner_user_id'] ?? 0 );
+			foreach ( $planner_options as $option ) {
+				if ( ! is_array( $option ) ) {
+					continue;
+				}
+
+				$user_id = (int) ( $option['user_id'] ?? 0 );
+				$label = (string) ( $option['label'] ?? '' );
+				$is_selected = $selected_planner_user_id === $user_id ? ' selected="selected"' : '';
+				echo '<option value="' . esc_attr( (string) $user_id ) . '"' . $is_selected . '>' . esc_html( $label ) . '</option>';
+			}
+			echo '</select></label>';
+		}
 
 		echo '<button type="submit" class="button button-primary">Apply Filters</button>';
 		echo '</form>';
@@ -143,6 +164,97 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td>' . esc_html( (string) ( $row['approved_quantity'] ?? $row['fulfilled_quantity'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['open_quantity'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( implode( ', ', (array) ( $row['sources'] ?? array() ) ) ) . '</td>';
+			echo '</tr>';
+		}
+
+		echo '</tbody></table>';
+	}
+
+	private function render_workspace_summary_panel( array $summary ): void {
+		if ( empty( $summary ) ) {
+			return;
+		}
+
+		$cards = array(
+			array(
+				'label' => 'Open Demand Qty',
+				'value' => $this->format_quantity( (float) ( $summary['demand_open_quantity'] ?? 0 ) ),
+			),
+			array(
+				'label' => 'Requested Demand Qty',
+				'value' => $this->format_quantity( (float) ( $summary['demand_requested_quantity'] ?? 0 ) ),
+			),
+			array(
+				'label' => 'Assigned Buckets',
+				'value' => (string) (int) ( $summary['assigned_bucket_count'] ?? 0 ),
+			),
+			array(
+				'label' => 'Staged Buckets',
+				'value' => (string) (int) ( $summary['assigned_staged_bucket_count'] ?? 0 ),
+			),
+			array(
+				'label' => 'At Event Buckets',
+				'value' => (string) (int) ( $summary['assigned_at_event_bucket_count'] ?? 0 ),
+			),
+			array(
+				'label' => 'Available Pool Buckets',
+				'value' => (string) (int) ( $summary['available_bucket_count'] ?? 0 ),
+			),
+			array(
+				'label' => 'Assigned Available Qty',
+				'value' => $this->format_quantity( (float) ( $summary['assigned_available_quantity'] ?? 0 ) ),
+			),
+			array(
+				'label' => 'Pool Available Qty',
+				'value' => $this->format_quantity( (float) ( $summary['available_pool_quantity'] ?? 0 ) ),
+			),
+		);
+
+		echo '<h2>Planning Summary</h2>';
+		echo '<table class="widefat striped" style="max-width:1000px;">';
+		echo '<tbody><tr>';
+
+		foreach ( $cards as $index => $card ) {
+			echo '<td style="width:25%;vertical-align:top;">';
+			echo '<div style="font-size:12px;color:#50575e;text-transform:uppercase;letter-spacing:0.04em;">' . esc_html( (string) ( $card['label'] ?? '' ) ) . '</div>';
+			echo '<div style="font-size:22px;font-weight:600;line-height:1.2;">' . esc_html( (string) ( $card['value'] ?? '0' ) ) . '</div>';
+			echo '</td>';
+
+			if ( 3 === $index ) {
+				echo '</tr><tr>';
+			}
+		}
+
+		echo '</tr></tbody></table>';
+	}
+
+	private function render_team_activity_panel( array $rows ): void {
+		if ( empty( $rows ) ) {
+			return;
+		}
+
+		echo '<h2>Team Activity</h2>';
+		echo '<table class="widefat fixed striped">';
+		echo '<thead><tr>';
+		echo '<th>Planner</th>';
+		echo '<th>Assigned Buckets</th>';
+		echo '<th>Staged</th>';
+		echo '<th>At Event</th>';
+		echo '<th>Last Assignment</th>';
+		echo '</tr></thead>';
+		echo '<tbody>';
+
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			echo '<tr>';
+			echo '<td>' . esc_html( (string) ( $row['display_name'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) (int) ( $row['assigned_count'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( (string) (int) ( $row['staged_count'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( (string) (int) ( $row['at_event_count'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['last_assigned_at'] ?? '' ) ) . '</td>';
 			echo '</tr>';
 		}
 
@@ -406,6 +518,10 @@ class AIMS_Event_Planning_Workspace_Page {
 			$params['bucket_search'] = (string) $filter_state['bucket_search'];
 		}
 
+		if ( (int) ( $filter_state['planner_user_id'] ?? 0 ) > 0 ) {
+			$params['planner_user_id'] = (int) $filter_state['planner_user_id'];
+		}
+
 		return add_query_arg(
 			$params,
 			admin_url( 'admin.php' )
@@ -485,5 +601,54 @@ class AIMS_Event_Planning_Workspace_Page {
 
 	private function format_quantity( float $quantity ): string {
 		return rtrim( rtrim( number_format( $quantity, 4, '.', '' ), '0' ), '.' );
+	}
+
+	private function build_planner_filter_options( array $team_context ): array {
+		$options = array(
+			array(
+				'user_id' => 0,
+				'label'   => 'All Planners',
+			),
+		);
+
+		$current_user_id = (int) ( $team_context['current_user_id'] ?? 0 );
+		$current_label = (string) ( $team_context['current_user_label'] ?? '' );
+		if ( $current_user_id > 0 ) {
+			$options[] = array(
+				'user_id' => $current_user_id,
+				'label'   => '' !== $current_label ? $current_label . ' (Me)' : 'Me',
+			);
+		}
+
+		foreach ( (array) ( $team_context['subordinates'] ?? array() ) as $team_member ) {
+			if ( ! is_array( $team_member ) ) {
+				continue;
+			}
+
+			$team_user_id = (int) ( $team_member['user_id'] ?? 0 );
+			if ( $team_user_id <= 0 ) {
+				continue;
+			}
+
+			$label = sanitize_text_field( (string) ( $team_member['display_name'] ?? '' ) );
+			$options[] = array(
+				'user_id' => $team_user_id,
+				'label'   => '' !== $label ? $label : 'User #' . $team_user_id,
+			);
+		}
+
+		$deduped = array();
+		$seen = array();
+		foreach ( $options as $option ) {
+			$user_id = (int) ( $option['user_id'] ?? 0 );
+			if ( isset( $seen[ $user_id ] ) ) {
+				continue;
+			}
+
+			$seen[ $user_id ] = true;
+			$deduped[] = $option;
+		}
+
+		return $deduped;
 	}
 }
