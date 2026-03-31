@@ -6,6 +6,7 @@ namespace AIMS\Tests\Unit;
 
 use AIMS_Responsibility_Assignment_Repository;
 use AIMS_Responsibility_Authorization_Service;
+use AIMS\Tests\Support\TestState;
 
 final class ResponsibilityAuthorizationServiceTest extends \AIMS\Tests\TestCase {
 	public function testSystemAdminCanViewAllEvents(): void {
@@ -120,5 +121,54 @@ final class ResponsibilityAuthorizationServiceTest extends \AIMS\Tests\TestCase 
 		$this->assertTrue( $service->can_run_square_sync_replay( 33 ) );
 		$this->assertTrue( $service->can_view_reports( 33 ) );
 		$this->assertTrue( $service->can_run_square_sync_undo( 33 ) );
+	}
+
+	public function testVendorScopedInventoryAuthorizationRequiresAimsPerson(): void {
+		update_option( AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+
+		TestState::set_user(
+			70,
+			(object) array(
+				'ID'    => 70,
+				'roles' => array( 'customer' ),
+			)
+		);
+
+		$repo = new class() extends AIMS_Responsibility_Assignment_Repository {
+			public function user_has_responsibility( int $user_id, string $responsibility_key, string $scope_type = self::SCOPE_GLOBAL, int $scope_ref_id = 0 ): bool {
+				return 70 === $user_id && AIMS_Responsibility_Authorization_Service::RESP_VENDOR_MANAGE_INVENTORY === $responsibility_key;
+			}
+		};
+
+		$service = new AIMS_Responsibility_Authorization_Service( $repo );
+
+		$this->assertFalse( $service->can_manage_vendor_inventory_for_vendor( 70, 200 ) );
+	}
+
+	public function testVendorScopedInventoryAuthorizationAllowsAimsManagerWithScope(): void {
+		update_option( AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+
+		TestState::set_user(
+			71,
+			(object) array(
+				'ID'    => 71,
+				'roles' => array( 'aims_manager_user' ),
+			)
+		);
+
+		$repo = new class() extends AIMS_Responsibility_Assignment_Repository {
+			public function user_has_responsibility( int $user_id, string $responsibility_key, string $scope_type = self::SCOPE_GLOBAL, int $scope_ref_id = 0 ): bool {
+				if ( 71 !== $user_id || AIMS_Responsibility_Authorization_Service::RESP_VENDOR_MANAGE_INVENTORY !== $responsibility_key ) {
+					return false;
+				}
+
+				return self::SCOPE_VENDOR === $scope_type && 201 === $scope_ref_id;
+			}
+		};
+
+		$service = new AIMS_Responsibility_Authorization_Service( $repo );
+
+		$this->assertTrue( $service->can_manage_vendor_inventory_for_vendor( 71, 201 ) );
+		$this->assertFalse( $service->can_manage_vendor_inventory_for_vendor( 71, 202 ) );
 	}
 }

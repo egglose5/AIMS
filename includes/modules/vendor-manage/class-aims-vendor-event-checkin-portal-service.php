@@ -17,6 +17,8 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 	private $public_projection;
 	private $uploader;
 	private $physical_buckets;
+	private $auth_service;
+	private $vendor_service;
 
 	public function __construct(
 		AIMS_Event_Planning_Access_Service $access_service = null,
@@ -28,7 +30,9 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		AIMS_Event_Execution_Service $execution_service = null,
 		AIMS_Public_Event_Projection_Service $public_projection = null,
 		$uploader = null,
-		$physical_buckets = null
+		$physical_buckets = null,
+		AIMS_Responsibility_Authorization_Service $auth_service = null,
+		AIMS_Vendor_Service $vendor_service = null
 	) {
 		$this->access_service           = $access_service ?: new AIMS_Event_Planning_Access_Service();
 		$this->events                   = $events ?: new AIMS_Event_Repository();
@@ -43,6 +47,8 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		);
 		$this->uploader                 = $uploader;
 		$this->physical_buckets         = $physical_buckets ?: ( class_exists( 'AIMS_Physical_Bucket_Repository' ) ? new AIMS_Physical_Bucket_Repository() : null );
+		$this->auth_service             = $auth_service ?: new AIMS_Responsibility_Authorization_Service();
+		$this->vendor_service           = $vendor_service ?: new AIMS_Vendor_Service();
 	}
 
 	public function get_page_model( array $request = array() ): array {
@@ -265,11 +271,35 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 			return array();
 		}
 
+		// Primary: Try legacy access service for backward compatibility
 		if ( is_object( $this->access_service ) && method_exists( $this->access_service, 'get_authorized_vendor_ids' ) ) {
-			return array_values( array_filter( array_map( 'intval', (array) $this->access_service->get_authorized_vendor_ids( $user_id ) ) ) );
+			$vendor_ids = array_values( array_filter( array_map( 'intval', (array) $this->access_service->get_authorized_vendor_ids( $user_id ) ) ) );
+			if ( ! empty( $vendor_ids ) ) {
+				return $vendor_ids;
+			}
 		}
 
-		return array();
+		// Fallback: Get vendors directly from person repository for this user
+		if ( ! $this->auth_service->can_submit_vendor_checkin( $user_id ) ) {
+			return array();
+		}
+
+		$vendors = (array) $this->vendor_service->list_vendors();
+		$authorized_ids = array();
+
+		foreach ( $vendors as $vendor ) {
+			if ( ! is_array( $vendor ) ) {
+				continue;
+			}
+
+			// Check if vendor is assigned to this user (new model uses user_id)
+			$vendor_user_id = (int) ( $vendor['user_id'] ?? 0 );
+			if ( $vendor_user_id === $user_id ) {
+				$authorized_ids[] = (int) ( $vendor['user_id'] ?? $vendor['id'] ?? 0 );
+			}
+		}
+
+		return array_values( array_filter( $authorized_ids ) );
 	}
 
 	private function get_authorized_events_for_vendor_ids( array $vendor_ids ): array {

@@ -38,12 +38,7 @@ class AIMS_Event_Planning_Action_Service {
 			return $this->responsibility_auth->can_manage_event_planning( $user_id );
 		}
 
-		if ( is_object( $this->access_service ) && method_exists( $this->access_service, 'can_access_event_planning' ) ) {
-			return (bool) $this->access_service->can_access_event_planning( $user_id );
-		}
-
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING )
-			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_BUCKETS );
+		return is_object( $this->access_service ) && $this->access_service->can_access_event_planning( $user_id );
 	}
 
 	public function can_current_user_mutate_event( int $event_id ): bool {
@@ -58,12 +53,7 @@ class AIMS_Event_Planning_Action_Service {
 			return $this->responsibility_auth->can_mutate_event( $user_id, $event_id );
 		}
 
-		$authorized_event_ids = $this->get_authorized_event_ids_for_current_user();
-		if ( empty( $authorized_event_ids ) ) {
-			return false;
-		}
-
-		return in_array( $event_id, $authorized_event_ids, true );
+		return false;
 	}
 
 	private function should_use_responsibility_model( int $user_id ): bool {

@@ -10,22 +10,29 @@ class AIMS_Inventory_Service {
 	private $bucket_identity;
 	private $bucket_movement_service;
 	private $bucket_position_service;
+	private $auth_service;
+	private $person_identity;
 
 	public function __construct(
 		AIMS_Inventory_Bucket_Repository $buckets,
 		AIMS_Inventory_Movement_Repository $movements,
 		AIMS_Bucket_Identity_Service $bucket_identity = null,
 		AIMS_Bucket_Movement_Service $bucket_movement_service = null,
-		AIMS_Bucket_Position_Service $bucket_position_service = null
+		AIMS_Bucket_Position_Service $bucket_position_service = null,
+		AIMS_Responsibility_Authorization_Service $auth_service = null,
+		AIMS_Person_Identity_Service $person_identity = null
 	) {
 		$this->buckets                 = $buckets;
 		$this->movements               = $movements;
 		$this->bucket_identity         = $bucket_identity;
 		$this->bucket_movement_service = $bucket_movement_service;
 		$this->bucket_position_service = $bucket_position_service;
+		$this->auth_service            = $auth_service ?: new AIMS_Responsibility_Authorization_Service();
+		$this->person_identity         = $person_identity ?: new AIMS_Person_Identity_Service();
 	}
 
 	public function apply_movement( array $data ) {
+		$actor_user_id = (int) ( $data['applied_by'] ?? ( function_exists( 'get_current_user_id' ) ? get_current_user_id() : 0 ) );
 		$reference_type = sanitize_key( $data['reference_type'] ?? '' );
 		$reference_id   = sanitize_text_field( $data['reference_id'] ?? '' );
 		$product_id     = (int) ( $data['product_id'] ?? 0 );
@@ -38,6 +45,16 @@ class AIMS_Inventory_Service {
 
 		if ( '' === $reference_type || '' === $reference_id || $product_id <= 0 || $vendor_id <= 0 || ( $bucket_id <= 0 && '' === $bucket_code ) || '' === $movement_type || 0.0 === $quantity_delta ) {
 			return new WP_Error( 'aims_invalid_inventory_movement', 'Inventory movement is missing required fields.' );
+		}
+
+		if ( $actor_user_id > 0 ) {
+			if ( ! $this->person_identity->is_aims_person( $actor_user_id ) ) {
+				return new WP_Error( 'aims_person_required', 'Only AIMS users can apply inventory movements.' );
+			}
+
+			if ( ! $this->auth_service->can_manage_vendor_inventory_for_vendor( $actor_user_id, $vendor_id ) ) {
+				return new WP_Error( 'aims_inventory_scope_denied', 'This user is not authorized to manage inventory for the specified vendor.' );
+			}
 		}
 
 		if ( ! AIMS_Inventory_Movement_Events::is_allowed( $movement_type ) ) {

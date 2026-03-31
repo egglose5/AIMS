@@ -260,45 +260,27 @@ class AIMS_Admin_Menu {
 	}
 
 	private function user_can_access_events_shell(): bool {
-		if ( $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_event_planning( get_current_user_id() ) ) {
-			return true;
-		}
-
-		return current_user_can( AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL );
+		return $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_event_planning( get_current_user_id() );
 	}
 
 	private function user_can_manage_vendors(): bool {
-		if ( $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_vendors( get_current_user_id() ) ) {
-			return true;
-		}
-
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS );
+		return $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_vendors( get_current_user_id() );
 	}
 
 	private function user_can_manage_square_sync(): bool {
-		if ( $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_square_sync( get_current_user_id() ) ) {
-			return true;
-		}
-
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC );
+		return $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_square_sync( get_current_user_id() );
 	}
 
 	private function user_can_access_sync_runs(): bool {
-		if ( $this->responsibility_auth !== null ) {
-			$uid = get_current_user_id();
-			if ( $this->responsibility_auth->can_run_square_sync_replay( $uid ) || $this->responsibility_auth->can_run_square_sync_undo( $uid ) ) {
-				return true;
-			}
+		if ( $this->responsibility_auth === null ) {
+			return false;
 		}
 
-		return current_user_can( AIMS_Capabilities::CAP_RUN_REPLAY );
+		$uid = get_current_user_id();
+		return $this->responsibility_auth->can_run_square_sync_replay( $uid ) || $this->responsibility_auth->can_run_square_sync_undo( $uid );
 	}
 
 	private function user_can_view_reports(): bool {
-		if ( $this->responsibility_auth !== null && $this->responsibility_auth->can_view_reports( get_current_user_id() ) ) {
-			return true;
-		}
-
-		return current_user_can( AIMS_Capabilities::CAP_VIEW_REPORTS );
+		return $this->responsibility_auth !== null && $this->responsibility_auth->can_view_reports( get_current_user_id() );
 	}
 }

@@ -7,10 +7,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Bucket_Movement_Service {
 	private $movements;
 	private $positions;
+	private $auth_service;
+	private $person_identity;
 
-	public function __construct( $movements, $positions = null ) {
+	public function __construct( $movements, $positions = null, AIMS_Responsibility_Authorization_Service $auth_service = null, AIMS_Person_Identity_Service $person_identity = null ) {
 		$this->movements = $movements;
 		$this->positions = $positions;
+		$this->auth_service = $auth_service ?: new AIMS_Responsibility_Authorization_Service();
+		$this->person_identity = $person_identity ?: new AIMS_Person_Identity_Service();
 	}
 
 	public function record_stock_in( array $data ) {
@@ -56,6 +60,7 @@ class AIMS_Bucket_Movement_Service {
 	}
 
 	public function record_movement( array $data ) {
+		$actor_user_id = (int) ( $data['applied_by'] ?? ( function_exists( 'get_current_user_id' ) ? get_current_user_id() : 0 ) );
 		$bucket_id      = ! empty( $data['bucket_id'] ) ? (int) $data['bucket_id'] : 0;
 		$vendor_id      = (int) ( $data['vendor_id'] ?? 0 );
 		$product_id     = (int) ( $data['product_id'] ?? 0 );
@@ -66,6 +71,16 @@ class AIMS_Bucket_Movement_Service {
 
 		if ( $bucket_id <= 0 || $vendor_id <= 0 || $product_id <= 0 || '' === $reference_type || '' === $reference_id || '' === $movement_type || 0.0 === $quantity_delta ) {
 			return new WP_Error( 'aims_invalid_bucket_movement', 'Bucket movement is missing required fields.' );
+		}
+
+		if ( $actor_user_id > 0 ) {
+			if ( ! $this->person_identity->is_aims_person( $actor_user_id ) ) {
+				return new WP_Error( 'aims_person_required', 'Only AIMS users can apply inventory movements.' );
+			}
+
+			if ( ! $this->auth_service->can_manage_vendor_inventory_for_vendor( $actor_user_id, $vendor_id ) ) {
+				return new WP_Error( 'aims_inventory_scope_denied', 'This user is not authorized to manage inventory for the specified vendor.' );
+			}
 		}
 
 		if ( ! AIMS_Inventory_Movement_Events::is_allowed( $movement_type ) ) {

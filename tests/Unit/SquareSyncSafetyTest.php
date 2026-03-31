@@ -57,39 +57,6 @@ final class SquareSyncSafetyTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( '2026-03-20 12:00:00', $summary['last_sync_completed_at'] );
 	}
 
-	public function testSquareSyncRowsExposeActionCapabilityFlags(): void {
-		TestState::set_current_user_id( 55 );
-		TestState::set_user_capabilities(
-			55,
-			array(
-				\AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC,
-				\AIMS_Capabilities::CAP_RUN_REPLAY,
-			)
-		);
-
-		$this->wpdb()->queue_results(
-			array(
-				array(
-					'id'                => 22,
-					'source_system'     => 'square',
-					'sync_watermark'    => '2026-03-24T10:00:00Z',
-					'processed_records' => 3,
-					'error_count'       => 0,
-					'completed_at'      => '2026-03-24 10:05:00',
-					'success'           => 1,
-				),
-			)
-		);
-
-		$provider = new \AIMS_Square_Sync_Runs_Data_Provider();
-		$rows     = $provider->get_rows();
-
-		$this->assertCount( 1, $rows );
-		$this->assertSame( 22, $rows[0]['run_id'] );
-		$this->assertTrue( $rows[0]['can_replay'] );
-		$this->assertFalse( $rows[0]['can_undo'] );
-	}
-
 	public function testSquareSyncRowsUseResponsibilityFlagsWhenEnabled(): void {
 		TestState::set_current_user_id( 56 );
 		update_option( \AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );

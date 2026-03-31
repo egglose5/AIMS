@@ -185,6 +185,10 @@ class AIMS_Capabilities {
 		);
 	}
 
+	public static function get_aims_role_slugs(): array {
+		return array_keys( self::get_portal_roles() );
+	}
+
 	private static function sync_role_caps( string $role_slug, string $role_name, array $caps ): void {
 		$role = get_role( $role_slug );
 

@@ -74,25 +74,11 @@ class AIMS_Square_Sync_Runs_Data_Provider {
 
 	private function can_replay(): bool {
 		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
-
-		if ( $user_id > 0 && is_object( $this->responsibility_auth ) && method_exists( $this->responsibility_auth, 'can_run_square_sync_replay' ) ) {
-			if ( $this->responsibility_auth->can_run_square_sync_replay( $user_id ) ) {
-				return true;
-			}
-		}
-
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC ) && current_user_can( AIMS_Capabilities::CAP_RUN_REPLAY );
+		return $user_id > 0 && is_object( $this->responsibility_auth ) && $this->responsibility_auth->can_run_square_sync_replay( $user_id );
 	}
 
 	private function can_undo(): bool {
 		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
-
-		if ( $user_id > 0 && is_object( $this->responsibility_auth ) && method_exists( $this->responsibility_auth, 'can_run_square_sync_undo' ) ) {
-			if ( $this->responsibility_auth->can_run_square_sync_undo( $user_id ) ) {
-				return true;
-			}
-		}
-
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC ) && current_user_can( AIMS_Capabilities::CAP_RUN_UNDO );
+		return $user_id > 0 && is_object( $this->responsibility_auth ) && $this->responsibility_auth->can_run_square_sync_undo( $user_id );
 	}
 }

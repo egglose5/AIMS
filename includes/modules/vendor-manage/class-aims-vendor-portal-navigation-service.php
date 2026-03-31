@@ -8,15 +8,18 @@ class AIMS_Vendor_Portal_Navigation_Service {
 	private $vendor_service;
 	private $vendor_event_assignments;
 	private $events_repository;
+	private $auth_service;
 
 	public function __construct(
 		AIMS_Vendor_Service $vendor_service = null,
 		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
-		AIMS_Event_Repository $events_repository = null
+		AIMS_Event_Repository $events_repository = null,
+		AIMS_Responsibility_Authorization_Service $auth_service = null
 	) {
 		$this->vendor_service = $vendor_service ?: new AIMS_Vendor_Service();
 		$this->vendor_event_assignments = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
 		$this->events_repository = $events_repository ?: new AIMS_Event_Repository();
+		$this->auth_service = $auth_service ?: new AIMS_Responsibility_Authorization_Service();
 	}
 
 	public function get_nav_model( array $request = array() ): array {
@@ -45,11 +48,20 @@ class AIMS_Vendor_Portal_Navigation_Service {
 		$user_email = (string) ( $user->user_email ?? '' );
 		$vendors = array();
 
+		// Primary: Check if user is directly a vendor (user_id in vendor metadata)
 		foreach ( (array) $this->vendor_service->list_vendors() as $vendor ) {
 			if ( ! is_array( $vendor ) ) {
 				continue;
 			}
 
+			// New model: vendor has user_id
+			$vendor_user_id = (int) ( $vendor['user_id'] ?? 0 );
+			if ( $vendor_user_id === $user_id ) {
+				$vendors[] = $vendor;
+				continue;
+			}
+
+			// Legacy fallback: match by email
 			$contact_email = (string) ( $vendor['contact_email'] ?? '' );
 			if ( '' !== $contact_email && $contact_email === $user_email ) {
 				$vendors[] = $vendor;
@@ -74,7 +86,8 @@ class AIMS_Vendor_Portal_Navigation_Service {
 		$pre_event_window_days = 3;
 
 		foreach ( $assigned_vendors as $vendor ) {
-			$vendor_id = (int) ( $vendor['id'] ?? 0 );
+			// Support both new model (user_id) and legacy model (id)
+			$vendor_id = (int) ( $vendor['user_id'] ?? $vendor['id'] ?? 0 );
 			if ( $vendor_id <= 0 ) {
 				continue;
 			}

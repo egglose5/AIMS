@@ -36,47 +36,21 @@ class AIMS_Event_Planning_Access_Service {
 			return true;
 		}
 
-		if ( $this->should_use_responsibility_model( $user_id ) ) {
-			return $this->responsibility_auth->can_manage_event_planning( $user_id );
+		if ( ! is_object( $this->responsibility_auth ) ) {
+			return false;
 		}
 
-		return $this->user_has_role(
-			$user_id,
-			array(
-				'aims_manager_user',
-				'aims_supervisor_user',
-			)
-		) || $this->user_has_any_capability(
-			$user_id,
-			array(
-				AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING,
-				AIMS_Capabilities::CAP_MANAGE_EVENT_BUCKETS,
-			)
-		);
+		return $this->responsibility_auth->can_manage_event_planning( $user_id );
 	}
 
 	public function can_view_all_events( int $user_id = 0 ): bool {
 		$user_id = $this->resolve_user_id( $user_id );
 
-		if ( $user_id <= 0 ) {
+		if ( $user_id <= 0 || ! is_object( $this->responsibility_auth ) ) {
 			return false;
 		}
 
-		if ( $this->should_use_responsibility_model( $user_id ) ) {
-			return $this->responsibility_auth->can_view_all_events( $user_id );
-		}
-
-		if ( $this->user_has_role( $user_id, array( 'administrator', 'shop_manager' ) ) ) {
-			return true;
-		}
-
-		return $this->user_has_any_capability(
-			$user_id,
-			array(
-				AIMS_Capabilities::CAP_MANAGE,
-				AIMS_Capabilities::CAP_MANAGE_EVENTS,
-			)
-		);
+		return $this->responsibility_auth->can_view_all_events( $user_id );
 	}
 
 	public function get_authorized_vendor_ids( int $user_id = 0 ): array {
@@ -114,16 +88,11 @@ class AIMS_Event_Planning_Access_Service {
 			return $this->get_all_event_ids();
 		}
 
-		if ( $this->should_use_responsibility_model( $user_id ) ) {
-			return $this->responsibility_auth->get_authorized_event_ids( $user_id );
-		}
-
-		$vendor_ids = $this->get_authorized_vendor_ids( $user_id );
-		if ( empty( $vendor_ids ) ) {
+		if ( ! is_object( $this->responsibility_auth ) ) {
 			return array();
 		}
 
-		return $this->get_event_ids_for_vendor_ids( $vendor_ids );
+		return $this->responsibility_auth->get_authorized_event_ids( $user_id );
 	}
 
 	public function get_authorized_events( int $user_id = 0 ): array {

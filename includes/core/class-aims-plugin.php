@@ -7,8 +7,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Plugin {
 	const OPTION_SCHEMA_VERSION = 'aims_schema_version';
 	const OPTION_INSTALLED_AT   = 'aims_installed_at';
-	const OPTION_RESPONSIBILITY_SEED_VERSION = 'aims_responsibility_seed_version';
-	const OPTION_RESPONSIBILITY_ENABLED      = 'aims_responsibility_rbac_enabled';
 	const SCHEMA_VERSION        = '0.6.0';
 
 	private static $instance = null;
@@ -47,8 +45,6 @@ class AIMS_Plugin {
 		return array(
 			self::OPTION_SCHEMA_VERSION,
 			self::OPTION_INSTALLED_AT,
-			self::OPTION_RESPONSIBILITY_SEED_VERSION,
-			self::OPTION_RESPONSIBILITY_ENABLED,
 		);
 	}
 
@@ -83,7 +79,6 @@ class AIMS_Plugin {
 		add_action( 'init', array( $this->capabilities, 'register' ) );
 		add_action( 'init', array( $this->installer, 'maybe_install' ), 5 );
 		add_action( 'init', array( $this, 'harden_schema_constraints' ), 6 );
-		add_action( 'init', array( $this, 'migrate_legacy_responsibilities' ), 7 );
 		add_action( 'admin_menu', array( $this->admin_menu, 'register' ) );
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
 
@@ -128,14 +123,5 @@ class AIMS_Plugin {
 		$wpdb->query( 'ALTER TABLE `' . $table_name . '` ADD KEY `event_bucket_active_lookup` (`event_id`, `is_active`, `display_order`)' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( 'ALTER TABLE `' . $table_name . '` ADD KEY `bucket_active_lookup` (`physical_bucket_id`, `is_active`)' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( 'ALTER TABLE `' . $table_name . '` ADD KEY `event_bucket_history_lookup` (`event_id`, `physical_bucket_id`, `assigned_at`)' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-	}
-
-	public function migrate_legacy_responsibilities(): void {
-		if ( ! class_exists( 'AIMS_Responsibility_Migration_Service' ) ) {
-			return;
-		}
-
-		$service = new AIMS_Responsibility_Migration_Service();
-		$service->maybe_seed_from_legacy();
 	}
 }

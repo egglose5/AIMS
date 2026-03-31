@@ -9,9 +9,17 @@ use AIMS\Tests\Support\TestState;
 final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 	public function testRegisterAddsThePlanningWorkspaceUnderTheEventsMenu(): void {
 		TestState::set_current_user_id( 1 );
-		TestState::set_user_capabilities( 1, array( \AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL ) );
 
-		$menu = new \AIMS_Admin_Menu();
+		$repo = new class() extends \AIMS_Responsibility_Assignment_Repository {
+			public function has_active_assignments_for_user( int $user_id ): bool { return true; }
+			public function user_has_responsibility( int $user_id, string $responsibility_key, string $scope_type = self::SCOPE_GLOBAL, int $scope_ref_id = 0 ): bool {
+				return 1 === $user_id && \AIMS_Responsibility_Authorization_Service::RESP_EVENT_PLANNING_ACCESS === $responsibility_key;
+			}
+			public function get_scope_ref_ids_for_user( int $user_id, string $responsibility_key, string $scope_type ): array { return array(); }
+		};
+
+		$auth = new \AIMS_Responsibility_Authorization_Service( $repo );
+		$menu = new \AIMS_Admin_Menu( null, null, null, $auth );
 		$menu->register();
 
 		$submenu_calls = array_values(
@@ -133,24 +141,5 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 
 		$this->assertNotEmpty( $reports_calls, 'Reports submenu should register for users with reports_view responsibility' );
 		$this->assertSame( 'read', $reports_calls[0]['args'][3], 'Responsibility-gated items should use read capability' );
-	}
-
-	public function testLegacyCapabilityFallbackRegistersVendorsSubmenu(): void {
-		TestState::set_current_user_id( 11 );
-		TestState::set_user_capabilities( 11, array( \AIMS_Capabilities::CAP_MANAGE_VENDORS ) );
-
-		$menu = new \AIMS_Admin_Menu();
-		$menu->register();
-
-		$vendor_calls = array_values(
-			array_filter(
-				TestState::get_hook_calls( 'add_submenu_page' ),
-				static function ( array $call ): bool {
-					return 'aims-vendors' === (string) ( $call['args'][4] ?? '' );
-				}
-			)
-		);
-
-		$this->assertNotEmpty( $vendor_calls, 'Vendors submenu should register for users with CAP_MANAGE_VENDORS (legacy fallback)' );
 	}
 }

@@ -12,6 +12,9 @@ class AIMS_Responsibility_Authorization_Service {
 	public const RESP_EVENT_PLANNING_MUTATE   = 'event_planning_mutate';
 	public const RESP_EVENT_PLANNING_ALL      = 'event_planning_all_events';
 	public const RESP_VENDOR_MANAGEMENT        = 'vendor_management';
+	public const RESP_VENDOR_SUBMIT_CHECKIN    = 'vendor_submit_checkin';
+	public const RESP_VENDOR_VIEW_COMMISSION   = 'vendor_view_commission';
+	public const RESP_VENDOR_MANAGE_INVENTORY  = 'vendor_manage_inventory';
 	public const RESP_SQUARE_SYNC_MANAGEMENT   = 'square_sync_management';
 	public const RESP_SQUARE_SYNC_REPLAY       = 'square_sync_replay';
 	public const RESP_SQUARE_SYNC_UNDO         = 'square_sync_undo';
@@ -19,13 +22,16 @@ class AIMS_Responsibility_Authorization_Service {
 
 	private $assignments;
 	private $vendor_event_assignments;
+	private $person_identity;
 
 	public function __construct(
 		AIMS_Responsibility_Assignment_Repository $assignments = null,
-		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null
+		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
+		AIMS_Person_Identity_Service $person_identity = null
 	) {
 		$this->assignments = $assignments ?: new AIMS_Responsibility_Assignment_Repository();
 		$this->vendor_event_assignments = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
+		$this->person_identity = $person_identity ?: new AIMS_Person_Identity_Service();
 	}
 
 	public function has_any_assignments_for_user( int $user_id = 0 ): bool {
@@ -106,6 +112,68 @@ class AIMS_Responsibility_Authorization_Service {
 		$user_id = $this->resolve_user_id( $user_id );
 
 		return $this->has_global_responsibility( $user_id, self::RESP_VENDOR_MANAGEMENT );
+	}
+
+	public function can_submit_vendor_checkin( int $user_id = 0 ): bool {
+		$user_id = $this->resolve_user_id( $user_id );
+
+		if ( $this->has_global_responsibility( $user_id, self::RESP_VENDOR_MANAGEMENT ) ) {
+			return true;
+		}
+
+		return $this->assignments->user_has_responsibility( $user_id, self::RESP_VENDOR_SUBMIT_CHECKIN );
+	}
+
+	public function can_view_vendor_commission( int $user_id = 0 ): bool {
+		$user_id = $this->resolve_user_id( $user_id );
+
+		if ( $this->has_global_responsibility( $user_id, self::RESP_VENDOR_MANAGEMENT ) ) {
+			return true;
+		}
+
+		return $this->assignments->user_has_responsibility( $user_id, self::RESP_VENDOR_VIEW_COMMISSION );
+	}
+
+	public function can_manage_vendor_inventory( int $user_id = 0 ): bool {
+		$user_id = $this->resolve_user_id( $user_id );
+
+		if ( $this->has_global_responsibility( $user_id, self::RESP_VENDOR_MANAGEMENT ) ) {
+			return true;
+		}
+
+		return $this->assignments->user_has_responsibility( $user_id, self::RESP_VENDOR_MANAGE_INVENTORY );
+	}
+
+	public function can_manage_vendor_inventory_for_vendor( int $user_id, int $vendor_id ): bool {
+		$user_id = $this->resolve_user_id( $user_id );
+		$vendor_id = (int) $vendor_id;
+
+		if ( $user_id <= 0 || $vendor_id <= 0 ) {
+			return false;
+		}
+
+		if ( ! $this->is_enabled() ) {
+			return true;
+		}
+
+		if ( $this->should_enforce_person_boundary( $user_id ) && ! $this->is_aims_person( $user_id ) ) {
+			return false;
+		}
+
+		if ( $this->has_global_responsibility( $user_id, self::RESP_VENDOR_MANAGEMENT ) ) {
+			return true;
+		}
+
+		if ( $this->assignments->user_has_responsibility( $user_id, self::RESP_VENDOR_MANAGE_INVENTORY ) ) {
+			return true;
+		}
+
+		return $this->assignments->user_has_responsibility(
+			$user_id,
+			self::RESP_VENDOR_MANAGE_INVENTORY,
+			AIMS_Responsibility_Assignment_Repository::SCOPE_VENDOR,
+			$vendor_id
+		);
 	}
 
 	public function can_manage_square_sync( int $user_id = 0 ): bool {
@@ -198,11 +266,27 @@ class AIMS_Responsibility_Authorization_Service {
 			return false;
 		}
 
+		if ( $this->should_enforce_person_boundary( $user_id ) && ! $this->is_aims_person( $user_id ) ) {
+			return false;
+		}
+
 		if ( $this->assignments->user_has_responsibility( $user_id, self::RESP_SYSTEM_ADMIN ) ) {
 			return true;
 		}
 
 		return $this->assignments->user_has_responsibility( $user_id, $responsibility_key );
+	}
+
+	private function is_aims_person( int $user_id ): bool {
+		return is_object( $this->person_identity ) && $this->person_identity->is_aims_person( $user_id );
+	}
+
+	private function should_enforce_person_boundary( int $user_id ): bool {
+		if ( $user_id <= 0 || ! function_exists( 'get_user_by' ) ) {
+			return false;
+		}
+
+		return is_object( get_user_by( 'id', $user_id ) );
 	}
 
 	private function get_event_ids_for_vendor_scope( int $user_id, string $responsibility_key ): array {

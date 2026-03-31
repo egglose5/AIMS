@@ -192,14 +192,7 @@ class AIMS_Square_Sync_Module implements AIMS_Module {
 
 	private function can_manage_square_sync(): bool {
 		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
-
-		if ( $user_id > 0 && is_object( $this->responsibility_auth ) && method_exists( $this->responsibility_auth, 'can_manage_square_sync' ) ) {
-			if ( $this->responsibility_auth->can_manage_square_sync( $user_id ) ) {
-				return true;
-			}
-		}
-
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC );
+		return $user_id > 0 && is_object( $this->responsibility_auth ) && $this->responsibility_auth->can_manage_square_sync( $user_id );
 	}
 }
 

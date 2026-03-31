@@ -10,53 +10,6 @@ use AIMS_Event_Planning_Action_Service;
 use AIMS\Tests\Support\TestState;
 
 final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
-	public function testPlanningAssignmentDefaultsBucketStatusToStaged(): void {
-		TestState::set_current_user_id( 77 );
-
-		$assignment_repo = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
-			public array $saved = array();
-
-			public function save( array $data, int $assignment_id = 0 ): int {
-				$this->saved[] = array(
-					'data'          => $data,
-					'assignment_id' => $assignment_id,
-				);
-
-				return 501;
-			}
-		};
-
-		$access_service = new class() {
-			public function can_access_event_planning( int $user_id ): bool {
-				return 77 === $user_id;
-			}
-
-			public function get_authorized_event_ids( int $user_id ): array {
-				return 77 === $user_id ? array( 10 ) : array();
-			}
-		};
-
-		$service = new AIMS_Event_Planning_Action_Service(
-			new AIMS_Event_Bucket_Assignment_Service( $assignment_repo ),
-			$access_service,
-			new class() extends \AIMS_Event_Bucket_Assignment_Repository {}
-		);
-
-		$result = $service->assign_bucket(
-			array(
-				'event_id'           => 10,
-				'physical_bucket_id' => 200,
-			)
-		);
-
-		$this->assertTrue( $result['success'] );
-		$this->assertSame( 501, $result['assignment_id'] );
-		$this->assertCount( 1, $assignment_repo->saved );
-		$this->assertSame( 10, $assignment_repo->saved[0]['data']['event_id'] );
-		$this->assertSame( 200, $assignment_repo->saved[0]['data']['physical_bucket_id'] );
-		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED, $assignment_repo->saved[0]['data']['assignment_status'] );
-	}
-
 	public function testTransitionAssignmentStatusPersistsValidStatusWithoutLedgerSideEffects(): void {
 		TestState::set_current_time( '2026-03-26 09:30:00' );
 

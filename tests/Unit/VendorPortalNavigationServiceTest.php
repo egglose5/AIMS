@@ -17,7 +17,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$vendor_service = new class() extends \AIMS_Vendor_Service {
 			public function __construct() {}
 
-			public function list_vendors(): array {
+			public function list_vendors( string $status = '' ): array {
 				return array();
 			}
 		};
@@ -45,7 +45,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$vendor_service = new class() extends \AIMS_Vendor_Service {
 			public function __construct() {}
 
-			public function list_vendors(): array {
+			public function list_vendors( string $status = '' ): array {
 				return array(
 					array(
 						'id'                  => 1,
@@ -87,7 +87,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$vendor_service = new class() extends \AIMS_Vendor_Service {
 			public function __construct() {}
 
-			public function list_vendors(): array {
+			public function list_vendors( string $status = '' ): array {
 				return array(
 					array(
 						'id'            => 1,
@@ -160,7 +160,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$vendor_service = new class() extends \AIMS_Vendor_Service {
 			public function __construct() {}
 
-			public function list_vendors(): array {
+			public function list_vendors( string $status = '' ): array {
 				return array(
 					array(
 						'id'            => 1,
@@ -223,7 +223,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$vendor_service = new class() extends \AIMS_Vendor_Service {
 			public function __construct() {}
 
-			public function list_vendors(): array {
+			public function list_vendors( string $status = '' ): array {
 				return array(
 					array(
 						'id'            => 1,
