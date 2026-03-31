@@ -7,6 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Vendor_Module implements AIMS_Module {
 	private $vendor_service;
 	private $vendor_checkin_portal_controller;
+	private $vendor_portal_navigation_controller;
 	private const ADMIN_PAGE = 'aims-vendors';
 
 	public function __construct( AIMS_Vendor_Service $vendor_service ) {
@@ -15,12 +16,18 @@ class AIMS_Vendor_Module implements AIMS_Module {
 
 	public function register(): void {
 		add_action( 'init', array( $this, 'register_public_hooks' ) );
+		add_action( 'widgets_init', array( $this, 'register_widgets' ) );
 		add_action( 'admin_post_aims_vendor_save', array( $this, 'handle_vendor_save' ) );
 		add_action( 'admin_post_aims_vendor_archive', array( $this, 'handle_vendor_archive' ) );
 	}
 
 	public function register_public_hooks(): void {
 		$this->get_vendor_checkin_portal_controller()->register();
+		$this->get_vendor_portal_navigation_controller()->register();
+	}
+
+	public function register_widgets(): void {
+		register_widget( 'AIMS_Vendor_Portal_Navigation_Widget' );
 	}
 
 	public function render_shell(): void {
@@ -89,6 +96,14 @@ class AIMS_Vendor_Module implements AIMS_Module {
 		}
 
 		return $this->vendor_checkin_portal_controller;
+	}
+
+	private function get_vendor_portal_navigation_controller(): AIMS_Vendor_Portal_Navigation_Controller {
+		if ( null === $this->vendor_portal_navigation_controller ) {
+			$this->vendor_portal_navigation_controller = new AIMS_Vendor_Portal_Navigation_Controller();
+		}
+
+		return $this->vendor_portal_navigation_controller;
 	}
 
 	private function render_status_notice(): void {

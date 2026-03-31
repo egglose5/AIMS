@@ -87,10 +87,14 @@ The repository currently provides:
 
 ## Next implementation phase
 
-1. Add explicit `loaded_at` / `in_transit_at` timestamps to assignment records so elapsed transit time can be tracked as an analytics dimension.
-2. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
-3. Expand Square replay and fulfillment wiring only after the planning and commitment workflow remains stable under team usage.
-4. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+1. Add a frontend vendor portal navigation layer that fits the active site theme instead of recreating a wp-admin-style vendor shell.
+2. Prefer a dynamic sidebar widget/block/shortcode for OceanWP so vendor navigation lives inside the existing frontend sidebar and mobile layout.
+3. Show vendor portal links conditionally based on login state, vendor assignment, and event timing.
+4. Surface `Event Check-In` only when the vendor has an assigned event inside the allowed pre-event window.
+5. Add explicit `loaded_at` / `in_transit_at` timestamps to assignment records so elapsed transit time can be tracked as an analytics dimension.
+6. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
+7. Expand Square replay and fulfillment wiring only after the planning and commitment workflow remains stable under team usage.
+8. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
 ## Upgrade path
 

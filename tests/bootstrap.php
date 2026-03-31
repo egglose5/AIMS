@@ -292,6 +292,13 @@ if ( ! function_exists( 'add_query_arg' ) ) {
 	}
 }
 
+if ( ! function_exists( 'home_url' ) ) {
+	function home_url( string $path = '' ): string {
+		$base = 'http://localhost/';
+		return '' === $path ? $base : $base . ltrim( $path, '/' );
+	}
+}
+
 if ( ! function_exists( 'wp_unslash' ) ) {
 	function wp_unslash( $value ) {
 		return $value;

@@ -61,3 +61,11 @@ This checklist maps release tasks to concrete code areas in this repository.
   - Upgrade notes documented in `docs/upgrade-path.md`.
   - Full-suite run currently passes (`76/76`).
 
+## Next Milestone - Frontend Vendor Portal Navigation
+
+- [ ] Add a frontend vendor portal navigation layer that fits the active site theme instead of recreating a wp-admin-style vendor shell.
+- [ ] Prefer a dynamic sidebar widget, block, or shortcode for OceanWP so vendor navigation lives inside the existing frontend sidebar and mobile layout.
+- [ ] Show vendor portal links conditionally based on login state, vendor assignment, and event timing.
+- [ ] Surface `Event Check-In` only when the vendor has an assigned event inside the allowed pre-event window.
+- [ ] Keep execution timestamp and exception visibility work aligned behind the vendor portal navigation milestone.
+
