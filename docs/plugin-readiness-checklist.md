@@ -61,11 +61,21 @@ This checklist maps release tasks to concrete code areas in this repository.
   - Upgrade notes documented in `docs/upgrade-path.md`.
   - Full-suite run currently passes (`76/76`).
 
-## Next Milestone - Frontend Vendor Portal Navigation
+## Milestone F - Frontend Vendor Portal Navigation
 
-- [ ] Add a frontend vendor portal navigation layer that fits the active site theme instead of recreating a wp-admin-style vendor shell.
-- [ ] Prefer a dynamic sidebar widget, block, or shortcode for OceanWP so vendor navigation lives inside the existing frontend sidebar and mobile layout.
-- [ ] Show vendor portal links conditionally based on login state, vendor assignment, and event timing.
-- [ ] Surface `Event Check-In` only when the vendor has an assigned event inside the allowed pre-event window.
-- [ ] Keep execution timestamp and exception visibility work aligned behind the vendor portal navigation milestone.
+- [x] Add a frontend vendor portal navigation layer that fits the active site theme instead of recreating a wp-admin-style vendor shell.
+- [x] Prefer a dynamic sidebar widget, block, or shortcode for OceanWP so vendor navigation lives inside the existing frontend sidebar and mobile layout.
+- [x] Show vendor portal links conditionally based on login state, vendor assignment, and event timing.
+- [x] Surface `Event Check-In` only when the vendor has an assigned event inside the allowed pre-event window.
+- [x] Cover vendor portal navigation authorization and timing behavior with unit tests.
+  - Frontend nav entry points: `includes/modules/vendor-manage/class-aims-vendor-portal-navigation-controller.php`, `includes/modules/vendor-manage/class-aims-vendor-portal-navigation-widget.php`, and `templates/vendor-portal-navigation.php`.
+  - Authorization and timing logic: `includes/modules/vendor-manage/class-aims-vendor-portal-navigation-service.php` and `includes/repositories/class-aims-vendor-event-assignment-repository.php`.
+  - Test coverage: `tests/Unit/VendorPortalNavigationServiceTest.php` (check-in window opens at the event start-time boundary three days before the event).
+
+## Next Milestone - Execution Telemetry and Exception Visibility
+
+- [ ] Add explicit `loaded_at` and `in_transit_at` timestamps to assignment records so elapsed transit time is trackable as analytics.
+- [ ] Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
+- [ ] Expand Square replay and fulfillment wiring after planning/commitment workflow stability under team usage is confirmed.
+- [ ] Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
