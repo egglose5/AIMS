@@ -121,7 +121,7 @@ AIMS now uses a ledger-first inventory design:
 
 - `aims_inventory_movements` is the immutable stock movement ledger.
 - `aims_inventory_buckets` is the current aggregate view per vendor/product/bucket.
-- stock changes should go through `AIMS_Inventory_Service` only.
+- stock changes should be applied through movement services (`AIMS_Inventory_Service` and execution flows that delegate to `AIMS_Bucket_Movement_Service`).
 - apply-once protection is enforced by the unique movement reference key.
 - `aims_customers` and `aims_customer_addresses` store Square customer and address data.
 - `aims_events` now carries event-level financial summary fields for gross sales, net sales, vendor payouts, expenses, and profit.

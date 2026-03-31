@@ -40,7 +40,7 @@ Stock changes in AIMS must only occur for physical-world inventory movement.
 
 - `stock_in` -> `inbound_receipt`, `manual_adjustment`, `physical_count`
 - `stock_out` -> `manual_adjustment`, `physical_count`, `shrinkage`
-- `transfer` -> `bucket_transfer`, `location_transfer`
+- `transfer` -> `bucket_transfer`, `location_transfer`, `custody_transfer`, `custody_receipt`, `custody_return_dispatch`, `custody_return_receipt`
 - `event_load_out` -> `vendor_event_checkin`, `event_execution`
 - `event_return` -> `vendor_event_return`, `event_execution`
 - `stitcher_handoff` -> `stitch_job_handoff`

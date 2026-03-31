@@ -30,7 +30,7 @@ class AIMS_Bucket_Movement_Service {
 	}
 
 	public function record_transfer( array $data ) {
-		$data['movement_type'] = $data['movement_type'] ?? 'transfer';
+		$data['movement_type'] = $data['movement_type'] ?? AIMS_Inventory_Movement_Events::WAREHOUSE_TRANSFER;
 
 		return $this->record_movement( $data );
 	}

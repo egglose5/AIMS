@@ -20,7 +20,7 @@ This checklist maps release tasks to concrete code areas in this repository.
   - `includes/admin/class-aims-admin-menu.php`
   - `includes/modules/vendor-manage/*`
   - `includes/services/class-aims-vendor-service.php`
-  - `includes/repositories/class-aims-vendor-repository.php`
+  - `includes/repositories/class-aims-vendor-person-repository.php`
 - [x] Turn Square Sync shell into actionable tooling (manual ingest run, mode selection, replay/undo links):
   - `includes/modules/square-sync/class-aims-square-sync-module.php`
   - `includes/admin/class-aims-square-sync-runs-page.php`

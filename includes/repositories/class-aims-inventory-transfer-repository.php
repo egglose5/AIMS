@@ -1,0 +1,191 @@
+<?php
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class AIMS_Inventory_Transfer_Repository {
+	public function get_table_name(): string {
+		global $wpdb;
+
+		return $wpdb->prefix . 'aims_inventory_transfers';
+	}
+
+	public function create( array $data ): int {
+		global $wpdb;
+
+		$record = array(
+			'transfer_uuid'        => sanitize_text_field( $data['transfer_uuid'] ?? wp_generate_uuid4() ),
+			'transfer_code'        => sanitize_text_field( $data['transfer_code'] ?? $this->generate_transfer_code() ),
+			'source_vendor_id'     => (int) ( $data['source_vendor_id'] ?? 0 ),
+			'target_vendor_id'     => (int) ( $data['target_vendor_id'] ?? 0 ),
+			'transfer_status'      => sanitize_key( $data['transfer_status'] ?? 'pending' ),
+			'transfer_type'        => sanitize_key( $data['transfer_type'] ?? 'standard' ),
+			'dispatch_requested_at' => $this->normalize_datetime( $data['dispatch_requested_at'] ?? null ),
+			'initiated_by'         => (int) ( $data['initiated_by'] ?? get_current_user_id() ),
+			'reference_type'       => sanitize_key( $data['reference_type'] ?? '' ),
+			'reference_id'         => sanitize_text_field( $data['reference_id'] ?? '' ),
+			'notes'                => isset( $data['notes'] ) ? sanitize_textarea_field( $data['notes'] ) : null,
+			'created_at'           => current_time( 'mysql' ),
+			'updated_at'           => current_time( 'mysql' ),
+		);
+
+		$format = array( '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s' );
+
+		$wpdb->insert( $this->get_table_name(), $record, $format );
+
+		return (int) $wpdb->insert_id;
+	}
+
+	public function find( int $transfer_id ): ?array {
+		global $wpdb;
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare( 'SELECT * FROM ' . $this->get_table_name() . ' WHERE id = %d', $transfer_id ),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $row : null;
+	}
+
+	public function get_by_uuid( string $uuid ): ?array {
+		global $wpdb;
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare( 'SELECT * FROM ' . $this->get_table_name() . ' WHERE transfer_uuid = %s LIMIT 1', $uuid ),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $row : null;
+	}
+
+	public function get_by_code( string $code ): ?array {
+		global $wpdb;
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare( 'SELECT * FROM ' . $this->get_table_name() . ' WHERE transfer_code = %s LIMIT 1', $code ),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $row : null;
+	}
+
+	public function update_status( int $transfer_id, string $status, array $extra_data = array() ): bool {
+		global $wpdb;
+
+		$record = array(
+			'transfer_status' => sanitize_key( $status ),
+			'updated_at'      => current_time( 'mysql' ),
+		);
+
+		// Add timestamp fields for status transitions
+		if ( 'dispatched' === $status ) {
+			$record['dispatch_confirmed_at'] = current_time( 'mysql' );
+		} elseif ( 'received' === $status ) {
+			$record['receipt_confirmed_at'] = current_time( 'mysql' );
+			if ( isset( $extra_data['received_by'] ) ) {
+				$record['received_by'] = (int) $extra_data['received_by'];
+			}
+		} elseif ( 'cancelled' === $status ) {
+			$record['cancelled_at'] = current_time( 'mysql' );
+			if ( isset( $extra_data['cancelled_by'] ) ) {
+				$record['cancelled_by'] = (int) $extra_data['cancelled_by'];
+			}
+		}
+
+		$result = $wpdb->update(
+			$this->get_table_name(),
+			$record,
+			array( 'id' => $transfer_id ),
+			array( '%s', '%s', '%s' ),
+			array( '%d' )
+		);
+
+		return false !== $result;
+	}
+
+	public function get_for_vendor( int $vendor_id, array $filters = array() ): array {
+		global $wpdb;
+
+		$where_parts = array( '(source_vendor_id = %d OR target_vendor_id = %d)' );
+		$where_values = array( $vendor_id, $vendor_id );
+
+		if ( isset( $filters['transfer_status'] ) && '' !== $filters['transfer_status'] ) {
+			$where_parts[] = 'transfer_status = %s';
+			$where_values[] = sanitize_key( $filters['transfer_status'] );
+		}
+
+		if ( isset( $filters['transfer_type'] ) && '' !== $filters['transfer_type'] ) {
+			$where_parts[] = 'transfer_type = %s';
+			$where_values[] = sanitize_key( $filters['transfer_type'] );
+		}
+
+		if ( isset( $filters['initiated_by'] ) && (int) $filters['initiated_by'] > 0 ) {
+			$where_parts[] = 'initiated_by = %d';
+			$where_values[] = (int) $filters['initiated_by'];
+		}
+
+		$where_clause = implode( ' AND ', $where_parts );
+
+		$query = $wpdb->prepare(
+			"SELECT * FROM {$this->get_table_name()} WHERE {$where_clause} ORDER BY created_at DESC LIMIT %d OFFSET %d",
+			array_merge(
+				$where_values,
+				array(
+					(int) ( $filters['limit'] ?? 100 ),
+					(int) ( $filters['offset'] ?? 0 ),
+				)
+			)
+		);
+
+		$results = $wpdb->get_results( $query, ARRAY_A );
+
+		return is_array( $results ) ? $results : array();
+	}
+
+	public function get_incoming_for_vendor( int $vendor_id, array $statuses = array( 'pending', 'in_transit' ) ): array {
+		global $wpdb;
+
+		$status_list = implode( ',', array_map( 'sanitize_key', $statuses ) );
+
+		$query = $wpdb->prepare(
+			"SELECT * FROM {$this->get_table_name()} WHERE target_vendor_id = %d AND transfer_status IN ({$status_list}) ORDER BY created_at DESC",
+			$vendor_id
+		);
+
+		$results = $wpdb->get_results( $query, ARRAY_A );
+
+		return is_array( $results ) ? $results : array();
+	}
+
+	public function get_outgoing_for_vendor( int $vendor_id, array $statuses = array( 'pending', 'dispatched', 'in_transit' ) ): array {
+		global $wpdb;
+
+		$status_list = implode( ',', array_map( 'sanitize_key', $statuses ) );
+
+		$query = $wpdb->prepare(
+			"SELECT * FROM {$this->get_table_name()} WHERE source_vendor_id = %d AND transfer_status IN ({$status_list}) ORDER BY created_at DESC",
+			$vendor_id
+		);
+
+		$results = $wpdb->get_results( $query, ARRAY_A );
+
+		return is_array( $results ) ? $results : array();
+	}
+
+	private function normalize_datetime( $value ): ?string {
+		if ( null === $value || '' === $value ) {
+			return null;
+		}
+
+		if ( is_numeric( $value ) ) {
+			return gmdate( 'Y-m-d H:i:s', (int) $value );
+		}
+
+		return sanitize_text_field( (string) $value );
+	}
+
+	private function generate_transfer_code(): string {
+		return 'TRANSFER-' . strtoupper( substr( uniqid(), -8 ) );
+	}
+}

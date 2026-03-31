@@ -64,4 +64,15 @@ final class InventoryMovementEventsTest extends \AIMS\Tests\TestCase {
 		$this->assertContains( 'vendor_event_return', $allowed_refs );
 	}
 
+	public function testWarehouseTransferIncludesCustodyReferences(): void {
+		$allowed_refs = AIMS_Inventory_Movement_Events::allowed_references_for_movement(
+			AIMS_Inventory_Movement_Events::WAREHOUSE_TRANSFER
+		);
+
+		$this->assertContains( 'custody_transfer', $allowed_refs );
+		$this->assertContains( 'custody_receipt', $allowed_refs );
+		$this->assertContains( 'custody_return_dispatch', $allowed_refs );
+		$this->assertContains( 'custody_return_receipt', $allowed_refs );
+	}
+
 }

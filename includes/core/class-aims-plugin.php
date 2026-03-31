@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Plugin {
 	const OPTION_SCHEMA_VERSION = 'aims_schema_version';
 	const OPTION_INSTALLED_AT   = 'aims_installed_at';
-	const SCHEMA_VERSION        = '0.7.0';
+	const SCHEMA_VERSION        = '0.8.0';
 
 	private static $instance = null;
 
@@ -83,6 +83,9 @@ class AIMS_Plugin {
 		add_action( 'init', array( $this, 'harden_schema_constraints' ), 6 );
 		add_action( 'admin_menu', array( $this->admin_menu, 'register' ) );
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
+
+		// Register inventory transfer admin actions
+		add_action( 'init', array( new AIMS_Inventory_Transfer_Actions(), 'register' ), 7 );
 
 		foreach ( $this->modules as $module ) {
 			if ( $module instanceof AIMS_Module ) {

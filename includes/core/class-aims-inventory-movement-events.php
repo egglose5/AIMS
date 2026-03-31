@@ -69,7 +69,7 @@ class AIMS_Inventory_Movement_Events {
 	private static function reference_matrix(): array {
 		return array(
 			self::ORIGIN_INBOUND            => array( 'inbound_receipt', 'purchase_order', 'supplier_delivery' ),
-			self::WAREHOUSE_TRANSFER        => array( 'bucket_transfer', 'location_transfer' ),
+			self::WAREHOUSE_TRANSFER        => array( 'bucket_transfer', 'location_transfer', 'custody_transfer', 'custody_receipt', 'custody_return_dispatch', 'custody_return_receipt' ),
 			self::ALLOCATE_TO_EVENT_PREPACK => array( 'event_prepack_pickup', 'vendor_event_checkin' ),
 			self::ALLOCATE_TO_WOO_FULFILLMENT => array( 'woo_order_fulfillment', 'fulfillment_pickup_ticket' ),
 			self::ALLOCATE_TO_STITCHER      => array( 'stitch_job_handoff' ),
