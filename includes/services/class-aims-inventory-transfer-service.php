@@ -27,23 +27,30 @@ class AIMS_Inventory_Transfer_Service {
 	/**
 	 * Create a new transfer draft.
 	 *
-	 * @param int   $source_vendor_id Source vendor ID.
-	 * @param int   $target_vendor_id Target vendor ID.
+	 * @param int   $source_node_id Source custody node ID.
+	 * @param int   $target_node_id Target custody node ID.
 	 * @param array $data Optional data array with reference_type, reference_id, notes.
 	 * @return array Success or error response with transfer_id.
 	 */
-	public function create_draft( int $source_vendor_id, int $target_vendor_id, array $data = array() ): array {
-		if ( $source_vendor_id <= 0 ) {
-			return $this->error_response( 'Source vendor is required.', 'missing_source_vendor' );
+	public function create_draft( int $source_node_id, int $target_node_id, array $data = array() ): array {
+		if ( $source_node_id <= 0 ) {
+			return $this->error_response( 'Source node is required.', 'missing_source_node' );
 		}
 
-		if ( $target_vendor_id <= 0 ) {
-			return $this->error_response( 'Target vendor is required.', 'missing_target_vendor' );
+		if ( $target_node_id <= 0 ) {
+			return $this->error_response( 'Target node is required.', 'missing_target_node' );
 		}
+
+		$source_node_type = sanitize_key( (string) ( $data['source_node_type'] ?? 'vendor' ) );
+		$target_node_type = sanitize_key( (string) ( $data['target_node_type'] ?? 'vendor' ) );
 
 		$transfer_data = array(
-			'source_vendor_id'  => $source_vendor_id,
-			'target_vendor_id'  => $target_vendor_id,
+			'source_node_type'  => $source_node_type,
+			'source_node_id'    => $source_node_id,
+			'target_node_type'  => $target_node_type,
+			'target_node_id'    => $target_node_id,
+			'source_vendor_id'  => ( 'vendor' === $source_node_type ) ? $source_node_id : (int) ( $data['source_vendor_id'] ?? 0 ),
+			'target_vendor_id'  => ( 'vendor' === $target_node_type ) ? $target_node_id : (int) ( $data['target_vendor_id'] ?? 0 ),
 			'transfer_status'   => 'pending',
 			'transfer_type'     => sanitize_key( $data['transfer_type'] ?? 'standard' ),
 			'initiated_by'      => (int) ( $data['initiated_by'] ?? get_current_user_id() ),
@@ -102,7 +109,10 @@ class AIMS_Inventory_Transfer_Service {
 			return $this->error_response( 'Quantity must be greater than zero.', 'invalid_quantity' );
 		}
 
-		$vendor_id = (int) ( $data['vendor_id'] ?? $transfer['source_vendor_id'] );
+		$vendor_id = (int) ( $data['vendor_id'] ?? $transfer['source_vendor_id'] ?? 0 );
+		if ( $vendor_id <= 0 && 'vendor' === (string) ( $transfer['source_node_type'] ?? '' ) ) {
+			$vendor_id = (int) ( $transfer['source_node_id'] ?? 0 );
+		}
 		if ( $vendor_id <= 0 ) {
 			$vendor_id = $this->derive_vendor_from_bucket( $source_bucket_id );
 		}

@@ -8,14 +8,16 @@ class AIMS_Inventory_Overview_Page {
 	private $data_provider;
 	private $actions;
 	private $current_user_id;
-	private $user_vendor_id;
+	private $user_node_id;
+	private $user_node_type;
 
 	public function __construct( AIMS_Inventory_Overview_Data_Provider $data_provider = null ) {
 		global $current_user;
 		$this->data_provider   = $data_provider ?: new AIMS_Inventory_Overview_Data_Provider();
 		$this->actions         = new AIMS_Inventory_Transfer_Actions();
 		$this->current_user_id = get_current_user_id();
-		$this->user_vendor_id  = $this->resolve_user_vendor(); // Simplified vendor assignment
+		$this->user_node_id    = $this->resolve_user_node();
+		$this->user_node_type  = 'vendor';
 	}
 
 	public function render(): void {
@@ -63,12 +65,12 @@ class AIMS_Inventory_Overview_Page {
 	}
 
 	private function render_outgoing_panel(): void {
-		if ( $this->user_vendor_id <= 0 ) {
-			echo '<p>' . esc_html__( 'No vendor assignment found for your user.', 'ai-man-sys' ) . '</p>';
+		if ( $this->user_node_id <= 0 ) {
+			echo '<p>' . esc_html__( 'No custody node assignment found for your user.', 'ai-man-sys' ) . '</p>';
 			return;
 		}
 
-		$outgoing = $this->data_provider->get_outgoing_transfers( $this->user_vendor_id );
+		$outgoing = $this->data_provider->get_outgoing_transfers( $this->user_node_id, $this->user_node_type );
 
 		if ( ! empty( $outgoing ) ) {
 			echo '<h3>' . esc_html__( 'Active Transfers', 'ai-man-sys' ) . '</h3>';
@@ -81,12 +83,12 @@ class AIMS_Inventory_Overview_Page {
 	}
 
 	private function render_incoming_panel(): void {
-		if ( $this->user_vendor_id <= 0 ) {
-			echo '<p>' . esc_html__( 'No vendor assignment found for your user.', 'ai-man-sys' ) . '</p>';
+		if ( $this->user_node_id <= 0 ) {
+			echo '<p>' . esc_html__( 'No custody node assignment found for your user.', 'ai-man-sys' ) . '</p>';
 			return;
 		}
 
-		$incoming = $this->data_provider->get_incoming_transfers( $this->user_vendor_id );
+		$incoming = $this->data_provider->get_incoming_transfers( $this->user_node_id, $this->user_node_type );
 
 		if ( empty( $incoming ) ) {
 			echo '<p>' . esc_html__( 'No incoming transfers awaiting your receipt.', 'ai-man-sys' ) . '</p>';
@@ -99,30 +101,32 @@ class AIMS_Inventory_Overview_Page {
 
 	private function render_create_transfer_form(): void {
 		$vendors = $this->get_vendor_options();
-		$buckets = $this->data_provider->get_available_buckets( $this->user_vendor_id );
+		$buckets = $this->data_provider->get_available_buckets( $this->user_node_id );
 		$products = $this->data_provider->get_available_products();
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?action=aims_inventory_transfer_create_draft' ) ); ?>" style="background: #f5f5f5; padding: 15px; border: 1px solid #ddd; border-radius: 4px; max-width: 600px;">
 			<?php wp_nonce_field( 'aims_inventory_transfer_create_draft', '_aims_inventory_transfer_create_draft_nonce' ); ?>
+			<input type="hidden" name="source_node_type" value="vendor" />
+			<input type="hidden" name="target_node_type" value="vendor" />
 
 			<table class="form-table">
 				<tbody>
 					<tr>
-						<th scope="row"><label for="source_vendor"><?php esc_html_e( 'From (Sending Vendor)', 'ai-man-sys' ); ?></label></th>
+						<th scope="row"><label for="source_node"><?php esc_html_e( 'From Node', 'ai-man-sys' ); ?></label></th>
 						<td>
-							<select id="source_vendor" name="source_vendor_id" required>
-								<option value="<?php echo esc_attr( $this->user_vendor_id ); ?>"><?php echo esc_html( 'Your Vendor (' . $this->user_vendor_id . ')' ); ?></option>
+							<select id="source_node" name="source_node_id" required>
+								<option value="<?php echo esc_attr( $this->user_node_id ); ?>"><?php echo esc_html( 'Your Node (' . $this->user_node_id . ')' ); ?></option>
 							</select>
-							<p class="description"><?php esc_html_e( "You're always the source.", 'ai-man-sys' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Current custody node dispatches from here.', 'ai-man-sys' ); ?></p>
 						</td>
 					</tr>
 					<tr>
-						<th scope="row"><label for="target_vendor"><?php esc_html_e( 'To (Receiving Vendor)', 'ai-man-sys' ); ?></label></th>
+						<th scope="row"><label for="target_node"><?php esc_html_e( 'To Node', 'ai-man-sys' ); ?></label></th>
 						<td>
-							<select id="target_vendor" name="target_vendor_id" required>
-								<option value=""><?php esc_html_e( '-- Select Receiving Vendor --', 'ai-man-sys' ); ?></option>
+							<select id="target_node" name="target_node_id" required>
+								<option value=""><?php esc_html_e( '-- Select Receiving Node --', 'ai-man-sys' ); ?></option>
 								<?php foreach ( $vendors as $vendor_id => $vendor_name ) : ?>
-									<?php if ( (int) $vendor_id !== $this->user_vendor_id ) : ?>
+									<?php if ( (int) $vendor_id !== $this->user_node_id ) : ?>
 										<option value="<?php echo esc_attr( $vendor_id ); ?>"><?php echo esc_html( $vendor_name ); ?></option>
 									<?php endif; ?>
 								<?php endforeach; ?>
@@ -200,7 +204,7 @@ class AIMS_Inventory_Overview_Page {
 	private function render_transfer_detail( array $transfer ): void {
 		$transfer_id = (int) ( $transfer['id'] ?? 0 );
 		$items       = $transfer['items'] ?? array();
-		$buckets     = $this->data_provider->get_available_buckets( $this->user_vendor_id );
+		$buckets     = $this->data_provider->get_available_buckets( $this->user_node_id );
 		$products    = $this->data_provider->get_available_products();
 		?>
 		<div style="background: #fafafa; padding: 15px; border-left: 4px solid #0073aa;">
@@ -286,7 +290,7 @@ class AIMS_Inventory_Overview_Page {
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Code', 'ai-man-sys' ); ?></th>
-					<th><?php esc_html_e( 'From Vendor', 'ai-man-sys' ); ?></th>
+					<th><?php esc_html_e( 'From Node', 'ai-man-sys' ); ?></th>
 					<th><?php esc_html_e( 'Items', 'ai-man-sys' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'ai-man-sys' ); ?></th>
 					<th><?php esc_html_e( 'Dispatched', 'ai-man-sys' ); ?></th>
@@ -298,7 +302,7 @@ class AIMS_Inventory_Overview_Page {
 					<?php $transfer_id = (int) ( $transfer['id'] ?? 0 ); ?>
 					<tr>
 						<td><strong><?php echo esc_html( $transfer['transfer_code'] ?? 'N/A' ); ?></strong></td>
-						<td><?php echo esc_html( 'Vendor #' . $transfer['source_vendor_id'] ); ?></td>
+						<td><?php echo esc_html( 'Node #' . (int) ( $transfer['source_node_id'] ?? $transfer['source_vendor_id'] ?? 0 ) ); ?></td>
 						<td><?php echo esc_html( $transfer['item_count'] ?? 0 ); ?></td>
 						<td><?php echo esc_html( AIMS_Inventory_Overview_Data_Provider::get_transfer_status_label( $transfer['transfer_status'] ?? '' ) ); ?></td>
 						<td><?php echo esc_html( mysql2date( 'M j @ g:i a', $transfer['dispatch_confirmed_at'] ?? '' ) ); ?></td>
@@ -378,9 +382,9 @@ class AIMS_Inventory_Overview_Page {
 		);
 	}
 
-	private function resolve_user_vendor(): int {
+	private function resolve_user_node(): int {
 		// Simplified - in production, would use responsibility repo
-		// For now, return vendor ID 1 as demo
+		// For now, return node ID 1 as demo
 		return 1;
 	}
 }

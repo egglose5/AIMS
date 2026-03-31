@@ -18,10 +18,10 @@ final class InventoryTransferActionsTest extends \AIMS\Tests\TestCase {
 
 			public function __construct() {}
 
-			public function create_draft( int $source_vendor_id, int $target_vendor_id, array $data = array() ): array {
+			public function create_draft( int $source_node_id, int $target_node_id, array $data = array() ): array {
 				$this->calls[] = array(
-					'source_vendor_id' => $source_vendor_id,
-					'target_vendor_id' => $target_vendor_id,
+					'source_node_id' => $source_node_id,
+					'target_node_id' => $target_node_id,
 				);
 
 				return array(
@@ -36,8 +36,8 @@ final class InventoryTransferActionsTest extends \AIMS\Tests\TestCase {
 
 		// Simulate $_POST data
 		$_POST = array(
-			'source_vendor_id'  => 1,
-			'target_vendor_id'  => 2,
+			'source_node_id'    => 1,
+			'target_node_id'    => 2,
 			'transfer_type'     => 'standard',
 		);
 

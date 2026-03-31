@@ -35,13 +35,15 @@ class AIMS_Inventory_Transfer_Actions {
 
 		check_admin_referer( self::ACTION_CREATE_DRAFT, self::NONCE_CREATE_DRAFT );
 
-		$source_vendor_id = (int) ( $_POST['source_vendor_id'] ?? 0 );
-		$target_vendor_id = (int) ( $_POST['target_vendor_id'] ?? 0 );
+		$source_node_id = (int) ( $_POST['source_node_id'] ?? ( $_POST['source_vendor_id'] ?? 0 ) );
+		$target_node_id = (int) ( $_POST['target_node_id'] ?? ( $_POST['target_vendor_id'] ?? 0 ) );
 
 		$result = $this->service->create_draft(
-			$source_vendor_id,
-			$target_vendor_id,
+			$source_node_id,
+			$target_node_id,
 			array(
+				'source_node_type' => sanitize_key( $_POST['source_node_type'] ?? 'vendor' ),
+				'target_node_type' => sanitize_key( $_POST['target_node_type'] ?? 'vendor' ),
 				'transfer_type'  => sanitize_text_field( $_POST['transfer_type'] ?? 'standard' ),
 				'initiated_by'   => get_current_user_id(),
 				'reference_type' => sanitize_key( $_POST['reference_type'] ?? '' ),

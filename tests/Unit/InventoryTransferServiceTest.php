@@ -5,15 +5,15 @@ declare( strict_types=1 );
 namespace AIMS\Tests\Unit;
 
 final class InventoryTransferServiceTest extends \AIMS\Tests\TestCase {
-	public function testCreateDraftRequiresSourceAndTargetVendors(): void {
+	public function testCreateDraftRequiresSourceAndTargetNodes(): void {
 		$service = new \AIMS_Inventory_Transfer_Service();
 
 		$result = $service->create_draft( 0, 0 );
 		$this->assertFalse( $result['success'] );
-		$this->assertSame( 'missing_source_vendor', $result['code'] ?? '' );
+		$this->assertSame( 'missing_source_node', $result['code'] ?? '' );
 	}
 
-	public function testCreateDraftWithValidVendorsReturnsTransferId(): void {
+	public function testCreateDraftWithValidNodesReturnsTransferId(): void {
 		$repo = new class() extends \AIMS_Inventory_Transfer_Repository {
 			public function __construct() {}
 
@@ -72,6 +72,8 @@ final class InventoryTransferServiceTest extends \AIMS\Tests\TestCase {
 					'id'              => 1,
 					'transfer_status' => 'pending',
 					'transfer_uuid'   => 'uuid-123',
+					'source_node_type' => 'vendor',
+					'source_node_id'   => 10,
 					'source_vendor_id' => 10,
 				);
 			}

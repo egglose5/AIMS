@@ -29,13 +29,14 @@ class AIMS_Inventory_Overview_Data_Provider {
 	}
 
 	/**
-	 * Get all outgoing transfers for a vendor (initiated by vendor).
+	 * Get all outgoing transfers for a node.
 	 *
-	 * @param int $vendor_id Vendor ID.
+	 * @param int    $node_id Node ID.
+	 * @param string $node_type Node type.
 	 * @return array Transfer records with item details.
 	 */
-	public function get_outgoing_transfers( int $vendor_id ): array {
-		$transfers = $this->transfer_repo->get_outgoing_for_vendor( $vendor_id );
+	public function get_outgoing_transfers( int $node_id, string $node_type = 'vendor' ): array {
+		$transfers = $this->transfer_repo->get_outgoing_for_node( $node_id, array( 'pending', 'dispatched', 'in_transit' ), $node_type );
 
 		if ( empty( $transfers ) ) {
 			return array();
@@ -60,13 +61,14 @@ class AIMS_Inventory_Overview_Data_Provider {
 	}
 
 	/**
-	 * Get all incoming transfers for a vendor (recipient).
+	 * Get all incoming transfers for a node.
 	 *
-	 * @param int $vendor_id Vendor ID.
+	 * @param int    $node_id Node ID.
+	 * @param string $node_type Node type.
 	 * @return array Transfer records with item details.
 	 */
-	public function get_incoming_transfers( int $vendor_id ): array {
-		$transfers = $this->transfer_repo->get_incoming_for_vendor( $vendor_id );
+	public function get_incoming_transfers( int $node_id, string $node_type = 'vendor' ): array {
+		$transfers = $this->transfer_repo->get_incoming_for_node( $node_id, array( 'pending', 'in_transit', 'dispatched' ), $node_type );
 
 		if ( empty( $transfers ) ) {
 			return array();

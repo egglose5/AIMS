@@ -14,11 +14,23 @@ class AIMS_Inventory_Transfer_Repository {
 	public function create( array $data ): int {
 		global $wpdb;
 
+		$source_node_type = sanitize_key( (string) ( $data['source_node_type'] ?? 'vendor' ) );
+		$source_node_id   = (int) ( $data['source_node_id'] ?? ( $data['source_vendor_id'] ?? 0 ) );
+		$target_node_type = sanitize_key( (string) ( $data['target_node_type'] ?? 'vendor' ) );
+		$target_node_id   = (int) ( $data['target_node_id'] ?? ( $data['target_vendor_id'] ?? 0 ) );
+
+		$source_vendor_id = (int) ( $data['source_vendor_id'] ?? $this->resolve_vendor_id_from_endpoint( $source_node_type, $source_node_id ) );
+		$target_vendor_id = (int) ( $data['target_vendor_id'] ?? $this->resolve_vendor_id_from_endpoint( $target_node_type, $target_node_id ) );
+
 		$record = array(
 			'transfer_uuid'        => sanitize_text_field( $data['transfer_uuid'] ?? wp_generate_uuid4() ),
 			'transfer_code'        => sanitize_text_field( $data['transfer_code'] ?? $this->generate_transfer_code() ),
-			'source_vendor_id'     => (int) ( $data['source_vendor_id'] ?? 0 ),
-			'target_vendor_id'     => (int) ( $data['target_vendor_id'] ?? 0 ),
+			'source_node_type'     => $source_node_type,
+			'source_node_id'       => $source_node_id,
+			'target_node_type'     => $target_node_type,
+			'target_node_id'       => $target_node_id,
+			'source_vendor_id'     => $source_vendor_id,
+			'target_vendor_id'     => $target_vendor_id,
 			'transfer_status'      => sanitize_key( $data['transfer_status'] ?? 'pending' ),
 			'transfer_type'        => sanitize_key( $data['transfer_type'] ?? 'standard' ),
 			'dispatch_requested_at' => $this->normalize_datetime( $data['dispatch_requested_at'] ?? null ),
@@ -30,7 +42,7 @@ class AIMS_Inventory_Transfer_Repository {
 			'updated_at'           => current_time( 'mysql' ),
 		);
 
-		$format = array( '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s' );
+		$format = array( '%s', '%s', '%s', '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s' );
 
 		$wpdb->insert( $this->get_table_name(), $record, $format );
 
@@ -104,11 +116,11 @@ class AIMS_Inventory_Transfer_Repository {
 		return false !== $result;
 	}
 
-	public function get_for_vendor( int $vendor_id, array $filters = array() ): array {
+	public function get_for_node( int $node_id, array $filters = array(), string $node_type = 'vendor' ): array {
 		global $wpdb;
 
-		$where_parts = array( '(source_vendor_id = %d OR target_vendor_id = %d)' );
-		$where_values = array( $vendor_id, $vendor_id );
+		$where_parts  = array( '( (source_node_id = %d AND source_node_type = %s) OR (target_node_id = %d AND target_node_type = %s) )' );
+		$where_values = array( $node_id, sanitize_key( $node_type ), $node_id, sanitize_key( $node_type ) );
 
 		if ( isset( $filters['transfer_status'] ) && '' !== $filters['transfer_status'] ) {
 			$where_parts[] = 'transfer_status = %s';
@@ -143,14 +155,20 @@ class AIMS_Inventory_Transfer_Repository {
 		return is_array( $results ) ? $results : array();
 	}
 
-	public function get_incoming_for_vendor( int $vendor_id, array $statuses = array( 'pending', 'in_transit' ) ): array {
+	public function get_incoming_for_node( int $node_id, array $statuses = array( 'pending', 'in_transit' ), string $node_type = 'vendor' ): array {
 		global $wpdb;
 
-		$status_list = implode( ',', array_map( 'sanitize_key', $statuses ) );
+		$statuses = array_values( array_filter( array_map( 'sanitize_key', $statuses ) ) );
+		if ( empty( $statuses ) ) {
+			$statuses = array( 'pending', 'in_transit' );
+		}
+
+		$placeholders = implode( ', ', array_fill( 0, count( $statuses ), '%s' ) );
+		$params       = array_merge( array( $node_id, sanitize_key( $node_type ) ), $statuses );
 
 		$query = $wpdb->prepare(
-			"SELECT * FROM {$this->get_table_name()} WHERE target_vendor_id = %d AND transfer_status IN ({$status_list}) ORDER BY created_at DESC",
-			$vendor_id
+			"SELECT * FROM {$this->get_table_name()} WHERE target_node_id = %d AND target_node_type = %s AND transfer_status IN ({$placeholders}) ORDER BY created_at DESC",
+			$params
 		);
 
 		$results = $wpdb->get_results( $query, ARRAY_A );
@@ -158,19 +176,37 @@ class AIMS_Inventory_Transfer_Repository {
 		return is_array( $results ) ? $results : array();
 	}
 
-	public function get_outgoing_for_vendor( int $vendor_id, array $statuses = array( 'pending', 'dispatched', 'in_transit' ) ): array {
+	public function get_outgoing_for_node( int $node_id, array $statuses = array( 'pending', 'dispatched', 'in_transit' ), string $node_type = 'vendor' ): array {
 		global $wpdb;
 
-		$status_list = implode( ',', array_map( 'sanitize_key', $statuses ) );
+		$statuses = array_values( array_filter( array_map( 'sanitize_key', $statuses ) ) );
+		if ( empty( $statuses ) ) {
+			$statuses = array( 'pending', 'dispatched', 'in_transit' );
+		}
+
+		$placeholders = implode( ', ', array_fill( 0, count( $statuses ), '%s' ) );
+		$params       = array_merge( array( $node_id, sanitize_key( $node_type ) ), $statuses );
 
 		$query = $wpdb->prepare(
-			"SELECT * FROM {$this->get_table_name()} WHERE source_vendor_id = %d AND transfer_status IN ({$status_list}) ORDER BY created_at DESC",
-			$vendor_id
+			"SELECT * FROM {$this->get_table_name()} WHERE source_node_id = %d AND source_node_type = %s AND transfer_status IN ({$placeholders}) ORDER BY created_at DESC",
+			$params
 		);
 
 		$results = $wpdb->get_results( $query, ARRAY_A );
 
 		return is_array( $results ) ? $results : array();
+	}
+
+	public function get_for_vendor( int $vendor_id, array $filters = array() ): array {
+		return $this->get_for_node( $vendor_id, $filters, 'vendor' );
+	}
+
+	public function get_incoming_for_vendor( int $vendor_id, array $statuses = array( 'pending', 'in_transit' ) ): array {
+		return $this->get_incoming_for_node( $vendor_id, $statuses, 'vendor' );
+	}
+
+	public function get_outgoing_for_vendor( int $vendor_id, array $statuses = array( 'pending', 'dispatched', 'in_transit' ) ): array {
+		return $this->get_outgoing_for_node( $vendor_id, $statuses, 'vendor' );
 	}
 
 	private function normalize_datetime( $value ): ?string {
@@ -187,5 +223,13 @@ class AIMS_Inventory_Transfer_Repository {
 
 	private function generate_transfer_code(): string {
 		return 'TRANSFER-' . strtoupper( substr( uniqid(), -8 ) );
+	}
+
+	private function resolve_vendor_id_from_endpoint( string $node_type, int $node_id ): int {
+		if ( 'vendor' === $node_type && $node_id > 0 ) {
+			return $node_id;
+		}
+
+		return 0;
 	}
 }
