@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Person_Identity_Service {
 	public const SUBTYPE_VENDOR  = 'vendor';
+	public const SUBTYPE_STITCH  = 'stitch';
 	public const SUBTYPE_MANAGER = 'manager';
 
 	public function is_aims_person( int $user_id ): bool {
@@ -41,6 +42,10 @@ class AIMS_Person_Identity_Service {
 
 		if ( in_array( 'aims_vendor_user', $roles, true ) ) {
 			$subtypes[] = self::SUBTYPE_VENDOR;
+		}
+
+		if ( in_array( 'aims_stitch_user', $roles, true ) ) {
+			$subtypes[] = self::SUBTYPE_STITCH;
 		}
 
 		if ( in_array( 'aims_manager_user', $roles, true ) ) {

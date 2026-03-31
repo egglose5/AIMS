@@ -25,6 +25,8 @@ class AIMS_Schema {
 			$wpdb->prefix . 'aims_vendor_event_checkins',
 			$wpdb->prefix . 'aims_vendor_event_checkin_media',
 			$wpdb->prefix . 'aims_stitch_jobs',
+			$wpdb->prefix . 'aims_stitch_job_items',
+			$wpdb->prefix . 'aims_stitch_job_item_payout_snapshots',
 			$wpdb->prefix . 'aims_storage_locations',
 			$wpdb->prefix . 'aims_physical_buckets',
 			$wpdb->prefix . 'aims_event_bucket_assignments',
@@ -70,6 +72,8 @@ class AIMS_Schema {
 		$vendor_event_checkins_table = $wpdb->prefix . 'aims_vendor_event_checkins';
 		$vendor_event_checkin_media_table = $wpdb->prefix . 'aims_vendor_event_checkin_media';
 		$stitch_jobs_table       = $wpdb->prefix . 'aims_stitch_jobs';
+		$stitch_job_items_table  = $wpdb->prefix . 'aims_stitch_job_items';
+		$stitch_job_item_payout_snapshots_table = $wpdb->prefix . 'aims_stitch_job_item_payout_snapshots';
 		$storage_locations_table = $wpdb->prefix . 'aims_storage_locations';
 		$physical_buckets_table  = $wpdb->prefix . 'aims_physical_buckets';
 		$event_bucket_assignments_table = $wpdb->prefix . 'aims_event_bucket_assignments';
@@ -442,6 +446,7 @@ class AIMS_Schema {
 				vendor_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				event_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				assigned_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				producer_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				status varchar(32) NOT NULL DEFAULT 'queued',
 				priority varchar(20) NOT NULL DEFAULT 'normal',
 				due_at datetime NULL DEFAULT NULL,
@@ -453,7 +458,67 @@ class AIMS_Schema {
 				KEY vendor_id (vendor_id),
 				KEY event_id (event_id),
 				KEY assigned_user_id (assigned_user_id),
+				KEY producer_user_id (producer_user_id),
 				KEY status (status)
+			) {$charset_collate};",
+			"CREATE TABLE {$stitch_job_items_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				stitch_job_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				line_number int(11) unsigned NOT NULL DEFAULT 1,
+				product_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				vendor_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				producer_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				stitcher_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				stitch_job_type varchar(50) NOT NULL DEFAULT '',
+				status varchar(32) NOT NULL DEFAULT 'queued',
+				quantity_requested decimal(20,4) NOT NULL DEFAULT 0.0000,
+				quantity_completed decimal(20,4) NOT NULL DEFAULT 0.0000,
+				quantity_received_back decimal(20,4) NOT NULL DEFAULT 0.0000,
+				unit_payout_snapshot decimal(20,4) NOT NULL DEFAULT 0.0000,
+				payout_snapshot_source varchar(50) NOT NULL DEFAULT '',
+				payout_snapshot_rule_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				snapshot_taken_at datetime NULL DEFAULT NULL,
+				assigned_at datetime NULL DEFAULT NULL,
+				completed_at datetime NULL DEFAULT NULL,
+				received_back_at datetime NULL DEFAULT NULL,
+				notes longtext NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY stitch_job_line (stitch_job_id, line_number),
+				KEY stitch_job_id (stitch_job_id),
+				KEY product_id (product_id),
+				KEY vendor_id (vendor_id),
+				KEY producer_user_id (producer_user_id),
+				KEY stitcher_user_id (stitcher_user_id),
+				KEY status (status)
+			) {$charset_collate};",
+			"CREATE TABLE {$stitch_job_item_payout_snapshots_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				stitch_job_item_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				stitch_job_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				vendor_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				producer_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				stitcher_user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				product_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				assignment_type varchar(32) NOT NULL DEFAULT 'product',
+				stitch_job_type varchar(50) NOT NULL DEFAULT '',
+				snapshot_source varchar(50) NOT NULL DEFAULT 'default_fallback',
+				snapshot_priority int(11) unsigned NOT NULL DEFAULT 0,
+				snapshot_rule_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				unit_payout_snapshot decimal(20,4) NOT NULL DEFAULT 0.0000,
+				snapshot_quantity decimal(20,4) NOT NULL DEFAULT 0.0000,
+				captured_at datetime NOT NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				KEY stitch_job_item_id (stitch_job_item_id),
+				KEY stitch_job_id (stitch_job_id),
+				KEY vendor_id (vendor_id),
+				KEY producer_user_id (producer_user_id),
+				KEY stitcher_user_id (stitcher_user_id),
+				KEY product_id (product_id),
+				KEY snapshot_source (snapshot_source)
 			) {$charset_collate};",
 			"CREATE TABLE {$storage_locations_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

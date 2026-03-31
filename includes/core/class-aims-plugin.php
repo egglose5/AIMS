@@ -15,6 +15,7 @@ class AIMS_Plugin {
 	private $capabilities;
 	private $admin_menu;
 	private $vendor_module;
+	private $stitch_module;
 	private $event_module;
 	private $square_sync_module;
 	private $reports_module;
@@ -56,17 +57,20 @@ class AIMS_Plugin {
 			new AIMS_Vendor_Service(),
 			$this->responsibility_auth
 		);
+		$this->stitch_module      = new AIMS_Stitch_Module( null, $this->responsibility_auth );
 		$this->event_module       = new AIMS_Event_Module( null, $this->responsibility_auth );
 		$this->square_sync_module = new AIMS_Square_Sync_Module( null, null, $this->responsibility_auth );
 		$this->reports_module     = new AIMS_Reports_Module( $this->responsibility_auth );
 		$this->modules            = array(
 			$this->vendor_module,
+			$this->stitch_module,
 			$this->event_module,
 			$this->square_sync_module,
 			$this->reports_module,
 		);
 		$this->admin_menu         = new AIMS_Admin_Menu(
 			$this->vendor_module,
+			$this->stitch_module,
 			$this->square_sync_module,
 			$this->reports_module,
 			$this->responsibility_auth

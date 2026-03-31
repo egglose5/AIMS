@@ -142,4 +142,8 @@ final class FakeWpdb {
 		$this->query_log[] = array( 'type' => 'query', 'query' => $query );
 		return 1;
 	}
+
+	public function get_charset_collate(): string {
+		return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
+	}
 }

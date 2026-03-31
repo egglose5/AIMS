@@ -253,6 +253,31 @@ if ( ! function_exists( 'add_action' ) ) {
 	}
 }
 
+if ( ! function_exists( 'do_action' ) ) {
+	function do_action( string $hook, ...$args ): void {
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			$hook,
+			array(
+				'args' => $args,
+			)
+		);
+	}
+}
+
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, $value, ...$args ) {
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			$hook,
+			array(
+				'value' => $value,
+				'args'  => $args,
+			)
+		);
+
+		return $value;
+	}
+}
+
 if ( ! function_exists( 'add_shortcode' ) ) {
 	function add_shortcode( string $tag, $callback ): void {
 		\AIMS\Tests\Support\TestState::record_hook_call(
@@ -370,6 +395,11 @@ if ( ! function_exists( 'wp_safe_redirect' ) ) {
 if ( ! function_exists( 'wp_die' ) ) {
 	function wp_die( $message = '' ): void {
 		throw new RuntimeException( (string) $message );
+	}
+}
+
+if ( ! function_exists( 'nocache_headers' ) ) {
+	function nocache_headers(): void {
 	}
 }
 

@@ -50,4 +50,19 @@ final class PersonIdentityServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_VENDOR, $subtypes );
 		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_MANAGER, $subtypes );
 	}
+
+	public function testSubtypesResolveStitcher(): void {
+		TestState::set_user(
+			104,
+			(object) array(
+				'ID'    => 104,
+				'roles' => array( 'aims_stitch_user' ),
+			)
+		);
+
+		$service = new \AIMS_Person_Identity_Service();
+		$subtypes = $service->get_person_subtypes( 104 );
+
+		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_STITCH, $subtypes );
+	}
 }

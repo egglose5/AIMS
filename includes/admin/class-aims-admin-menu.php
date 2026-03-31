@@ -7,20 +7,32 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Admin_Menu {
 	const MENU_SLUG = 'aims';
 	private $vendor_module;
+	private $stitch_module;
 	private $square_sync_module;
 	private $reports_module;
 	private $responsibility_auth;
 
 	public function __construct(
 		?AIMS_Vendor_Module $vendor_module = null,
-		?AIMS_Square_Sync_Module $square_sync_module = null,
-		?AIMS_Reports_Module $reports_module = null,
+		$stitch_module = null,
+		$square_sync_module = null,
+		$reports_module = null,
 		?AIMS_Responsibility_Authorization_Service $responsibility_auth = null
 	) {
-		$this->vendor_module      = $vendor_module ? $vendor_module : new AIMS_Vendor_Module( new AIMS_Vendor_Service() );
-		$this->square_sync_module = $square_sync_module ? $square_sync_module : new AIMS_Square_Sync_Module();
-		$this->reports_module     = $reports_module ? $reports_module : new AIMS_Reports_Module();
+		if ( $reports_module instanceof AIMS_Responsibility_Authorization_Service && null === $responsibility_auth ) {
+			$responsibility_auth = $reports_module;
+			$reports_module      = $square_sync_module;
+			$square_sync_module  = $stitch_module;
+			$stitch_module       = null;
+		}
+
 		$this->responsibility_auth = $responsibility_auth;
+		$this->vendor_module      = $vendor_module ? $vendor_module : new AIMS_Vendor_Module( new AIMS_Vendor_Service() );
+		$this->stitch_module      = $stitch_module instanceof AIMS_Stitch_Module ? $stitch_module : new AIMS_Stitch_Module( null, $this->responsibility_auth );
+		$this->square_sync_module = $square_sync_module instanceof AIMS_Square_Sync_Module ? $square_sync_module : new AIMS_Square_Sync_Module();
+		$this->reports_module     = $reports_module instanceof AIMS_Reports_Module ? $reports_module : new AIMS_Reports_Module();
+
+		$this->stitch_module->register();
 	}
 
 	public function register(): void {
@@ -110,6 +122,36 @@ class AIMS_Admin_Menu {
 				'read',
 				'aims-vendors',
 				array( $this, 'render_vendors_shell' )
+			);
+		}
+
+		if ( $this->user_can_manage_stitch_jobs() ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				'Stitch Jobs',
+				'Stitch Jobs',
+				AIMS_Capabilities::CAP_MANAGE_PRODUCTION,
+				AIMS_Stitch_Jobs_Data_Provider::PAGE_SLUG,
+				array( $this, 'render_stitch_jobs' )
+			);
+
+			add_submenu_page(
+				self::MENU_SLUG,
+				'Stitch Job Workspace',
+				'Stitch Job Workspace',
+				AIMS_Capabilities::CAP_MANAGE_PRODUCTION,
+				AIMS_Stitch_Workspace_Page::PAGE_SLUG,
+				array( $this, 'render_stitch_workspace' )
+			);
+			remove_submenu_page( self::MENU_SLUG, AIMS_Stitch_Workspace_Page::PAGE_SLUG );
+
+			add_submenu_page(
+				self::MENU_SLUG,
+				'Stitch Labels',
+				'Stitch Labels',
+				AIMS_Capabilities::CAP_MANAGE_STITCH,
+				AIMS_Label_Template_Page::PAGE_SLUG,
+				array( $this, 'render_stitch_labels_shell' )
 			);
 		}
 
@@ -226,6 +268,18 @@ class AIMS_Admin_Menu {
 		$this->vendor_module->render_shell();
 	}
 
+	public function render_stitch_jobs(): void {
+		$this->stitch_module->render_shell();
+	}
+
+	public function render_stitch_workspace(): void {
+		$this->stitch_module->render_workspace();
+	}
+
+	public function render_stitch_labels_shell(): void {
+		$this->stitch_module->render_label_template_shell();
+	}
+
 	public function render_square_sync_shell(): void {
 		$this->square_sync_module->render_shell();
 	}
@@ -265,6 +319,17 @@ class AIMS_Admin_Menu {
 
 	private function user_can_manage_vendors(): bool {
 		return $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_vendors( get_current_user_id() );
+	}
+
+	private function user_can_manage_stitch_jobs(): bool {
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_MANAGE_STITCH )
+			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_PRODUCTION )
+			|| current_user_can( AIMS_Capabilities::CAP_MANAGE );
 	}
 
 	private function user_can_manage_square_sync(): bool {

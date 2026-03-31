@@ -11,6 +11,7 @@ class AIMS_Capabilities {
 	public const CAP_MANAGE_EVENT_PUBLICATION = 'manage_aims_event_publication';
 	public const CAP_MANAGE_EVENT_PLANNING = 'manage_aims_event_planning';
 	public const CAP_MANAGE_STITCH  = 'manage_aims_stitch';
+	public const CAP_MANAGE_STITCH_ORDERS = 'manage_aims_stitch_orders';
 	public const CAP_VIEW_EVENTS_SHELL = 'view_aims_events_shell';
 	public const CAP_VIEW_INVENTORY_SHELL = 'view_aims_inventory_shell';
 	public const CAP_MANAGE_INVENTORY = 'manage_aims_inventory';
@@ -145,6 +146,7 @@ class AIMS_Capabilities {
 			self::CAP_MANAGE_EVENT_PUBLICATION,
 			self::CAP_MANAGE_EVENT_PLANNING,
 			self::CAP_MANAGE_STITCH,
+			self::CAP_MANAGE_STITCH_ORDERS,
 			self::CAP_VIEW_EVENTS_SHELL,
 			self::CAP_VIEW_INVENTORY_SHELL,
 			self::CAP_MANAGE_INVENTORY,
