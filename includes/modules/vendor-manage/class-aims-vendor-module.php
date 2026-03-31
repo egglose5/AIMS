@@ -6,12 +6,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Vendor_Module implements AIMS_Module {
 	private $vendor_service;
+	private $responsibility_auth;
 	private $vendor_checkin_portal_controller;
 	private $vendor_portal_navigation_controller;
 	private const ADMIN_PAGE = 'aims-vendors';
 
-	public function __construct( AIMS_Vendor_Service $vendor_service ) {
+	public function __construct( AIMS_Vendor_Service $vendor_service, AIMS_Responsibility_Authorization_Service $responsibility_auth = null ) {
 		$this->vendor_service = $vendor_service;
+		$this->responsibility_auth = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
 	}
 
 	public function register(): void {
@@ -31,7 +33,7 @@ class AIMS_Vendor_Module implements AIMS_Module {
 	}
 
 	public function render_shell(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS ) ) {
+		if ( ! $this->can_manage_vendors() ) {
 			wp_die( esc_html__( 'You do not have permission to manage vendors.', 'ai-man-sys' ) );
 		}
 
@@ -49,7 +51,7 @@ class AIMS_Vendor_Module implements AIMS_Module {
 	}
 
 	public function handle_vendor_save(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS ) ) {
+		if ( ! $this->can_manage_vendors() ) {
 			wp_die( esc_html__( 'You do not have permission to manage vendors.', 'ai-man-sys' ) );
 		}
 
@@ -72,7 +74,7 @@ class AIMS_Vendor_Module implements AIMS_Module {
 	}
 
 	public function handle_vendor_archive(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS ) ) {
+		if ( ! $this->can_manage_vendors() ) {
 			wp_die( esc_html__( 'You do not have permission to manage vendors.', 'ai-man-sys' ) );
 		}
 
@@ -222,6 +224,18 @@ class AIMS_Vendor_Module implements AIMS_Module {
 		$redirect = add_query_arg( $params, admin_url( 'admin.php' ) );
 		wp_safe_redirect( $redirect );
 		exit;
+	}
+
+	private function can_manage_vendors(): bool {
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+
+		if ( $user_id > 0 && is_object( $this->responsibility_auth ) && method_exists( $this->responsibility_auth, 'can_manage_vendors' ) ) {
+			if ( $this->responsibility_auth->can_manage_vendors( $user_id ) ) {
+				return true;
+			}
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS );
 	}
 }
 

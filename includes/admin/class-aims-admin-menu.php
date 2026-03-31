@@ -9,15 +9,18 @@ class AIMS_Admin_Menu {
 	private $vendor_module;
 	private $square_sync_module;
 	private $reports_module;
+	private $responsibility_auth;
 
 	public function __construct(
 		?AIMS_Vendor_Module $vendor_module = null,
 		?AIMS_Square_Sync_Module $square_sync_module = null,
-		?AIMS_Reports_Module $reports_module = null
+		?AIMS_Reports_Module $reports_module = null,
+		?AIMS_Responsibility_Authorization_Service $responsibility_auth = null
 	) {
 		$this->vendor_module      = $vendor_module ? $vendor_module : new AIMS_Vendor_Module( new AIMS_Vendor_Service( new AIMS_Vendor_Repository() ) );
 		$this->square_sync_module = $square_sync_module ? $square_sync_module : new AIMS_Square_Sync_Module();
 		$this->reports_module     = $reports_module ? $reports_module : new AIMS_Reports_Module();
+		$this->responsibility_auth = $responsibility_auth;
 	}
 
 	public function register(): void {
@@ -31,61 +34,63 @@ class AIMS_Admin_Menu {
 			56
 		);
 
-		add_menu_page(
-			'Events',
-			'Events',
-			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
-			'aims-events',
-			array( $this, 'render_events_shell' ),
-			'dashicons-calendar-alt',
-			57
-		);
+		if ( $this->user_can_access_events_shell() ) {
+			add_menu_page(
+				'Events',
+				'Events',
+				'read',
+				'aims-events',
+				array( $this, 'render_events_shell' ),
+				'dashicons-calendar-alt',
+				57
+			);
 
-		add_submenu_page(
-			'aims-events',
-			'Customer Demand',
-			'Customer Demand',
-			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
-			'aims-event-customer-demand',
-			array( $this, 'render_event_customer_demand' )
-		);
+			add_submenu_page(
+				'aims-events',
+				'Customer Demand',
+				'Customer Demand',
+				'read',
+				'aims-event-customer-demand',
+				array( $this, 'render_event_customer_demand' )
+			);
 
-		add_submenu_page(
-			'aims-events',
-			'Demand Summary',
-			'Demand Summary',
-			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
-			'aims-event-demand-summary',
-			array( $this, 'render_event_demand_summary' )
-		);
+			add_submenu_page(
+				'aims-events',
+				'Demand Summary',
+				'Demand Summary',
+				'read',
+				'aims-event-demand-summary',
+				array( $this, 'render_event_demand_summary' )
+			);
 
-		add_submenu_page(
-			'aims-events',
-			'Event Planning',
-			'Event Planning',
-			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
-			'aims-event-planning',
-			array( $this, 'render_event_planning' )
-		);
+			add_submenu_page(
+				'aims-events',
+				'Event Planning',
+				'Event Planning',
+				'read',
+				'aims-event-planning',
+				array( $this, 'render_event_planning' )
+			);
 
-		add_submenu_page(
-			'aims-events',
-			'Event Planning Workspace',
-			'Event Planning Workspace',
-			AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL,
-			AIMS_Event_Planning_Workspace_Page::PAGE_SLUG,
-			array( $this, 'render_event_planning_workspace' )
-		);
-		remove_submenu_page( 'aims-events', AIMS_Event_Planning_Workspace_Page::PAGE_SLUG );
+			add_submenu_page(
+				'aims-events',
+				'Event Planning Workspace',
+				'Event Planning Workspace',
+				'read',
+				AIMS_Event_Planning_Workspace_Page::PAGE_SLUG,
+				array( $this, 'render_event_planning_workspace' )
+			);
+			remove_submenu_page( 'aims-events', AIMS_Event_Planning_Workspace_Page::PAGE_SLUG );
 
-		add_submenu_page(
-			'aims-events',
-			'Public Projection',
-			'Public Projection',
-			AIMS_Capabilities::CAP_MANAGE_EVENT_PUBLICATION,
-			'aims-event-public-projection',
-			array( $this, 'render_event_public_projection' )
-		);
+			add_submenu_page(
+				'aims-events',
+				'Public Projection',
+				'Public Projection',
+				AIMS_Capabilities::CAP_MANAGE_EVENT_PUBLICATION,
+				'aims-event-public-projection',
+				array( $this, 'render_event_public_projection' )
+			);
+		}
 
 		add_menu_page(
 			'Inventory',
@@ -97,23 +102,27 @@ class AIMS_Admin_Menu {
 			58
 		);
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			'Vendors',
-			'Vendors',
-			AIMS_Capabilities::CAP_MANAGE_VENDORS,
-			'aims-vendors',
-			array( $this, 'render_vendors_shell' )
-		);
+		if ( $this->user_can_manage_vendors() ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				'Vendors',
+				'Vendors',
+				'read',
+				'aims-vendors',
+				array( $this, 'render_vendors_shell' )
+			);
+		}
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			'Square Sync',
-			'Square Sync',
-			AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC,
-			'aims-square-sync',
-			array( $this, 'render_square_sync_shell' )
-		);
+		if ( $this->user_can_manage_square_sync() ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				'Square Sync',
+				'Square Sync',
+				'read',
+				'aims-square-sync',
+				array( $this, 'render_square_sync_shell' )
+			);
+		}
 
 		add_submenu_page(
 			self::MENU_SLUG,
@@ -151,23 +160,27 @@ class AIMS_Admin_Menu {
 			array( $this, 'render_vendor_sync_review' )
 		);
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			'Sync Runs / Replay',
-			'Sync Runs / Replay',
-			AIMS_Capabilities::CAP_RUN_REPLAY,
-			'aims-square-sync-runs',
-			array( $this, 'render_sync_runs_review' )
-		);
+		if ( $this->user_can_access_sync_runs() ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				'Sync Runs / Replay',
+				'Sync Runs / Replay',
+				'read',
+				'aims-square-sync-runs',
+				array( $this, 'render_sync_runs_review' )
+			);
+		}
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			'Reports',
-			'Reports',
-			AIMS_Capabilities::CAP_VIEW_REPORTS,
-			'aims-reports',
-			array( $this, 'render_reports_shell' )
-		);
+		if ( $this->user_can_view_reports() ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				'Reports',
+				'Reports',
+				'read',
+				'aims-reports',
+				array( $this, 'render_reports_shell' )
+			);
+		}
 	}
 
 	public function render_dashboard(): void {
@@ -244,5 +257,48 @@ class AIMS_Admin_Menu {
 
 	public function render_reports_shell(): void {
 		$this->reports_module->render_shell();
+	}
+
+	private function user_can_access_events_shell(): bool {
+		if ( $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_event_planning( get_current_user_id() ) ) {
+			return true;
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL );
+	}
+
+	private function user_can_manage_vendors(): bool {
+		if ( $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_vendors( get_current_user_id() ) ) {
+			return true;
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDORS );
+	}
+
+	private function user_can_manage_square_sync(): bool {
+		if ( $this->responsibility_auth !== null && $this->responsibility_auth->can_manage_square_sync( get_current_user_id() ) ) {
+			return true;
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC );
+	}
+
+	private function user_can_access_sync_runs(): bool {
+		if ( $this->responsibility_auth !== null ) {
+			$uid = get_current_user_id();
+			if ( $this->responsibility_auth->can_run_square_sync_replay( $uid ) || $this->responsibility_auth->can_run_square_sync_undo( $uid ) ) {
+				return true;
+			}
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_RUN_REPLAY );
+	}
+
+	private function user_can_view_reports(): bool {
+		if ( $this->responsibility_auth !== null && $this->responsibility_auth->can_view_reports( get_current_user_id() ) ) {
+			return true;
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_VIEW_REPORTS );
 	}
 }

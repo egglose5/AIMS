@@ -7,7 +7,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Plugin {
 	const OPTION_SCHEMA_VERSION = 'aims_schema_version';
 	const OPTION_INSTALLED_AT   = 'aims_installed_at';
-	const SCHEMA_VERSION        = '0.5.1';
+	const OPTION_RESPONSIBILITY_SEED_VERSION = 'aims_responsibility_seed_version';
+	const OPTION_RESPONSIBILITY_ENABLED      = 'aims_responsibility_rbac_enabled';
+	const SCHEMA_VERSION        = '0.6.0';
 
 	private static $instance = null;
 
@@ -19,6 +21,7 @@ class AIMS_Plugin {
 	private $square_sync_module;
 	private $reports_module;
 	private $modules = array();
+	private $responsibility_auth;
 
 	public static function instance(): AIMS_Plugin {
 		if ( null === self::$instance ) {
@@ -44,20 +47,24 @@ class AIMS_Plugin {
 		return array(
 			self::OPTION_SCHEMA_VERSION,
 			self::OPTION_INSTALLED_AT,
+			self::OPTION_RESPONSIBILITY_SEED_VERSION,
+			self::OPTION_RESPONSIBILITY_ENABLED,
 		);
 	}
 
 	private function __construct() {
 		$this->installer          = new AIMS_Installer( new AIMS_Schema() );
 		$this->capabilities       = new AIMS_Capabilities();
+		$this->responsibility_auth = new AIMS_Responsibility_Authorization_Service();
 		$this->vendor_module      = new AIMS_Vendor_Module(
 			new AIMS_Vendor_Service(
 				new AIMS_Vendor_Repository()
-			)
+			),
+			$this->responsibility_auth
 		);
-		$this->event_module       = new AIMS_Event_Module();
-		$this->square_sync_module = new AIMS_Square_Sync_Module();
-		$this->reports_module     = new AIMS_Reports_Module();
+		$this->event_module       = new AIMS_Event_Module( null, $this->responsibility_auth );
+		$this->square_sync_module = new AIMS_Square_Sync_Module( null, null, $this->responsibility_auth );
+		$this->reports_module     = new AIMS_Reports_Module( $this->responsibility_auth );
 		$this->modules            = array(
 			$this->vendor_module,
 			$this->event_module,
@@ -67,7 +74,8 @@ class AIMS_Plugin {
 		$this->admin_menu         = new AIMS_Admin_Menu(
 			$this->vendor_module,
 			$this->square_sync_module,
-			$this->reports_module
+			$this->reports_module,
+			$this->responsibility_auth
 		);
 	}
 
@@ -75,6 +83,7 @@ class AIMS_Plugin {
 		add_action( 'init', array( $this->capabilities, 'register' ) );
 		add_action( 'init', array( $this->installer, 'maybe_install' ), 5 );
 		add_action( 'init', array( $this, 'harden_schema_constraints' ), 6 );
+		add_action( 'init', array( $this, 'migrate_legacy_responsibilities' ), 7 );
 		add_action( 'admin_menu', array( $this->admin_menu, 'register' ) );
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
 
@@ -119,5 +128,14 @@ class AIMS_Plugin {
 		$wpdb->query( 'ALTER TABLE `' . $table_name . '` ADD KEY `event_bucket_active_lookup` (`event_id`, `is_active`, `display_order`)' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( 'ALTER TABLE `' . $table_name . '` ADD KEY `bucket_active_lookup` (`physical_bucket_id`, `is_active`)' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$wpdb->query( 'ALTER TABLE `' . $table_name . '` ADD KEY `event_bucket_history_lookup` (`event_id`, `physical_bucket_id`, `assigned_at`)' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	public function migrate_legacy_responsibilities(): void {
+		if ( ! class_exists( 'AIMS_Responsibility_Migration_Service' ) ) {
+			return;
+		}
+
+		$service = new AIMS_Responsibility_Migration_Service();
+		$service->maybe_seed_from_legacy();
 	}
 }

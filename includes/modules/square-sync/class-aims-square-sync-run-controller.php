@@ -7,10 +7,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Square_Sync_Run_Controller {
 	private $runs;
 	private $actions;
+	private $responsibility_auth;
 
-	public function __construct( AIMS_Sync_Run_Repository $runs = null, AIMS_Sync_Action_Repository $actions = null ) {
+	public function __construct(
+		AIMS_Sync_Run_Repository $runs = null,
+		AIMS_Sync_Action_Repository $actions = null,
+		AIMS_Responsibility_Authorization_Service $responsibility_auth = null
+	) {
 		$this->runs    = $runs ?: new AIMS_Sync_Run_Repository();
 		$this->actions = $actions ?: new AIMS_Sync_Action_Repository();
+		$this->responsibility_auth = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
 	}
 
 	public function register(): void {
@@ -39,7 +45,7 @@ class AIMS_Square_Sync_Run_Controller {
 	}
 
 	private function handle_request( string $mode, string $capability, string $denied_message, string $action_hook, string $notice_key ): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC ) || ! current_user_can( $capability ) ) {
+		if ( ! $this->can_execute_action_mode( $mode, $capability ) ) {
 			wp_die( esc_html__( $denied_message, 'ai-man-sys' ) );
 		}
 
@@ -104,5 +110,30 @@ class AIMS_Square_Sync_Run_Controller {
 
 		wp_safe_redirect( $url );
 		exit;
+	}
+
+	private function can_execute_action_mode( string $mode, string $capability ): bool {
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+
+		if ( $user_id > 0 && is_object( $this->responsibility_auth ) ) {
+			if ( ! method_exists( $this->responsibility_auth, 'can_manage_square_sync' ) ) {
+				return false;
+			}
+
+			$can_manage = (bool) $this->responsibility_auth->can_manage_square_sync( $user_id );
+			if ( $can_manage ) {
+				if ( 'replay' === $mode && method_exists( $this->responsibility_auth, 'can_run_square_sync_replay' ) ) {
+					return (bool) $this->responsibility_auth->can_run_square_sync_replay( $user_id );
+				}
+
+				if ( 'undo' === $mode && method_exists( $this->responsibility_auth, 'can_run_square_sync_undo' ) ) {
+					return (bool) $this->responsibility_auth->can_run_square_sync_undo( $user_id );
+				}
+
+				return true;
+			}
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC ) && current_user_can( $capability );
 	}
 }

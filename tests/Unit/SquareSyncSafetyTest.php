@@ -89,4 +89,42 @@ final class SquareSyncSafetyTest extends \AIMS\Tests\TestCase {
 		$this->assertTrue( $rows[0]['can_replay'] );
 		$this->assertFalse( $rows[0]['can_undo'] );
 	}
+
+	public function testSquareSyncRowsUseResponsibilityFlagsWhenEnabled(): void {
+		TestState::set_current_user_id( 56 );
+		update_option( \AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+
+		$this->wpdb()->queue_results(
+			array(
+				array(
+					'id'                => 23,
+					'source_system'     => 'square',
+					'sync_watermark'    => '2026-03-24T11:00:00Z',
+					'processed_records' => 4,
+					'error_count'       => 0,
+					'completed_at'      => '2026-03-24 11:05:00',
+					'success'           => 1,
+				),
+			)
+		);
+
+		$auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function can_run_square_sync_replay( int $user_id = 0 ): bool {
+				return 56 === $user_id;
+			}
+
+			public function can_run_square_sync_undo( int $user_id = 0 ): bool {
+				return 56 === $user_id;
+			}
+		};
+
+		$provider = new \AIMS_Square_Sync_Runs_Data_Provider( $auth );
+		$rows     = $provider->get_rows();
+
+		$this->assertCount( 1, $rows );
+		$this->assertTrue( $rows[0]['can_replay'] );
+		$this->assertTrue( $rows[0]['can_undo'] );
+	}
 }

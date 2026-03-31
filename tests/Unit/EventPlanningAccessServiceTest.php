@@ -148,4 +148,51 @@ final class EventPlanningAccessServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( array(), $service->get_authorized_vendor_ids( 42 ) );
 		$this->assertSame( array(), $service->get_authorized_event_ids( 42 ) );
 	}
+
+	public function testResponsibilityAssignmentsOverrideLegacyVendorScope(): void {
+		TestState::set_user(
+			52,
+			(object) array(
+				'ID'    => 52,
+				'roles' => array( 'aims_manager_user' ),
+			)
+		);
+
+		$vendor_access = new class() extends \AIMS_Vendor_User_Access_Repository {
+			public function get_vendor_ids_for_user( int $user_id ): array {
+				return array( 5 );
+			}
+		};
+
+		$responsibility_auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function has_any_assignments_for_user( int $user_id = 0 ): bool {
+				return 52 === $user_id;
+			}
+
+			public function can_manage_event_planning( int $user_id = 0 ): bool {
+				return 52 === $user_id;
+			}
+
+			public function can_view_all_events( int $user_id = 0 ): bool {
+				return false;
+			}
+
+			public function get_authorized_event_ids( int $user_id = 0 ): array {
+				return 52 === $user_id ? array( 900, 901 ) : array();
+			}
+		};
+
+		$service = new AIMS_Event_Planning_Access_Service(
+			$vendor_access,
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {},
+			new class() extends \AIMS_Event_Repository {},
+			new class() extends \AIMS_Supervisor_User_Hierarchy_Repository {},
+			$responsibility_auth
+		);
+
+		$this->assertTrue( $service->can_access_event_planning( 52 ) );
+		$this->assertSame( array( 900, 901 ), $service->get_authorized_event_ids( 52 ) );
+	}
 }

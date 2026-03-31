@@ -7,14 +7,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Square_Sync_Module implements AIMS_Module {
 	private $webhook_controller;
 	private $sync_run_controller;
+	private $responsibility_auth;
 	private const ADMIN_PAGE = 'aims-square-sync';
 
 	public function __construct(
 		?AIMS_Square_Webhook_Controller $webhook_controller = null,
-		?AIMS_Square_Sync_Run_Controller $sync_run_controller = null
+		?AIMS_Square_Sync_Run_Controller $sync_run_controller = null,
+		AIMS_Responsibility_Authorization_Service $responsibility_auth = null
 	) {
 		$this->webhook_controller = $webhook_controller ? $webhook_controller : new AIMS_Square_Webhook_Controller();
 		$this->sync_run_controller = $sync_run_controller ? $sync_run_controller : new AIMS_Square_Sync_Run_Controller();
+		$this->responsibility_auth = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
 	}
 
 	public function register(): void {
@@ -24,7 +27,7 @@ class AIMS_Square_Sync_Module implements AIMS_Module {
 	}
 
 	public function render_shell(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC ) ) {
+		if ( ! $this->can_manage_square_sync() ) {
 			wp_die( esc_html__( 'You do not have permission to manage Square sync.', 'ai-man-sys' ) );
 		}
 
@@ -38,7 +41,7 @@ class AIMS_Square_Sync_Module implements AIMS_Module {
 	}
 
 	public function handle_admin_ingest(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC ) ) {
+		if ( ! $this->can_manage_square_sync() ) {
 			wp_die( esc_html__( 'You do not have permission to manage Square sync.', 'ai-man-sys' ) );
 		}
 
@@ -185,6 +188,18 @@ class AIMS_Square_Sync_Module implements AIMS_Module {
 
 		wp_safe_redirect( $redirect );
 		exit;
+	}
+
+	private function can_manage_square_sync(): bool {
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+
+		if ( $user_id > 0 && is_object( $this->responsibility_auth ) && method_exists( $this->responsibility_auth, 'can_manage_square_sync' ) ) {
+			if ( $this->responsibility_auth->can_manage_square_sync( $user_id ) ) {
+				return true;
+			}
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_MANAGE_SQUARE_SYNC );
 	}
 }
 

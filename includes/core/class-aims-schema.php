@@ -11,6 +11,9 @@ class AIMS_Schema {
 		return array(
 			$wpdb->prefix . 'aims_vendors',
 			$wpdb->prefix . 'aims_vendor_user_access',
+			$wpdb->prefix . 'aims_responsibility_templates',
+			$wpdb->prefix . 'aims_template_responsibilities',
+			$wpdb->prefix . 'aims_user_responsibilities',
 			$wpdb->prefix . 'aims_supervisor_user_relationships',
 			$wpdb->prefix . 'aims_customers',
 			$wpdb->prefix . 'aims_customer_addresses',
@@ -56,6 +59,9 @@ class AIMS_Schema {
 		$charset_collate         = $wpdb->get_charset_collate();
 		$vendors_table           = $wpdb->prefix . 'aims_vendors';
 		$vendor_access_table     = $wpdb->prefix . 'aims_vendor_user_access';
+		$responsibility_templates_table = $wpdb->prefix . 'aims_responsibility_templates';
+		$template_responsibilities_table = $wpdb->prefix . 'aims_template_responsibilities';
+		$user_responsibilities_table = $wpdb->prefix . 'aims_user_responsibilities';
 		$supervisor_relationships_table = $wpdb->prefix . 'aims_supervisor_user_relationships';
 		$customers_table         = $wpdb->prefix . 'aims_customers';
 		$customer_addresses_table = $wpdb->prefix . 'aims_customer_addresses';
@@ -135,6 +141,58 @@ class AIMS_Schema {
 				UNIQUE KEY vendor_user (vendor_id, user_id),
 				KEY user_id (user_id),
 				KEY access_role (access_role)
+			) {$charset_collate};",
+			"CREATE TABLE {$responsibility_templates_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				template_key varchar(100) NOT NULL,
+				template_name varchar(190) NOT NULL,
+				template_status varchar(32) NOT NULL DEFAULT 'active',
+				description longtext NULL,
+				is_system tinyint(1) NOT NULL DEFAULT 0,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY template_key (template_key),
+				KEY template_status (template_status),
+				KEY is_system (is_system)
+			) {$charset_collate};",
+			"CREATE TABLE {$template_responsibilities_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				template_key varchar(100) NOT NULL,
+				responsibility_key varchar(100) NOT NULL,
+				scope_type varchar(32) NOT NULL DEFAULT 'global',
+				scope_ref_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY template_responsibility_scope (template_key, responsibility_key, scope_type, scope_ref_id),
+				KEY template_key (template_key),
+				KEY responsibility_key (responsibility_key),
+				KEY scope_lookup (scope_type, scope_ref_id)
+			) {$charset_collate};",
+			"CREATE TABLE {$user_responsibilities_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				user_id bigint(20) unsigned NOT NULL,
+				responsibility_key varchar(100) NOT NULL,
+				scope_type varchar(32) NOT NULL DEFAULT 'global',
+				scope_ref_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				template_key varchar(100) NOT NULL DEFAULT '',
+				override_mode varchar(16) NOT NULL DEFAULT 'allow',
+				is_active tinyint(1) NOT NULL DEFAULT 1,
+				granted_by bigint(20) unsigned DEFAULT NULL,
+				granted_at datetime NULL DEFAULT NULL,
+				revoked_by bigint(20) unsigned DEFAULT NULL,
+				revoked_at datetime NULL DEFAULT NULL,
+				notes longtext NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				KEY user_active_lookup (user_id, is_active),
+				KEY responsibility_lookup (responsibility_key, is_active),
+				KEY scope_lookup (scope_type, scope_ref_id, is_active),
+				KEY template_key (template_key),
+				KEY granted_by (granted_by),
+				KEY revoked_by (revoked_by)
 			) {$charset_collate};",
 			"CREATE TABLE {$supervisor_relationships_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

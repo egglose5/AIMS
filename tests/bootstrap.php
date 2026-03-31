@@ -216,6 +216,24 @@ if ( ! function_exists( 'current_user_can' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_option' ) ) {
+	function get_option( string $option, $default = false ) {
+		return \AIMS\Tests\Support\TestState::get_option( $option, $default );
+	}
+}
+
+if ( ! function_exists( 'update_option' ) ) {
+	function update_option( string $option, $value, bool $autoload = false ): bool {
+		return \AIMS\Tests\Support\TestState::update_option( $option, $value );
+	}
+}
+
+if ( ! function_exists( 'delete_option' ) ) {
+	function delete_option( string $option ): bool {
+		return \AIMS\Tests\Support\TestState::delete_option( $option );
+	}
+}
+
 if ( ! function_exists( 'user_can' ) ) {
 	function user_can( $user_id, string $cap ): bool {
 		return \AIMS\Tests\Support\TestState::user_can( (int) $user_id, $cap );

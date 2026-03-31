@@ -12,9 +12,11 @@ class AIMS_Event_Module implements AIMS_Module {
 	private $public_projection_data_provider;
 	private $planning_actions;
 	private $event_planning_access_service;
+	private $responsibility_authorization_service;
 
-	public function __construct( $event_planning_access_service = null ) {
+	public function __construct( $event_planning_access_service = null, $responsibility_authorization_service = null ) {
 		$this->event_planning_access_service = $event_planning_access_service;
+		$this->responsibility_authorization_service = $responsibility_authorization_service;
 	}
 
 	public function register(): void {
@@ -162,8 +164,15 @@ class AIMS_Event_Module implements AIMS_Module {
 
 	private function get_planning_actions(): AIMS_Event_Planning_Actions {
 		if ( null === $this->planning_actions ) {
+			$access_service = $this->get_event_planning_access_service();
 			$this->planning_actions = new AIMS_Event_Planning_Actions(
-				new AIMS_Event_Planning_Action_Service()
+				new AIMS_Event_Planning_Action_Service(
+					null,
+					$access_service,
+					null,
+					null,
+					$this->get_responsibility_authorization_service()
+				)
 			);
 		}
 
@@ -226,10 +235,24 @@ class AIMS_Event_Module implements AIMS_Module {
 
 	private function get_event_planning_access_service() {
 		if ( null === $this->event_planning_access_service && class_exists( 'AIMS_Event_Planning_Access_Service' ) ) {
-			$this->event_planning_access_service = new AIMS_Event_Planning_Access_Service();
+			$this->event_planning_access_service = new AIMS_Event_Planning_Access_Service(
+				null,
+				null,
+				null,
+				null,
+				$this->get_responsibility_authorization_service()
+			);
 		}
 
 		return $this->event_planning_access_service;
+	}
+
+	private function get_responsibility_authorization_service() {
+		if ( null === $this->responsibility_authorization_service && class_exists( 'AIMS_Responsibility_Authorization_Service' ) ) {
+			$this->responsibility_authorization_service = new AIMS_Responsibility_Authorization_Service();
+		}
+
+		return $this->responsibility_authorization_service;
 	}
 
 	private function collect_event_payload(): array {

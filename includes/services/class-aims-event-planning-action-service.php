@@ -9,12 +9,14 @@ class AIMS_Event_Planning_Action_Service {
 	private $access_service;
 	private $assignment_repository;
 	private $execution_service;
+	private $responsibility_auth;
 
 	public function __construct(
 		AIMS_Event_Bucket_Assignment_Service $assignment_service = null,
 		$access_service = null,
 		AIMS_Event_Bucket_Assignment_Repository $assignment_repository = null,
-		AIMS_Event_Execution_Service $execution_service = null
+		AIMS_Event_Execution_Service $execution_service = null,
+		AIMS_Responsibility_Authorization_Service $responsibility_auth = null
 	) {
 		$this->assignment_service    = $assignment_service ?: new AIMS_Event_Bucket_Assignment_Service(
 			new AIMS_Event_Bucket_Assignment_Repository()
@@ -22,6 +24,7 @@ class AIMS_Event_Planning_Action_Service {
 		$this->access_service        = $access_service ?: ( class_exists( 'AIMS_Event_Planning_Access_Service' ) ? new AIMS_Event_Planning_Access_Service() : null );
 		$this->assignment_repository = $assignment_repository ?: new AIMS_Event_Bucket_Assignment_Repository();
 		$this->execution_service     = $execution_service ?: ( class_exists( 'AIMS_Event_Execution_Service' ) ? new AIMS_Event_Execution_Service() : null );
+		$this->responsibility_auth   = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
 	}
 
 	public function can_current_user_manage_planning(): bool {
@@ -29,6 +32,10 @@ class AIMS_Event_Planning_Action_Service {
 
 		if ( $user_id <= 0 ) {
 			return false;
+		}
+
+		if ( $this->should_use_responsibility_model( $user_id ) ) {
+			return $this->responsibility_auth->can_manage_event_planning( $user_id );
 		}
 
 		if ( is_object( $this->access_service ) && method_exists( $this->access_service, 'can_access_event_planning' ) ) {
@@ -41,9 +48,14 @@ class AIMS_Event_Planning_Action_Service {
 
 	public function can_current_user_mutate_event( int $event_id ): bool {
 		$event_id = max( 0, $event_id );
+		$user_id  = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 
 		if ( $event_id <= 0 || ! $this->can_current_user_manage_planning() ) {
 			return false;
+		}
+
+		if ( $this->should_use_responsibility_model( $user_id ) ) {
+			return $this->responsibility_auth->can_mutate_event( $user_id, $event_id );
 		}
 
 		$authorized_event_ids = $this->get_authorized_event_ids_for_current_user();
@@ -52,6 +64,18 @@ class AIMS_Event_Planning_Action_Service {
 		}
 
 		return in_array( $event_id, $authorized_event_ids, true );
+	}
+
+	private function should_use_responsibility_model( int $user_id ): bool {
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+
+		if ( ! is_object( $this->responsibility_auth ) || ! method_exists( $this->responsibility_auth, 'has_any_assignments_for_user' ) ) {
+			return false;
+		}
+
+		return (bool) $this->responsibility_auth->has_any_assignments_for_user( $user_id );
 	}
 
 	public function assign_bucket( array $request ): array {

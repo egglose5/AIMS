@@ -49,6 +49,66 @@ final class EventPlanningActionServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 0, $assignment_service->assign_calls );
 	}
 
+	public function testAssignBucketUsesResponsibilityModelWhenAssignmentsExist(): void {
+		TestState::set_current_user_id( 77 );
+
+		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public int $assign_calls = 0;
+
+			public function __construct() {}
+
+			public function assign_bucket_to_event( array $data ): int {
+				++$this->assign_calls;
+				return 901;
+			}
+		};
+
+		$access_service = new class() {
+			public function can_access_event_planning( int $user_id ): bool {
+				return true;
+			}
+
+			public function get_authorized_event_ids( int $user_id ): array {
+				return array( 10 );
+			}
+		};
+
+		$responsibility_auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function has_any_assignments_for_user( int $user_id = 0 ): bool {
+				return 77 === $user_id;
+			}
+
+			public function can_manage_event_planning( int $user_id = 0 ): bool {
+				return 77 === $user_id;
+			}
+
+			public function can_mutate_event( int $user_id, int $event_id ): bool {
+				return false;
+			}
+		};
+
+		$service = new \AIMS_Event_Planning_Action_Service(
+			$assignment_service,
+			$access_service,
+			new class() extends \AIMS_Event_Bucket_Assignment_Repository {},
+			null,
+			$responsibility_auth
+		);
+
+		$result = $service->assign_bucket(
+			array(
+				'event_id'           => 10,
+				'physical_bucket_id' => 300,
+			)
+		);
+
+		$this->assertFalse( $result['success'] );
+		$this->assertSame( 'You are not authorized to assign buckets to this event.', $result['message'] );
+		$this->assertSame( 0, $assignment_service->assign_calls );
+	}
+
 	public function testAssignBucketDefaultsToStagedStatus(): void {
 		TestState::set_current_user_id( 77 );
 

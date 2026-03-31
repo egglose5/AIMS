@@ -5,12 +5,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Reports_Module implements AIMS_Module {
+	private $responsibility_auth;
+
+	public function __construct( AIMS_Responsibility_Authorization_Service $responsibility_auth = null ) {
+		$this->responsibility_auth = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
+	}
+
 	public function register(): void {
 		add_action( 'admin_post_aims_reports_export_event_sales', array( $this, 'handle_export_event_sales' ) );
 	}
 
 	public function render_shell(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_VIEW_REPORTS ) ) {
+		if ( ! $this->can_view_reports() ) {
 			wp_die( esc_html__( 'You do not have permission to view reports.', 'ai-man-sys' ) );
 		}
 
@@ -24,7 +30,7 @@ class AIMS_Reports_Module implements AIMS_Module {
 	}
 
 	public function handle_export_event_sales(): void {
-		if ( ! current_user_can( AIMS_Capabilities::CAP_VIEW_REPORTS ) ) {
+		if ( ! $this->can_view_reports() ) {
 			wp_die( esc_html__( 'You do not have permission to export reports.', 'ai-man-sys' ) );
 		}
 
@@ -105,5 +111,17 @@ class AIMS_Reports_Module implements AIMS_Module {
 
 		$class = 'success' === $status ? 'notice notice-success' : 'notice notice-error';
 		echo '<div class="' . esc_attr( $class ) . '"><p>' . esc_html( $message ) . '</p></div>';
+	}
+
+	private function can_view_reports(): bool {
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+
+		if ( $user_id > 0 && is_object( $this->responsibility_auth ) && method_exists( $this->responsibility_auth, 'can_view_reports' ) ) {
+			if ( $this->responsibility_auth->can_view_reports( $user_id ) ) {
+				return true;
+			}
+		}
+
+		return current_user_can( AIMS_Capabilities::CAP_VIEW_REPORTS );
 	}
 }

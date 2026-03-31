@@ -16,9 +16,32 @@ final class TestState {
 			'products'        => array(),
 			'user_caps'       => array(),
 			'hook_calls'      => array(),
+			'options'         => array(),
 			'throw_on_redirect' => false,
 			'current_time'    => '2026-01-01 00:00:00',
 		);
+	}
+
+	public static function get_option( string $option, $default = false ) {
+		if ( array_key_exists( $option, self::$state['options'] ) ) {
+			return self::$state['options'][ $option ];
+		}
+
+		return $default;
+	}
+
+	public static function update_option( string $option, $value ): bool {
+		self::$state['options'][ $option ] = $value;
+
+		return true;
+	}
+
+	public static function delete_option( string $option ): bool {
+		if ( array_key_exists( $option, self::$state['options'] ) ) {
+			unset( self::$state['options'][ $option ] );
+		}
+
+		return true;
 	}
 
 	public static function set_throw_on_redirect( bool $value ): void {

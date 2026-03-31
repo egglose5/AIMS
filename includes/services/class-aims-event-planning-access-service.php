@@ -9,17 +9,20 @@ class AIMS_Event_Planning_Access_Service {
 	private $vendor_event_assignments;
 	private $events;
 	private $supervisor_hierarchy;
+	private $responsibility_auth;
 
 	public function __construct(
 		AIMS_Vendor_User_Access_Repository $vendor_user_access = null,
 		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
 		AIMS_Event_Repository $events = null,
-		AIMS_Supervisor_User_Hierarchy_Repository $supervisor_hierarchy = null
+		AIMS_Supervisor_User_Hierarchy_Repository $supervisor_hierarchy = null,
+		AIMS_Responsibility_Authorization_Service $responsibility_auth = null
 	) {
 		$this->vendor_user_access       = $vendor_user_access ?: new AIMS_Vendor_User_Access_Repository();
 		$this->vendor_event_assignments = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
 		$this->events                   = $events ?: new AIMS_Event_Repository();
 		$this->supervisor_hierarchy     = $supervisor_hierarchy ?: ( class_exists( 'AIMS_Supervisor_User_Hierarchy_Repository' ) ? new AIMS_Supervisor_User_Hierarchy_Repository() : null );
+		$this->responsibility_auth      = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
 	}
 
 	public function can_access_event_planning( int $user_id = 0 ): bool {
@@ -31,6 +34,10 @@ class AIMS_Event_Planning_Access_Service {
 
 		if ( $this->can_view_all_events( $user_id ) ) {
 			return true;
+		}
+
+		if ( $this->should_use_responsibility_model( $user_id ) ) {
+			return $this->responsibility_auth->can_manage_event_planning( $user_id );
 		}
 
 		return $this->user_has_role(
@@ -53,6 +60,10 @@ class AIMS_Event_Planning_Access_Service {
 
 		if ( $user_id <= 0 ) {
 			return false;
+		}
+
+		if ( $this->should_use_responsibility_model( $user_id ) ) {
+			return $this->responsibility_auth->can_view_all_events( $user_id );
 		}
 
 		if ( $this->user_has_role( $user_id, array( 'administrator', 'shop_manager' ) ) ) {
@@ -101,6 +112,10 @@ class AIMS_Event_Planning_Access_Service {
 
 		if ( $this->can_view_all_events( $user_id ) ) {
 			return $this->get_all_event_ids();
+		}
+
+		if ( $this->should_use_responsibility_model( $user_id ) ) {
+			return $this->responsibility_auth->get_authorized_event_ids( $user_id );
 		}
 
 		$vendor_ids = $this->get_authorized_vendor_ids( $user_id );
@@ -390,5 +405,13 @@ class AIMS_Event_Planning_Access_Service {
 		}
 
 		return false;
+	}
+
+	private function should_use_responsibility_model( int $user_id ): bool {
+		if ( ! is_object( $this->responsibility_auth ) || ! method_exists( $this->responsibility_auth, 'has_any_assignments_for_user' ) ) {
+			return false;
+		}
+
+		return (bool) $this->responsibility_auth->has_any_assignments_for_user( $user_id );
 	}
 }
