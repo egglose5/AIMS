@@ -75,7 +75,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 
 	public function testNavModelShowsAuthorizedEvents(): void {
 		TestState::set_current_user_id( 42 );
-		TestState::set_current_time( '2026-03-25 08:00:00' );
+		TestState::set_current_time( '2026-03-25 10:00:00' );
 		TestState::set_user(
 			42,
 			(object) array(

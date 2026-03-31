@@ -70,4 +70,16 @@ class AIMS_Vendor_Event_Assignment_Repository {
 
 		return ! empty( $assignment['vendor_id'] ) ? (int) $assignment['vendor_id'] : 0;
 	}
+
+	public function get_for_vendor( int $vendor_id ): array {
+		global $wpdb;
+
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE vendor_id = %d ORDER BY event_id ASC, id ASC',
+				$vendor_id
+			),
+			ARRAY_A
+		);
+	}
 }
