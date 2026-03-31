@@ -45,6 +45,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		$this->render_event_header( $selected_event );
 		$this->render_workspace_summary_panel( (array) ( $workspace['summary'] ?? array() ) );
 		$this->render_team_activity_panel( (array) ( $workspace['team_activity'] ?? array() ) );
+		$this->render_assignment_timeline_panel( (array) ( $workspace['assignment_timeline'] ?? array() ) );
 		$this->render_demand_panel( (array) ( $workspace['demand_rows'] ?? array() ) );
 		$this->render_assigned_buckets_panel( $selected_event_id, (array) ( $workspace['assigned_buckets'] ?? array() ), $team_context, $filter_state );
 		$this->render_available_buckets_panel( $selected_event_id, (array) ( $workspace['available_buckets'] ?? array() ), $team_context, $filter_state );
@@ -193,8 +194,16 @@ class AIMS_Event_Planning_Workspace_Page {
 				'value' => (string) (int) ( $summary['assigned_staged_bucket_count'] ?? 0 ),
 			),
 			array(
+				'label' => 'Staged > 24h',
+				'value' => (string) (int) ( $summary['assigned_staged_over_sla_count'] ?? 0 ),
+			),
+			array(
 				'label' => 'At Event Buckets',
 				'value' => (string) (int) ( $summary['assigned_at_event_bucket_count'] ?? 0 ),
+			),
+			array(
+				'label' => 'Check-In Lag > 8h',
+				'value' => (string) (int) ( $summary['checkin_lag_bucket_count'] ?? 0 ),
 			),
 			array(
 				'label' => 'Available Pool Buckets',
@@ -220,7 +229,7 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<div style="font-size:22px;font-weight:600;line-height:1.2;">' . esc_html( (string) ( $card['value'] ?? '0' ) ) . '</div>';
 			echo '</td>';
 
-			if ( 3 === $index ) {
+			if ( ( $index + 1 ) % 4 === 0 && $index + 1 < count( $cards ) ) {
 				echo '</tr><tr>';
 			}
 		}
@@ -239,6 +248,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<th>Planner</th>';
 		echo '<th>Assigned Buckets</th>';
 		echo '<th>Staged</th>';
+		echo '<th>Staged > 24h</th>';
 		echo '<th>At Event</th>';
 		echo '<th>Last Assignment</th>';
 		echo '</tr></thead>';
@@ -253,8 +263,46 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td>' . esc_html( (string) ( $row['display_name'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) (int) ( $row['assigned_count'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) (int) ( $row['staged_count'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( (string) (int) ( $row['staged_over_sla_count'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) (int) ( $row['at_event_count'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['last_assigned_at'] ?? '' ) ) . '</td>';
+			echo '</tr>';
+		}
+
+		echo '</tbody></table>';
+	}
+
+	private function render_assignment_timeline_panel( array $rows ): void {
+		echo '<h2>Assignment Timeline</h2>';
+
+		if ( empty( $rows ) ) {
+			echo '<div class="notice notice-info inline"><p>No assignment activity has been recorded for the current filter scope.</p></div>';
+			return;
+		}
+
+		echo '<table class="widefat fixed striped">';
+		echo '<thead><tr>';
+		echo '<th>Assigned</th>';
+		echo '<th>Bucket</th>';
+		echo '<th>Status</th>';
+		echo '<th>Planner</th>';
+		echo '<th>Age (hrs)</th>';
+		echo '<th>SLA</th>';
+		echo '</tr></thead>';
+		echo '<tbody>';
+
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			echo '<tr>';
+			echo '<td>' . esc_html( (string) ( $row['assigned_at'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( $this->build_bucket_label( $row ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['assignment_label'] ?? $row['assignment_status'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['assigned_by_label'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( $this->format_quantity( (float) ( $row['age_hours'] ?? 0 ) ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['sla_state'] ?? '' ) ) . '</td>';
 			echo '</tr>';
 		}
 

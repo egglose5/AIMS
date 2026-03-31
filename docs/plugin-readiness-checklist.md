@@ -40,7 +40,8 @@ This checklist maps release tasks to concrete code areas in this repository.
   - `includes/services/class-aims-event-planning-workspace-service.php`
   - `includes/services/class-aims-event-execution-service.php`
 - [x] Validate end-to-end event CRUD and assignment lifecycle capabilities and nonce protections.
-  - Planning workspace now includes hierarchy-scoped team visibility, bulk actions, manager summary metrics, team activity visibility, and planner-level filtering.
+  - Planning workspace now includes hierarchy-scoped team visibility, bulk actions, assignment timeline visibility, team activity visibility, planner-level filtering, and warehouse telemetry hooks.
+  - Execution SLA/risk metrics should be revised to start from real-world `loaded` / `in_transit` transitions rather than planning/staging age alone.
 
 ## Milestone D - Square Safety and Operator UX
 

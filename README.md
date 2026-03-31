@@ -57,28 +57,40 @@ The repository currently provides:
 ## Event execution model
 
 - Assignment to a show can change execution status, but it does not systematically move stock.
+- `staged` is a planning/readiness state and does not start an execution SLA clock.
+- `loaded` / `in_transit` is the real-world departure point for event execution timing.
 - `vendor_event_checkin` is the stock-at-event movement point.
 - Return is the move-back point.
 - Only physical movement events should write inventory ledger changes.
 - Planning writes stay in event bucket assignment records, not movement tables.
+
+## Warehouse telemetry model
+
+- Warehouse/prep timestamps may be captured for internal KPI work without changing operational truth.
+- Examples include `staged_at`, `picked_at`, `packed_at`, `loaded_at`, and planner/warehouse ownership markers.
+- Warehouse telemetry is intended to support local internal KPIs and team-specific process analysis.
+- Warehouse telemetry must not be treated as proof that stock physically arrived at an event.
+- Event execution SLA/risk indicators should key off real execution transitions such as `loaded` / `in_transit` and `vendor_event_checkin`, not planning age alone.
 
 ## Current workflow target
 
 1. Manager or supervisor opens Event Planning.
 2. The planner sees only events assigned to them or their subordinates.
 3. The planner can filter by event scope, event search, bucket search, and planner ownership (all/me/subordinate planner).
-4. AIMS shows event demand summary by SKU, planning summary metrics, team activity, currently assigned buckets, available buckets, and bucket contents.
+4. AIMS shows event demand summary by SKU, planning summary metrics, warehouse telemetry, assignment timeline visibility, team activity, currently assigned buckets, available buckets, and bucket contents.
 5. The planner manually assigns buckets to the event (single or bulk, with optional delegation to subordinate planners).
-6. AIMS writes staged event bucket assignment records.
-7. Inventory movement records are created later only when physical actions occur (primary vendor check-in and return flows).
+6. AIMS writes planning assignment records and optional warehouse telemetry timestamps, but not inventory movement records.
+7. Execution risk/SLA indicators begin only once stock is marked `loaded` / `in_transit`.
+8. Inventory movement records are created later only when physical actions occur (primary vendor check-in and return flows).
 
 ## Next implementation phase
 
-1. Add assignment timeline and status transition auditing to the planning workspace for supervisor review.
-2. Add planner-level workload and SLA indicators (staged aging, check-in lag) to the manager summary panel.
-3. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
-4. Expand Square replay and fulfillment wiring only after the planning and commitment workflow remains stable under team usage.
-5. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+1. Separate warehouse telemetry from event-execution SLA logic in the planning workspace.
+2. Add explicit transition timestamps for `loaded` / `in_transit` so execution timing starts from a real-world move event.
+3. Keep planner-level workload metrics available, but classify them as internal KPI telemetry rather than execution risk by default.
+4. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
+5. Expand Square replay and fulfillment wiring only after the planning and commitment workflow remains stable under team usage.
+6. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
 ## Upgrade path
 

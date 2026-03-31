@@ -138,6 +138,7 @@ class AIMS_Event_Planning_Workspace_Service {
 		$available     = $this->filter_bucket_rows_by_search( $available, (string) ( $filter_state['bucket_search'] ?? '' ) );
 		$summary       = $this->build_workspace_summary( $demand_rows, $assigned, $available );
 		$team_activity = $this->build_team_activity_rows( $assigned );
+		$timeline_rows = $this->build_assignment_timeline_rows( $assigned );
 
 		return array(
 			'event'           => $event,
@@ -147,6 +148,7 @@ class AIMS_Event_Planning_Workspace_Service {
 			'available_buckets' => $available,
 			'summary'         => $summary,
 			'team_activity'   => $team_activity,
+			'assignment_timeline' => $timeline_rows,
 		);
 	}
 
@@ -157,6 +159,8 @@ class AIMS_Event_Planning_Workspace_Service {
 		$available_pool     = 0.0;
 		$staged_count       = 0;
 		$at_event_count     = 0;
+		$staged_over_sla_count = 0;
+		$checkin_lag_count  = 0;
 
 		foreach ( $demand_rows as $demand_row ) {
 			if ( ! is_array( $demand_row ) ) {
@@ -173,12 +177,20 @@ class AIMS_Event_Planning_Workspace_Service {
 			}
 
 			$status = sanitize_key( (string) ( $assigned_row['assignment_status'] ?? '' ) );
+			$age_hours = $this->calculate_assignment_age_hours( (string) ( $assigned_row['assigned_at'] ?? '' ) );
 			if ( 'staged' === $status ) {
 				++$staged_count;
+				if ( $age_hours >= 24.0 ) {
+					++$staged_over_sla_count;
+				}
 			}
 
 			if ( 'at_event' === $status ) {
 				++$at_event_count;
+			}
+
+			if ( in_array( $status, array( 'assigned', 'staged', 'in_transit' ), true ) && $age_hours >= 8.0 ) {
+				++$checkin_lag_count;
 			}
 
 			$summary            = (array) ( $assigned_row['content_summary'] ?? array() );
@@ -199,7 +211,9 @@ class AIMS_Event_Planning_Workspace_Service {
 			'demand_open_quantity'           => $open_quantity,
 			'assigned_bucket_count'          => count( $assigned_rows ),
 			'assigned_staged_bucket_count'   => $staged_count,
+			'assigned_staged_over_sla_count' => $staged_over_sla_count,
 			'assigned_at_event_bucket_count' => $at_event_count,
+			'checkin_lag_bucket_count'       => $checkin_lag_count,
 			'available_bucket_count'         => count( $available_rows ),
 			'assigned_available_quantity'    => $assigned_available,
 			'available_pool_quantity'        => $available_pool,
@@ -225,6 +239,7 @@ class AIMS_Event_Planning_Workspace_Service {
 					'display_name'     => (string) ( $assigned_row['assigned_by_label'] ?? '' ),
 					'assigned_count'   => 0,
 					'staged_count'     => 0,
+					'staged_over_sla_count' => 0,
 					'at_event_count'   => 0,
 					'last_assigned_at' => '',
 				);
@@ -234,6 +249,9 @@ class AIMS_Event_Planning_Workspace_Service {
 			$status = sanitize_key( (string) ( $assigned_row['assignment_status'] ?? '' ) );
 			if ( 'staged' === $status ) {
 				++$activity[ $user_id ]['staged_count'];
+				if ( $this->calculate_assignment_age_hours( (string) ( $assigned_row['assigned_at'] ?? '' ) ) >= 24.0 ) {
+					$activity[ $user_id ]['staged_over_sla_count'] = (int) ( $activity[ $user_id ]['staged_over_sla_count'] ?? 0 ) + 1;
+				}
 			}
 
 			if ( 'at_event' === $status ) {
@@ -260,6 +278,85 @@ class AIMS_Event_Planning_Workspace_Service {
 		);
 
 		return $rows;
+	}
+
+	private function build_assignment_timeline_rows( array $assigned_rows ): array {
+		$rows = array();
+
+		foreach ( $assigned_rows as $assigned_row ) {
+			if ( ! is_array( $assigned_row ) ) {
+				continue;
+			}
+
+			$assigned_at = sanitize_text_field( (string) ( $assigned_row['assigned_at'] ?? '' ) );
+			$status      = sanitize_key( (string) ( $assigned_row['assignment_status'] ?? '' ) );
+			$age_hours   = $this->calculate_assignment_age_hours( $assigned_at );
+
+			$rows[] = array(
+				'assignment_id'    => (int) ( $assigned_row['assignment_id'] ?? 0 ),
+				'physical_bucket_id' => (int) ( $assigned_row['physical_bucket_id'] ?? 0 ),
+				'bucket_code'      => sanitize_text_field( (string) ( $assigned_row['bucket_code'] ?? '' ) ),
+				'bucket_label'     => sanitize_text_field( (string) ( $assigned_row['bucket_label'] ?? '' ) ),
+				'assignment_status' => $status,
+				'assignment_label' => sanitize_text_field( (string) ( $assigned_row['assignment_label'] ?? '' ) ),
+				'assigned_by'      => (int) ( $assigned_row['assigned_by'] ?? 0 ),
+				'assigned_by_label' => sanitize_text_field( (string) ( $assigned_row['assigned_by_label'] ?? '' ) ),
+				'assigned_at'      => $assigned_at,
+				'age_hours'        => $age_hours,
+				'sla_state'        => $this->build_timeline_sla_state( $status, $age_hours ),
+			);
+		}
+
+		usort(
+			$rows,
+			static function ( array $left, array $right ): int {
+				$left_assigned_at = (string) ( $left['assigned_at'] ?? '' );
+				$right_assigned_at = (string) ( $right['assigned_at'] ?? '' );
+				if ( $left_assigned_at !== $right_assigned_at ) {
+					return strcmp( $right_assigned_at, $left_assigned_at );
+				}
+
+				return (int) ( $right['assignment_id'] ?? 0 ) <=> (int) ( $left['assignment_id'] ?? 0 );
+			}
+		);
+
+		return array_slice( $rows, 0, 25 );
+	}
+
+	private function calculate_assignment_age_hours( string $assigned_at ): float {
+		$assigned_timestamp = strtotime( $assigned_at );
+		$now_timestamp      = $this->resolve_now_timestamp();
+
+		if ( false === $assigned_timestamp || $assigned_timestamp <= 0 || $now_timestamp <= 0 || $assigned_timestamp >= $now_timestamp ) {
+			return 0.0;
+		}
+
+		$seconds = $now_timestamp - $assigned_timestamp;
+
+		return round( $seconds / 3600, 1 );
+	}
+
+	private function build_timeline_sla_state( string $status, float $age_hours ): string {
+		if ( in_array( $status, array( 'at_event', 'returned', 'released', 'cancelled' ), true ) ) {
+			return 'Closed';
+		}
+
+		if ( $age_hours >= 24.0 ) {
+			return 'Overdue';
+		}
+
+		if ( $age_hours >= 8.0 ) {
+			return 'Watch';
+		}
+
+		return 'On Track';
+	}
+
+	private function resolve_now_timestamp(): int {
+		$now = function_exists( 'current_time' ) ? (string) current_time( 'mysql' ) : gmdate( 'Y-m-d H:i:s' );
+		$timestamp = strtotime( $now );
+
+		return false === $timestamp ? time() : (int) $timestamp;
 	}
 
 	private function get_demand_rows( int $event_id ): array {

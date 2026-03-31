@@ -561,4 +561,109 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'Planner Two', $model['workspace']['team_activity'][0]['display_name'] );
 		$this->assertSame( 1, $model['workspace']['summary']['assigned_bucket_count'] );
 	}
+
+	public function testWorkspaceSummaryIncludesSlaAndTimelineMetrics(): void {
+		TestState::set_current_user_id( 77 );
+		TestState::set_current_time( '2026-03-25 12:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID' => 77,
+				'display_name' => 'Manager One',
+			)
+		);
+
+		$events = new class() extends \AIMS_Event_Repository {
+			public function all(): array {
+				return array(
+					array(
+						'id' => 10,
+						'event_name' => 'Spring Show',
+					),
+				);
+			}
+		};
+
+		$bucket_assignments = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public function __construct() {}
+
+			public function get_active_buckets_for_event( int $event_id ): array {
+				return array(
+					array(
+						'id' => 501,
+						'event_id' => $event_id,
+						'physical_bucket_id' => 301,
+						'assignment_status' => 'staged',
+						'assigned_at' => '2026-03-24 08:00:00',
+						'assigned_by' => 77,
+					),
+					array(
+						'id' => 502,
+						'event_id' => $event_id,
+						'physical_bucket_id' => 302,
+						'assignment_status' => 'assigned',
+						'assigned_at' => '2026-03-25 00:00:00',
+						'assigned_by' => 77,
+					),
+					array(
+						'id' => 503,
+						'event_id' => $event_id,
+						'physical_bucket_id' => 303,
+						'assignment_status' => 'at_event',
+						'assigned_at' => '2026-03-24 09:00:00',
+						'assigned_by' => 77,
+					),
+				);
+			}
+
+			public function get_active_for_bucket( int $bucket_id ): ?array {
+				return null;
+			}
+		};
+
+		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find( int $bucket_id ): ?array {
+				return array(
+					'id' => $bucket_id,
+					'bucket_code' => 'B-' . $bucket_id,
+					'bucket_label' => 'Bucket ' . $bucket_id,
+					'bucket_type' => 'standard',
+					'status' => 'available',
+					'vendor_id' => 5,
+				);
+			}
+		};
+
+		$access_service = new class() {
+			public function get_current_user_authorized_events(): array {
+				return array(
+					array(
+						'id' => 10,
+						'event_name' => 'Spring Show',
+					),
+				);
+			}
+		};
+
+		$service = new AIMS_Event_Planning_Workspace_Service(
+			$events,
+			null,
+			$bucket_assignments,
+			$physical_buckets,
+			null,
+			null,
+			null,
+			$access_service
+		);
+
+		$model = $service->get_page_model( array( 'event_id' => 10 ) );
+
+		$this->assertSame( 1, $model['workspace']['summary']['assigned_staged_bucket_count'] );
+		$this->assertSame( 1, $model['workspace']['summary']['assigned_staged_over_sla_count'] );
+		$this->assertSame( 2, $model['workspace']['summary']['checkin_lag_bucket_count'] );
+		$this->assertCount( 3, $model['workspace']['assignment_timeline'] );
+		$this->assertSame( 502, $model['workspace']['assignment_timeline'][0]['assignment_id'] );
+		$this->assertSame( 'Watch', $model['workspace']['assignment_timeline'][0]['sla_state'] );
+		$this->assertSame( 1, $model['workspace']['team_activity'][0]['staged_over_sla_count'] );
+	}
 }
