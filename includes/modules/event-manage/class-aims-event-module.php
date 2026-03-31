@@ -238,8 +238,6 @@ class AIMS_Event_Module implements AIMS_Module {
 			$this->event_planning_access_service = new AIMS_Event_Planning_Access_Service(
 				null,
 				null,
-				null,
-				null,
 				$this->get_responsibility_authorization_service()
 			);
 		}
