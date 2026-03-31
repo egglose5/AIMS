@@ -72,7 +72,19 @@ This checklist maps release tasks to concrete code areas in this repository.
   - Authorization and timing logic: `includes/modules/vendor-manage/class-aims-vendor-portal-navigation-service.php` and `includes/repositories/class-aims-vendor-event-assignment-repository.php`.
   - Test coverage: `tests/Unit/VendorPortalNavigationServiceTest.php` (check-in window opens at the event start-time boundary three days before the event).
 
-## Next Milestone - Execution Telemetry and Exception Visibility
+## Next Milestone - Inventory Transfers v1 (Distributed Custody)
+
+- [ ] Model inventory transfers as custody changes between operational nodes instead of a single warehouse-out / warehouse-back loop.
+  - Main warehouse remains the central stocking and prepack node.
+  - Supervisor custody nodes (for example Abby) can hold stock and redistribute it to their subordinate vendors or events.
+  - Direct vendor custody nodes (for example Melissa) can receive stock without an intermediate supervisor layer.
+- [ ] Add transfer workflows for warehouse-to-supervisor, warehouse-to-direct-vendor, and supervisor-to-subordinate movements.
+- [ ] Add receive/return workflows so downstream custody pools can confirm handoff without forcing every event flow back through the main warehouse.
+- [ ] Preserve movement-only inventory authority so transfer out and receipt in are the physical events that write ledger changes.
+- [ ] Keep the design expandable for multiple concurrent shows and future replenishment into downstream custody pools.
+- [ ] Shape the transfer and receipt seams so they can later be driven by a mobile fulfillment app / API without changing the operational truth model.
+
+## Following Milestone - Execution Telemetry and Exception Visibility
 
 - [x] Add explicit `loaded_at` and `in_transit_at` timestamps to assignment records so elapsed transit time is trackable as analytics.
   - Schema and index coverage added on `aims_event_bucket_assignments`.

@@ -89,12 +89,27 @@ The repository currently provides:
 7. Inventory movement records are created only when physical actions occur: `loaded`/`in_transit` (departure), `vendor_event_checkin` (stock-at-event), and `event_return` (return flows).
 8. Age-band metrics (Staged > 24h, Open > 8h) are informational analytics only — planners may keep stock staged for days or weeks; the metric records that fact without implying a violation.
 
+## Distributed custody model
+
+- Mom handles raw-material intake and first-stage production before unfinished work enters the stitch workflow.
+- Stitchers receive unfinished work, complete stitching, and return finished goods to the main warehouse.
+- The main warehouse receives finished goods, stocks permanent shelf inventory, and builds prepacked stock for concurrent shows.
+- Main-warehouse stock is then disseminated to downstream custody nodes such as Melissa or Abby.
+- Melissa acts as a direct custody node with no subordinate redistribution layer.
+- Abby acts as a supervisor custody node: stock transferred to Abby remains in Abby's custody domain and may be redistributed by Abby to subordinate vendors or events.
+- Abby is responsible for what goes to and comes back from her subordinates; those stock flows do not need to route back through the main warehouse after every event.
+- Replenishment should be delivered into the appropriate downstream custody pool instead of forcing all inventory to return to the main warehouse between events.
+
 ## Next implementation phase
 
-1. Add explicit `loaded_at` / `in_transit_at` timestamps to assignment records so elapsed transit time can be tracked as an analytics dimension.
-2. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
-3. Expand Square replay and fulfillment wiring only after the planning and commitment workflow remains stable under team usage.
-4. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+1. Build `Inventory Transfers v1` around a distributed custody model instead of a single warehouse-out / warehouse-back loop.
+2. Represent supervisor roles such as Abby as real downstream custody nodes that can hold stock, redistribute it to subordinates, and remain responsible for their local inventory pool.
+3. Support warehouse-to-supervisor, warehouse-to-direct-vendor, and supervisor-to-subordinate transfer flows with explicit receive and return actions.
+4. Preserve movement-only inventory authority: transfers and receipts are the physical events that write ledger changes.
+5. Keep future mobile/API execution in view so these custody transfers can later be driven by a fulfillment app without changing the core model.
+6. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention after the custody transfer workflow is stable.
+7. Expand Square replay and fulfillment wiring only after planning and distributed custody workflows remain stable under team usage.
+8. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
 ## Upgrade path
 
