@@ -283,6 +283,8 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<table class="widefat fixed striped">';
 		echo '<thead><tr>';
 		echo '<th>Assigned</th>';
+		echo '<th>Loaded</th>';
+		echo '<th>In Transit</th>';
 		echo '<th>Bucket</th>';
 		echo '<th>Status</th>';
 		echo '<th>Planner</th>';
@@ -298,6 +300,8 @@ class AIMS_Event_Planning_Workspace_Page {
 
 			echo '<tr>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_at'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['loaded_at'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['in_transit_at'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_bucket_label( $row ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assignment_label'] ?? $row['assignment_status'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_by_label'] ?? '' ) ) . '</td>';

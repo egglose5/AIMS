@@ -289,6 +289,8 @@ class AIMS_Event_Planning_Workspace_Service {
 			}
 
 			$assigned_at = sanitize_text_field( (string) ( $assigned_row['assigned_at'] ?? '' ) );
+			$loaded_at   = sanitize_text_field( (string) ( $assigned_row['loaded_at'] ?? '' ) );
+			$in_transit_at = sanitize_text_field( (string) ( $assigned_row['in_transit_at'] ?? '' ) );
 			$status      = sanitize_key( (string) ( $assigned_row['assignment_status'] ?? '' ) );
 			$age_hours   = $this->calculate_assignment_age_hours( $assigned_at );
 
@@ -302,6 +304,8 @@ class AIMS_Event_Planning_Workspace_Service {
 				'assigned_by'      => (int) ( $assigned_row['assigned_by'] ?? 0 ),
 				'assigned_by_label' => sanitize_text_field( (string) ( $assigned_row['assigned_by_label'] ?? '' ) ),
 				'assigned_at'      => $assigned_at,
+				'loaded_at'        => $loaded_at,
+				'in_transit_at'    => $in_transit_at,
 				'age_hours'        => $age_hours,
 				'age_band'         => $this->build_assignment_age_band( $status, $age_hours ),
 			);
@@ -523,6 +527,8 @@ class AIMS_Event_Planning_Workspace_Service {
 				'assignment_type'  => sanitize_key( (string) ( $assignment['assignment_type'] ?? '' ) ),
 				'is_active'        => ! empty( $assignment['is_active'] ),
 				'assigned_at'      => sanitize_text_field( (string) ( $assignment['assigned_at'] ?? '' ) ),
+				'loaded_at'        => sanitize_text_field( (string) ( $assignment['loaded_at'] ?? '' ) ),
+				'in_transit_at'    => sanitize_text_field( (string) ( $assignment['in_transit_at'] ?? '' ) ),
 				'released_at'      => sanitize_text_field( (string) ( $assignment['released_at'] ?? '' ) ),
 				'assigned_by'      => (int) ( $assignment['assigned_by'] ?? 0 ),
 				'released_by'      => (int) ( $assignment['released_by'] ?? 0 ),

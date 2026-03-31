@@ -512,6 +512,8 @@ class AIMS_Schema {
 				assignment_status varchar(32) NOT NULL DEFAULT 'assigned',
 				assignment_type varchar(32) NOT NULL DEFAULT 'event_stock',
 				assigned_at datetime NULL DEFAULT NULL,
+				loaded_at datetime NULL DEFAULT NULL,
+				in_transit_at datetime NULL DEFAULT NULL,
 				released_at datetime NULL DEFAULT NULL,
 				assigned_by bigint(20) unsigned NOT NULL DEFAULT 0,
 				released_by bigint(20) unsigned NOT NULL DEFAULT 0,
@@ -530,6 +532,8 @@ class AIMS_Schema {
 				KEY assignment_type (assignment_type),
 				KEY is_active (is_active),
 				KEY assigned_at (assigned_at),
+				KEY loaded_at (loaded_at),
+				KEY in_transit_at (in_transit_at),
 				KEY released_at (released_at)
 			) {$charset_collate};",
 			"CREATE TABLE {$inventory_buckets_table} (

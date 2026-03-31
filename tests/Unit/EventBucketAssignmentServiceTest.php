@@ -5,6 +5,7 @@ declare( strict_types=1 );
 namespace AIMS\Tests\Unit;
 
 use AIMS_Event_Bucket_Assignment_Service;
+use AIMS\Tests\Support\TestState;
 
 final class EventBucketAssignmentServiceTest extends \AIMS\Tests\TestCase {
 	public function testAssignBucketToEventPersistsNormalizedRecord(): void {
@@ -173,5 +174,42 @@ final class EventBucketAssignmentServiceTest extends \AIMS\Tests\TestCase {
 
 		$this->assertSame( 0, $result );
 		$this->assertSame( 0, $repo->save_calls );
+	}
+
+	public function testTransitionAssignmentStatusPreservesExistingTransitTimestamps(): void {
+		TestState::set_current_time( '2026-03-27 18:00:00' );
+
+		$repo = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public array $saved = array();
+
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 10,
+					'physical_bucket_id' => 200,
+					'assignment_status'  => self::STATUS_STAGED,
+					'loaded_at'          => '2026-03-27 07:15:00',
+					'in_transit_at'      => '2026-03-27 07:20:00',
+					'is_active'          => 1,
+				);
+			}
+
+			public function save( array $data, int $assignment_id = 0 ): int {
+				$this->saved[] = array(
+					'data'          => $data,
+					'assignment_id' => $assignment_id,
+				);
+
+				return $assignment_id;
+			}
+		};
+
+		$service = new AIMS_Event_Bucket_Assignment_Service( $repo );
+		$result  = $service->transition_assignment_status( 88, \AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, $repo->saved );
+		$this->assertSame( '2026-03-27 07:15:00', $repo->saved[0]['data']['loaded_at'] );
+		$this->assertSame( '2026-03-27 07:20:00', $repo->saved[0]['data']['in_transit_at'] );
 	}
 }

@@ -32,6 +32,8 @@ class AIMS_Event_Bucket_Assignment_Service {
 			'assignment_status'  => sanitize_key( $data['assignment_status'] ?? AIMS_Event_Bucket_Assignment_Repository::STATUS_STAGED ),
 			'assignment_type'    => sanitize_key( $data['assignment_type'] ?? AIMS_Event_Bucket_Assignment_Repository::TYPE_EVENT_STOCK ),
 			'assigned_at'        => $data['assigned_at'] ?? current_time( 'mysql' ),
+			'loaded_at'          => $data['loaded_at'] ?? null,
+			'in_transit_at'      => $data['in_transit_at'] ?? null,
 			'assigned_by'        => (int) ( $data['assigned_by'] ?? get_current_user_id() ),
 			'display_order'      => (int) ( $data['display_order'] ?? 0 ),
 			'is_active'          => isset( $data['is_active'] ) ? (int) (bool) $data['is_active'] : 1,
@@ -115,13 +117,17 @@ class AIMS_Event_Bucket_Assignment_Service {
 			return false;
 		}
 
+		$normalized_status = $this->normalize_transition_status( $status );
+
 		$record = array_merge(
 			$current,
 			$data,
 			array(
-				'assignment_status' => $this->normalize_transition_status( $status ),
+				'assignment_status' => $normalized_status,
 			)
 		);
+
+		$record = $this->apply_execution_timestamps( $current, $record, $normalized_status );
 
 		$this->assignments->save( $record, $assignment_id );
 
@@ -141,6 +147,24 @@ class AIMS_Event_Bucket_Assignment_Service {
 		);
 
 		return in_array( $status, $allowed, true ) ? $status : AIMS_Event_Bucket_Assignment_Repository::STATUS_ASSIGNED;
+	}
+
+	private function apply_execution_timestamps( array $current, array $record, string $status ): array {
+		if ( AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT !== $status ) {
+			return $record;
+		}
+
+		$transitioned_at = $record['in_transit_at'] ?? $record['loaded_at'] ?? current_time( 'mysql' );
+
+		if ( empty( $record['loaded_at'] ) && empty( $current['loaded_at'] ) ) {
+			$record['loaded_at'] = $transitioned_at;
+		}
+
+		if ( empty( $record['in_transit_at'] ) && empty( $current['in_transit_at'] ) ) {
+			$record['in_transit_at'] = $transitioned_at;
+		}
+
+		return $record;
 	}
 
 	private function is_bucket_vendor_allowed_for_event( int $event_id, int $bucket_id ): bool {

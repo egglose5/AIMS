@@ -34,6 +34,8 @@ class AIMS_Event_Bucket_Assignment_Repository {
 			'assignment_status'  => $this->normalize_status( (string) ( $data['assignment_status'] ?? self::STATUS_ASSIGNED ) ),
 			'assignment_type'    => $this->normalize_type( (string) ( $data['assignment_type'] ?? self::TYPE_EVENT_STOCK ) ),
 			'assigned_at'        => $this->normalize_datetime( $data['assigned_at'] ?? null ),
+			'loaded_at'          => $this->normalize_datetime( $data['loaded_at'] ?? null ),
+			'in_transit_at'      => $this->normalize_datetime( $data['in_transit_at'] ?? null ),
 			'released_at'        => $this->normalize_datetime( $data['released_at'] ?? null ),
 			'assigned_by'        => (int) ( $data['assigned_by'] ?? 0 ),
 			'released_by'        => (int) ( $data['released_by'] ?? 0 ),

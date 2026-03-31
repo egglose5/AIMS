@@ -58,6 +58,8 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 	}
 
 	public function testTransitionAssignmentStatusPersistsValidStatusWithoutLedgerSideEffects(): void {
+		TestState::set_current_time( '2026-03-26 09:30:00' );
+
 		$repo = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
 			public array $saved = array();
 
@@ -87,6 +89,8 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$this->assertTrue( $result );
 		$this->assertCount( 1, $repo->saved );
 		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT, $repo->saved[0]['data']['assignment_status'] );
+		$this->assertSame( '2026-03-26 09:30:00', $repo->saved[0]['data']['loaded_at'] );
+		$this->assertSame( '2026-03-26 09:30:00', $repo->saved[0]['data']['in_transit_at'] );
 	}
 
 	public function testTransitionAssignmentStatusNormalizesInvalidStatusToAssigned(): void {

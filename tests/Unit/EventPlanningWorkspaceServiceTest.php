@@ -601,8 +601,10 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'id' => 502,
 						'event_id' => $event_id,
 						'physical_bucket_id' => 302,
-						'assignment_status' => 'assigned',
+						'assignment_status' => 'in_transit',
 						'assigned_at' => '2026-03-25 00:00:00',
+						'loaded_at' => '2026-03-25 08:00:00',
+						'in_transit_at' => '2026-03-25 08:15:00',
 						'assigned_by' => 77,
 					),
 					array(
@@ -663,6 +665,8 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 2, $model['workspace']['summary']['open_over_8h_count'] );
 		$this->assertCount( 3, $model['workspace']['assignment_timeline'] );
 		$this->assertSame( 502, $model['workspace']['assignment_timeline'][0]['assignment_id'] );
+		$this->assertSame( '2026-03-25 08:00:00', $model['workspace']['assignment_timeline'][0]['loaded_at'] );
+		$this->assertSame( '2026-03-25 08:15:00', $model['workspace']['assignment_timeline'][0]['in_transit_at'] );
 		$this->assertSame( '8–24h', $model['workspace']['assignment_timeline'][0]['age_band'] );
 		$this->assertSame( 1, $model['workspace']['team_activity'][0]['staged_over_24h_count'] );
 	}

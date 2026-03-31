@@ -74,7 +74,10 @@ This checklist maps release tasks to concrete code areas in this repository.
 
 ## Next Milestone - Execution Telemetry and Exception Visibility
 
-- [ ] Add explicit `loaded_at` and `in_transit_at` timestamps to assignment records so elapsed transit time is trackable as analytics.
+- [x] Add explicit `loaded_at` and `in_transit_at` timestamps to assignment records so elapsed transit time is trackable as analytics.
+  - Schema and index coverage added on `aims_event_bucket_assignments`.
+  - Execution transition logic now stamps `loaded_at`/`in_transit_at` when assignment status moves to `in_transit`.
+  - Planning workspace timeline now surfaces Assigned, Loaded, and In Transit timestamps for operator visibility.
 - [ ] Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
 - [ ] Expand Square replay and fulfillment wiring after planning/commitment workflow stability under team usage is confirmed.
 - [ ] Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
