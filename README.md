@@ -18,12 +18,16 @@ The repository currently provides:
 - Event Demand Intake v1 with account-linked request history
 - curated public event projection layer with public catalog/detail shortcodes
 - admin demand summary and public projection management pages
+- frontend vendor portal navigation layer with theme-friendly output (shortcode + widget)
+- vendor portal links conditioned by login state, vendor assignment, and event timing
+- Event Check-In visibility gated to the authorized pre-event window (opens at 10:00, three days before the event)
 - Square queue/raw event/normalized sale/replay scaffolding
 - capability-gated, nonce-protected replay/undo triggers with duplicate-request protection per sync run
 - Sync Runs operator telemetry (last status, completed timestamp, processed rows, error totals)
 - runtime assignment, attribution, sync effect, and exception table foundations
 - native product cost rule storage for COGS-based profitability
 - PHPUnit harness with passing first unit tests
+- vendor portal navigation service unit coverage for login, assignment, authorization, and timing windows
 
 ## Core rules
 
@@ -87,14 +91,10 @@ The repository currently provides:
 
 ## Next implementation phase
 
-1. Add a frontend vendor portal navigation layer that fits the active site theme instead of recreating a wp-admin-style vendor shell.
-2. Prefer a dynamic sidebar widget/block/shortcode for OceanWP so vendor navigation lives inside the existing frontend sidebar and mobile layout.
-3. Show vendor portal links conditionally based on login state, vendor assignment, and event timing.
-4. Surface `Event Check-In` only when the vendor has an assigned event inside the allowed pre-event window.
-5. Add explicit `loaded_at` / `in_transit_at` timestamps to assignment records so elapsed transit time can be tracked as an analytics dimension.
-6. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
-7. Expand Square replay and fulfillment wiring only after the planning and commitment workflow remains stable under team usage.
-8. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+1. Add explicit `loaded_at` / `in_transit_at` timestamps to assignment records so elapsed transit time can be tracked as an analytics dimension.
+2. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
+3. Expand Square replay and fulfillment wiring only after the planning and commitment workflow remains stable under team usage.
+4. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
 ## Upgrade path
 
