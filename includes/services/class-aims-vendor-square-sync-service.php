@@ -9,7 +9,7 @@ class AIMS_Vendor_Square_Sync_Service {
 	private $team_members;
 
 	public function __construct(
-		AIMS_Vendor_Repository $vendors,
+		AIMS_Vendor_Person_Repository $vendors,
 		AIMS_Square_Team_Member_Repository $team_members = null
 	) {
 		$this->vendors      = $vendors;

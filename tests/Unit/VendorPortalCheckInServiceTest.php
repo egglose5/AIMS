@@ -10,6 +10,13 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 	public function testFirstCheckInCreatesOperationalRecordExecutesArrivalAndPublishesUpdate(): void {
 		TestState::set_current_user_id( 77 );
 		TestState::set_current_time( '2026-03-23 12:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID'    => 77,
+				'roles' => array( 'aims_vendor_user' ),
+			)
+		);
 
 		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
 			new class() extends \AIMS_Event_Planning_Access_Service {
@@ -196,6 +203,13 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 	public function testLaterCheckInPublishesUpdateOnly(): void {
 		TestState::set_current_user_id( 77 );
 		TestState::set_current_time( '2026-03-23 12:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID'    => 77,
+				'roles' => array( 'aims_vendor_user' ),
+			)
+		);
 
 		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
 			new class() extends \AIMS_Event_Planning_Access_Service {
@@ -354,6 +368,13 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 	public function testCheckInWindowIsEnforcedBeforeUploadsRun(): void {
 		TestState::set_current_user_id( 77 );
 		TestState::set_current_time( '2026-03-20 08:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID'    => 77,
+				'roles' => array( 'aims_vendor_user' ),
+			)
+		);
 
 		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
 			new class() extends \AIMS_Event_Planning_Access_Service {
@@ -433,6 +454,13 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 	public function testFirstCheckInRejectsBucketAssignedToDifferentVendor(): void {
 		TestState::set_current_user_id( 77 );
 		TestState::set_current_time( '2026-03-23 12:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID'    => 77,
+				'roles' => array( 'aims_vendor_user' ),
+			)
+		);
 
 		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
 			new class() extends \AIMS_Event_Planning_Access_Service {
@@ -521,6 +549,13 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 	public function testPageModelFiltersBucketOptionsToCurrentVendor(): void {
 		TestState::set_current_user_id( 77 );
 		TestState::set_current_time( '2026-03-23 12:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID'    => 77,
+				'roles' => array( 'aims_vendor_user' ),
+			)
+		);
 
 		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
 			new class() extends \AIMS_Event_Planning_Access_Service {

@@ -32,10 +32,8 @@ final class EventPlanningAccessServiceTest extends \AIMS\Tests\TestCase {
 		};
 
 		$service = new AIMS_Event_Planning_Access_Service(
-			new class() extends \AIMS_Vendor_User_Access_Repository {},
 			new class() extends \AIMS_Vendor_Event_Assignment_Repository {},
 			new class() extends \AIMS_Event_Repository {},
-			new class() extends \AIMS_Supervisor_User_Hierarchy_Repository {},
 			$responsibility_auth
 		);
 

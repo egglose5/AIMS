@@ -1,15 +1,16 @@
 <?php
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
+declare( strict_types=1 );
 
+namespace AIMS\Tests\Unit;
+
+use AIMS_Bucket_Movement_Rules;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Tests for AIMS_Bucket_Movement_Rules state machine and validation
  */
-class AIMS_Bucket_Movement_RulesTest extends TestCase {
+final class BucketMovementRulesTest extends TestCase {
 
 	/**
 	 * Test that rules() returns exactly 8 movement rules

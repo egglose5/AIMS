@@ -8,14 +8,19 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Vendor Person Repository
  *
  * Implements "vendor is a subtype of person" by treating WordPress users with vendor metadata
- * as vendors. This replaces the legacy separate vendor entity model with a metadata-based approach.
+ * as vendors using a metadata-based model.
  */
 class AIMS_Vendor_Person_Repository {
 
 	private $metadata_service;
+	private $assignment_repository;
 
-	public function __construct( AIMS_Vendor_User_Metadata_Service $metadata_service = null ) {
+	public function __construct(
+		AIMS_Vendor_User_Metadata_Service $metadata_service = null,
+		AIMS_Responsibility_Assignment_Repository $assignment_repository = null
+	) {
 		$this->metadata_service = $metadata_service ?: new AIMS_Vendor_User_Metadata_Service();
+		$this->assignment_repository = $assignment_repository ?: new AIMS_Responsibility_Assignment_Repository();
 	}
 
 	/**
@@ -179,21 +184,16 @@ class AIMS_Vendor_Person_Repository {
 	 * @return array List of user IDs with this vendor responsibility
 	 */
 	public function get_users_with_vendor_responsibility( string $responsibility, int $scope_ref_id = 0 ): array {
-		$responsibility_service = new AIMS_Responsibility_Authorization_Service();
-		$assignment_repo = new AIMS_Responsibility_Assignment_Repository();
-
-		// Get all users with this specific vendor responsibility
+		// Resolve through the canonical responsibility assignment repository.
 		if ( $scope_ref_id > 0 ) {
-			// Vendor-scoped or event-scoped vendor responsibilities
-			return $assignment_repo->get_user_ids_for_responsibility(
+			return $this->assignment_repository->get_user_ids_for_responsibility(
 				$responsibility,
 				AIMS_Responsibility_Assignment_Repository::SCOPE_VENDOR,
 				$scope_ref_id
 			);
 		}
 
-		// Global vendor responsibility scope
-		return $assignment_repo->get_user_ids_for_responsibility( $responsibility );
+		return $this->assignment_repository->get_user_ids_for_responsibility( $responsibility );
 	}
 
 	/**

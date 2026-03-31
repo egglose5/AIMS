@@ -33,18 +33,6 @@ class AIMS_Inventory_Movement_Events {
 	// Manual audited adjustment (damage, count correction, reconciliation, etc).
 	public const ADJUSTMENT = 'adjustment';
 
-	// ====== LEGACY ALIASES (for backward compatibility) ======
-	public const STOCK_IN = 'origin_inbound';
-	public const STOCK_OUT = 'adjustment';
-	public const TRANSFER = 'warehouse_transfer';
-	public const EVENT_LOAD_OUT = 'allocate_to_event_prepack';
-	public const EVENT_RETURN = 'return_from_event';
-	public const STITCHER_HANDOFF = 'allocate_to_stitcher';
-	public const STITCHER_RETURN = 'return_from_stitcher';
-	public const SQUARE_SALE = 'show_consumption';
-	public const WOOCOMMERCE_FULFILLMENT = 'allocate_to_woo_fulfillment';
-	public const WAREHOUSE_PICK = 'allocate_to_woo_fulfillment';
-
 	public static function allowed(): array {
 		return array(
 			self::ORIGIN_INBOUND,

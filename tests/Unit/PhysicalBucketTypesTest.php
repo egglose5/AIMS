@@ -1,15 +1,16 @@
 <?php
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
+declare( strict_types=1 );
 
+namespace AIMS\Tests\Unit;
+
+use AIMS_Physical_Bucket_Types;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Tests for AIMS_Physical_Bucket_Types constants and validation methods
  */
-class AIMS_Physical_Bucket_TypesTest extends TestCase {
+final class PhysicalBucketTypesTest extends TestCase {
 
 	/**
 	 * Test that all bucket type constants are defined
@@ -27,11 +28,11 @@ class AIMS_Physical_Bucket_TypesTest extends TestCase {
 	}
 
 	/**
-	 * Test that allowed() returns exactly 9 allowed bucket types
+	 * Test that allowed() returns exactly 10 allowed bucket types
 	 */
 	public function testAllowedReturnsNineTypes(): void {
 		$allowed = AIMS_Physical_Bucket_Types::allowed();
-		$this->assertCount( 9, $allowed );
+		$this->assertCount( 10, $allowed );
 
 		// Verify all expected types are present
 		$this->assertContains( AIMS_Physical_Bucket_Types::WAREHOUSE_STOCK, $allowed );
@@ -43,6 +44,7 @@ class AIMS_Physical_Bucket_TypesTest extends TestCase {
 		$this->assertContains( AIMS_Physical_Bucket_Types::DAMAGE_HOLD, $allowed );
 		$this->assertContains( AIMS_Physical_Bucket_Types::CONSUMED_VIRTUAL, $allowed );
 		$this->assertContains( AIMS_Physical_Bucket_Types::SHRINK_VIRTUAL, $allowed );
+		$this->assertContains( AIMS_Physical_Bucket_Types::PRODUCTION_VIRTUAL, $allowed );
 	}
 
 	/**
@@ -107,9 +109,10 @@ class AIMS_Physical_Bucket_TypesTest extends TestCase {
 		$this->assertContains( AIMS_Physical_Bucket_Types::DAMAGE_HOLD, $categories['reconciliation'] );
 
 		// Verify virtual category
-		$this->assertCount( 2, $categories['virtual'] );
+		$this->assertCount( 3, $categories['virtual'] );
 		$this->assertContains( AIMS_Physical_Bucket_Types::CONSUMED_VIRTUAL, $categories['virtual'] );
 		$this->assertContains( AIMS_Physical_Bucket_Types::SHRINK_VIRTUAL, $categories['virtual'] );
+		$this->assertContains( AIMS_Physical_Bucket_Types::PRODUCTION_VIRTUAL, $categories['virtual'] );
 	}
 
 	/**
@@ -119,6 +122,7 @@ class AIMS_Physical_Bucket_TypesTest extends TestCase {
 		// Virtual ledger buckets
 		$this->assertTrue( AIMS_Physical_Bucket_Types::is_virtual( AIMS_Physical_Bucket_Types::CONSUMED_VIRTUAL ) );
 		$this->assertTrue( AIMS_Physical_Bucket_Types::is_virtual( AIMS_Physical_Bucket_Types::SHRINK_VIRTUAL ) );
+		$this->assertTrue( AIMS_Physical_Bucket_Types::is_virtual( AIMS_Physical_Bucket_Types::PRODUCTION_VIRTUAL ) );
 
 		// Physical buckets should return false
 		$this->assertFalse( AIMS_Physical_Bucket_Types::is_virtual( AIMS_Physical_Bucket_Types::WAREHOUSE_STOCK ) );

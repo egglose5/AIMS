@@ -5,20 +5,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Vendor_Service {
-	private $vendors;
 	private $person_repository;
 
-	public function __construct( 
-		$vendors = null,
-		AIMS_Vendor_Person_Repository $person_repository = null 
-	) {
-		// Legacy: Accept old AIMS_Vendor_Repository
-		if ( $vendors instanceof AIMS_Vendor_Repository ) {
-			$this->vendors = $vendors;
-		} else {
-			$this->vendors = new AIMS_Vendor_Repository();
-		}
-
+	public function __construct( AIMS_Vendor_Person_Repository $person_repository = null ) {
 		$this->person_repository = $person_repository ?: new AIMS_Vendor_Person_Repository();
 	}
 

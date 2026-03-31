@@ -19,6 +19,7 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 	private $physical_buckets;
 	private $auth_service;
 	private $vendor_service;
+	private $person_identity;
 
 	public function __construct(
 		AIMS_Event_Planning_Access_Service $access_service = null,
@@ -32,8 +33,14 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		$uploader = null,
 		$physical_buckets = null,
 		AIMS_Responsibility_Authorization_Service $auth_service = null,
-		AIMS_Vendor_Service $vendor_service = null
+		AIMS_Vendor_Service $vendor_service = null,
+		AIMS_Person_Identity_Service $person_identity = null
 	) {
+		if ( is_callable( $person_identity ) && ! $person_identity instanceof AIMS_Person_Identity_Service ) {
+			$uploader        = $person_identity;
+			$person_identity = null;
+		}
+
 		$this->access_service           = $access_service ?: new AIMS_Event_Planning_Access_Service();
 		$this->events                   = $events ?: new AIMS_Event_Repository();
 		$this->vendor_event_assignments = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
@@ -49,6 +56,7 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		$this->physical_buckets         = $physical_buckets ?: ( class_exists( 'AIMS_Physical_Bucket_Repository' ) ? new AIMS_Physical_Bucket_Repository() : null );
 		$this->auth_service             = $auth_service ?: new AIMS_Responsibility_Authorization_Service();
 		$this->vendor_service           = $vendor_service ?: new AIMS_Vendor_Service();
+		$this->person_identity          = $person_identity ?: new AIMS_Person_Identity_Service();
 	}
 
 	public function get_page_model( array $request = array() ): array {
@@ -271,35 +279,15 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 			return array();
 		}
 
-		// Primary: Try legacy access service for backward compatibility
-		if ( is_object( $this->access_service ) && method_exists( $this->access_service, 'get_authorized_vendor_ids' ) ) {
-			$vendor_ids = array_values( array_filter( array_map( 'intval', (array) $this->access_service->get_authorized_vendor_ids( $user_id ) ) ) );
-			if ( ! empty( $vendor_ids ) ) {
-				return $vendor_ids;
-			}
-		}
-
-		// Fallback: Get vendors directly from person repository for this user
-		if ( ! $this->auth_service->can_submit_vendor_checkin( $user_id ) ) {
+		if ( ! is_object( $this->person_identity ) || ! method_exists( $this->person_identity, 'has_person_subtype' ) || ! $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) ) {
 			return array();
 		}
 
-		$vendors = (array) $this->vendor_service->list_vendors();
-		$authorized_ids = array();
-
-		foreach ( $vendors as $vendor ) {
-			if ( ! is_array( $vendor ) ) {
-				continue;
-			}
-
-			// Check if vendor is assigned to this user (new model uses user_id)
-			$vendor_user_id = (int) ( $vendor['user_id'] ?? 0 );
-			if ( $vendor_user_id === $user_id ) {
-				$authorized_ids[] = (int) ( $vendor['user_id'] ?? $vendor['id'] ?? 0 );
-			}
+		if ( is_object( $this->access_service ) && method_exists( $this->access_service, 'get_authorized_vendor_ids' ) ) {
+			return array_values( array_filter( array_map( 'intval', (array) $this->access_service->get_authorized_vendor_ids( $user_id ) ) ) );
 		}
 
-		return array_values( array_filter( $authorized_ids ) );
+		return array();
 	}
 
 	private function get_authorized_events_for_vendor_ids( array $vendor_ids ): array {
@@ -462,13 +450,13 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 
 		$bucket = $this->find_physical_bucket( $bucket_id );
 		if ( empty( $bucket ) ) {
-			// Backward compatibility: unknown bucket ownership does not hard-fail selection.
+			// Unknown bucket ownership does not hard-fail selection.
 			return true;
 		}
 
 		$bucket_vendor_id = (int) ( $bucket['vendor_id'] ?? 0 );
 		if ( $bucket_vendor_id <= 0 ) {
-			// Legacy unowned buckets remain selectable unless explicitly owned by another vendor.
+			// Unowned buckets remain selectable unless explicitly owned by another vendor.
 			return true;
 		}
 

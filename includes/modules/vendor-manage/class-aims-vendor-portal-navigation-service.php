@@ -9,17 +9,20 @@ class AIMS_Vendor_Portal_Navigation_Service {
 	private $vendor_event_assignments;
 	private $events_repository;
 	private $auth_service;
+	private $person_identity;
 
 	public function __construct(
 		AIMS_Vendor_Service $vendor_service = null,
 		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
 		AIMS_Event_Repository $events_repository = null,
-		AIMS_Responsibility_Authorization_Service $auth_service = null
+		AIMS_Responsibility_Authorization_Service $auth_service = null,
+		AIMS_Person_Identity_Service $person_identity = null
 	) {
 		$this->vendor_service = $vendor_service ?: new AIMS_Vendor_Service();
 		$this->vendor_event_assignments = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
 		$this->events_repository = $events_repository ?: new AIMS_Event_Repository();
 		$this->auth_service = $auth_service ?: new AIMS_Responsibility_Authorization_Service();
+		$this->person_identity = $person_identity ?: new AIMS_Person_Identity_Service();
 	}
 
 	public function get_nav_model( array $request = array() ): array {
@@ -40,30 +43,19 @@ class AIMS_Vendor_Portal_Navigation_Service {
 			return array();
 		}
 
-		$user = get_user_by( 'ID', $user_id );
-		if ( ! is_object( $user ) ) {
+		if ( ! $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) ) {
 			return array();
 		}
 
-		$user_email = (string) ( $user->user_email ?? '' );
 		$vendors = array();
 
-		// Primary: Check if user is directly a vendor (user_id in vendor metadata)
 		foreach ( (array) $this->vendor_service->list_vendors() as $vendor ) {
 			if ( ! is_array( $vendor ) ) {
 				continue;
 			}
 
-			// New model: vendor has user_id
 			$vendor_user_id = (int) ( $vendor['user_id'] ?? 0 );
 			if ( $vendor_user_id === $user_id ) {
-				$vendors[] = $vendor;
-				continue;
-			}
-
-			// Legacy fallback: match by email
-			$contact_email = (string) ( $vendor['contact_email'] ?? '' );
-			if ( '' !== $contact_email && $contact_email === $user_email ) {
 				$vendors[] = $vendor;
 			}
 		}
@@ -86,8 +78,7 @@ class AIMS_Vendor_Portal_Navigation_Service {
 		$pre_event_window_days = 3;
 
 		foreach ( $assigned_vendors as $vendor ) {
-			// Support both new model (user_id) and legacy model (id)
-			$vendor_id = (int) ( $vendor['user_id'] ?? $vendor['id'] ?? 0 );
+			$vendor_id = (int) ( $vendor['user_id'] ?? 0 );
 			if ( $vendor_id <= 0 ) {
 				continue;
 			}
@@ -119,7 +110,7 @@ class AIMS_Vendor_Portal_Navigation_Service {
 					'location_name'     => sanitize_text_field( (string) ( $event['location_name'] ?? '' ) ),
 					'vendor_id'         => $vendor_id,
 					'vendor_name'       => sanitize_text_field( (string) ( $vendor['vendor_name'] ?? '' ) ),
-					'can_checkin'       => $now_timestamp >= $window_start_timestamp && $now_timestamp < $event_start_timestamp,
+					'can_checkin'       => $this->can_user_submit_checkin( $user_id ) && $now_timestamp >= $window_start_timestamp && $now_timestamp < $event_start_timestamp,
 					'is_upcoming'       => $now_timestamp < $event_start_timestamp,
 					'is_past'           => $now_timestamp >= $event_start_timestamp,
 					'checkin_url'       => $this->build_checkin_url( $event_id ),
@@ -178,6 +169,18 @@ class AIMS_Vendor_Portal_Navigation_Service {
 			array( 'event_id' => $event_id ),
 			home_url( '/' )
 		);
+	}
+
+	private function can_user_submit_checkin( int $user_id ): bool {
+		if ( $user_id <= 0 || ! is_object( $this->auth_service ) ) {
+			return false;
+		}
+
+		if ( ! method_exists( $this->auth_service, 'can_submit_vendor_checkin' ) ) {
+			return false;
+		}
+
+		return (bool) $this->auth_service->can_submit_vendor_checkin( $user_id );
 	}
 
 	private function resolve_now_timestamp(): int {

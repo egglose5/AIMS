@@ -21,10 +21,10 @@ class AIMS_Event_Planning_Action_Service {
 		$this->assignment_service    = $assignment_service ?: new AIMS_Event_Bucket_Assignment_Service(
 			new AIMS_Event_Bucket_Assignment_Repository()
 		);
-		$this->access_service        = $access_service ?: ( class_exists( 'AIMS_Event_Planning_Access_Service' ) ? new AIMS_Event_Planning_Access_Service() : null );
+		$this->access_service        = $access_service;
 		$this->assignment_repository = $assignment_repository ?: new AIMS_Event_Bucket_Assignment_Repository();
-		$this->execution_service     = $execution_service ?: ( class_exists( 'AIMS_Event_Execution_Service' ) ? new AIMS_Event_Execution_Service() : null );
-		$this->responsibility_auth   = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
+		$this->execution_service     = $execution_service ?: new AIMS_Event_Execution_Service();
+		$this->responsibility_auth   = $responsibility_auth ?: new AIMS_Responsibility_Authorization_Service();
 	}
 
 	public function can_current_user_manage_planning(): bool {
@@ -34,11 +34,7 @@ class AIMS_Event_Planning_Action_Service {
 			return false;
 		}
 
-		if ( $this->should_use_responsibility_model( $user_id ) ) {
-			return $this->responsibility_auth->can_manage_event_planning( $user_id );
-		}
-
-		return is_object( $this->access_service ) && $this->access_service->can_access_event_planning( $user_id );
+		return is_object( $this->responsibility_auth ) && $this->responsibility_auth->can_manage_event_planning( $user_id );
 	}
 
 	public function can_current_user_mutate_event( int $event_id ): bool {
@@ -49,23 +45,7 @@ class AIMS_Event_Planning_Action_Service {
 			return false;
 		}
 
-		if ( $this->should_use_responsibility_model( $user_id ) ) {
-			return $this->responsibility_auth->can_mutate_event( $user_id, $event_id );
-		}
-
-		return false;
-	}
-
-	private function should_use_responsibility_model( int $user_id ): bool {
-		if ( $user_id <= 0 ) {
-			return false;
-		}
-
-		if ( ! is_object( $this->responsibility_auth ) || ! method_exists( $this->responsibility_auth, 'has_any_assignments_for_user' ) ) {
-			return false;
-		}
-
-		return (bool) $this->responsibility_auth->has_any_assignments_for_user( $user_id );
+		return is_object( $this->responsibility_auth ) && $this->responsibility_auth->can_mutate_event( $user_id, $event_id );
 	}
 
 	public function assign_bucket( array $request ): array {
@@ -153,7 +133,7 @@ class AIMS_Event_Planning_Action_Service {
 		if ( $delegated_to_user_id > 0 && ! $this->can_delegate_to_user( $delegated_to_user_id ) ) {
 			return array(
 				'success'  => false,
-				'message'  => 'Delegation target must be one of your subordinates.',
+				'message'  => 'Delegation target must have event planning access.',
 				'event_id' => $event_id,
 			);
 		}
@@ -561,40 +541,6 @@ class AIMS_Event_Planning_Action_Service {
 		return $assignment;
 	}
 
-	private function get_authorized_event_ids_for_current_user(): array {
-		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
-
-		if ( $user_id <= 0 || ! is_object( $this->access_service ) ) {
-			return array();
-		}
-
-		foreach ( array( 'get_authorized_event_ids_including_subordinates', 'get_authorized_event_ids', 'get_authorized_events' ) as $method ) {
-			if ( ! method_exists( $this->access_service, $method ) ) {
-				continue;
-			}
-
-			$result = $this->access_service->{$method}( $user_id );
-
-			if ( ! is_array( $result ) ) {
-				continue;
-			}
-
-			$event_ids = array();
-			foreach ( $result as $item ) {
-				if ( is_array( $item ) ) {
-					$event_ids[] = (int) ( $item['id'] ?? 0 );
-					continue;
-				}
-
-				$event_ids[] = (int) $item;
-			}
-
-			return array_values( array_filter( array_unique( $event_ids ) ) );
-		}
-
-		return array();
-	}
-
 	private function can_delegate_to_user( int $delegated_to_user_id ): bool {
 		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 
@@ -602,20 +548,11 @@ class AIMS_Event_Planning_Action_Service {
 			return false;
 		}
 
-		if ( ! is_object( $this->access_service ) ) {
+		if ( ! is_object( $this->responsibility_auth ) ) {
 			return false;
 		}
 
-		if ( method_exists( $this->access_service, 'is_subordinate_user' ) ) {
-			return (bool) $this->access_service->is_subordinate_user( $current_user_id, $delegated_to_user_id );
-		}
-
-		if ( method_exists( $this->access_service, 'get_subordinate_user_ids' ) ) {
-			$subordinates = (array) $this->access_service->get_subordinate_user_ids( $current_user_id );
-			return in_array( $delegated_to_user_id, array_map( 'intval', $subordinates ), true );
-		}
-
-		return false;
+		return $this->responsibility_auth->can_manage_event_planning( $delegated_to_user_id );
 	}
 
 	private function merge_notes_with_delegation( string $notes, int $delegated_to_user_id ): string {

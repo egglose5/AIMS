@@ -17,7 +17,7 @@ class AIMS_Admin_Menu {
 		?AIMS_Reports_Module $reports_module = null,
 		?AIMS_Responsibility_Authorization_Service $responsibility_auth = null
 	) {
-		$this->vendor_module      = $vendor_module ? $vendor_module : new AIMS_Vendor_Module( new AIMS_Vendor_Service( new AIMS_Vendor_Repository() ) );
+		$this->vendor_module      = $vendor_module ? $vendor_module : new AIMS_Vendor_Module( new AIMS_Vendor_Service() );
 		$this->square_sync_module = $square_sync_module ? $square_sync_module : new AIMS_Square_Sync_Module();
 		$this->reports_module     = $reports_module ? $reports_module : new AIMS_Reports_Module();
 		$this->responsibility_auth = $responsibility_auth;

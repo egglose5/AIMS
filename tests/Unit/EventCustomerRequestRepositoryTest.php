@@ -7,7 +7,7 @@ namespace AIMS\Tests\Unit;
 use AIMS_Event_Customer_Request_Repository;
 
 final class EventCustomerRequestRepositoryTest extends \AIMS\Tests\TestCase {
-	public function testSaveNormalizesLegacyRequestStatusToPlanned(): void {
+	public function testSaveNormalizesRequestStatusToPlanned(): void {
 		$repo = new AIMS_Event_Customer_Request_Repository();
 
 		$id = $repo->save(

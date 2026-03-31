@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Plugin {
 	const OPTION_SCHEMA_VERSION = 'aims_schema_version';
 	const OPTION_INSTALLED_AT   = 'aims_installed_at';
-	const SCHEMA_VERSION        = '0.6.0';
+	const SCHEMA_VERSION        = '0.7.0';
 
 	private static $instance = null;
 
@@ -53,9 +53,7 @@ class AIMS_Plugin {
 		$this->capabilities       = new AIMS_Capabilities();
 		$this->responsibility_auth = new AIMS_Responsibility_Authorization_Service();
 		$this->vendor_module      = new AIMS_Vendor_Module(
-			new AIMS_Vendor_Service(
-				new AIMS_Vendor_Repository()
-			),
+			new AIMS_Vendor_Service(),
 			$this->responsibility_auth
 		);
 		$this->event_module       = new AIMS_Event_Module( null, $this->responsibility_auth );

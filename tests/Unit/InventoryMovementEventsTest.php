@@ -25,48 +25,6 @@ final class InventoryMovementEventsTest extends \AIMS\Tests\TestCase {
 		}
 	}
 
-	public function testLegacyConstantsMapToNewTypes(): void {
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::ORIGIN_INBOUND,
-			AIMS_Inventory_Movement_Events::STOCK_IN
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::ADJUSTMENT,
-			AIMS_Inventory_Movement_Events::STOCK_OUT
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::WAREHOUSE_TRANSFER,
-			AIMS_Inventory_Movement_Events::TRANSFER
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::ALLOCATE_TO_EVENT_PREPACK,
-			AIMS_Inventory_Movement_Events::EVENT_LOAD_OUT
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::RETURN_FROM_EVENT,
-			AIMS_Inventory_Movement_Events::EVENT_RETURN
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::ALLOCATE_TO_STITCHER,
-			AIMS_Inventory_Movement_Events::STITCHER_HANDOFF
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::RETURN_FROM_STITCHER,
-			AIMS_Inventory_Movement_Events::STITCHER_RETURN
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::SHOW_CONSUMPTION,
-			AIMS_Inventory_Movement_Events::SQUARE_SALE
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::ALLOCATE_TO_WOO_FULFILLMENT,
-			AIMS_Inventory_Movement_Events::WOOCOMMERCE_FULFILLMENT
-		);
-		$this->assertSame(
-			AIMS_Inventory_Movement_Events::ALLOCATE_TO_WOO_FULFILLMENT,
-			AIMS_Inventory_Movement_Events::WAREHOUSE_PICK
-		);
-	}
 
 	public function testOriginInboundHasCorrectReferences(): void {
 		$allowed_refs = AIMS_Inventory_Movement_Events::allowed_references_for_movement(
@@ -106,19 +64,4 @@ final class InventoryMovementEventsTest extends \AIMS\Tests\TestCase {
 		$this->assertContains( 'vendor_event_return', $allowed_refs );
 	}
 
-	public function testLegacyAliasIsAllowedByReference(): void {
-		$this->assertTrue(
-			AIMS_Inventory_Movement_Events::is_allowed_reference_for_movement(
-				AIMS_Inventory_Movement_Events::STOCK_IN,
-				'inbound_receipt'
-			)
-		);
-
-		$this->assertTrue(
-			AIMS_Inventory_Movement_Events::is_allowed_reference_for_movement(
-				AIMS_Inventory_Movement_Events::EVENT_LOAD_OUT,
-				'event_prepack_pickup'
-			)
-		);
-	}
 }

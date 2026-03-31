@@ -37,6 +37,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			42,
 			(object) array(
 				'ID'          => 42,
+				'roles'       => array( 'aims_vendor_user' ),
 				'user_email'  => 'vendor1@example.com',
 				'display_name' => 'Vendor One',
 			)
@@ -48,17 +49,15 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			public function list_vendors( string $status = '' ): array {
 				return array(
 					array(
-						'id'                  => 1,
+						'user_id'             => 42,
 						'vendor_name'         => 'Vendor One',
 						'vendor_code'         => 'V1',
-						'contact_email'       => 'vendor1@example.com',
 						'status'              => 'active',
 					),
 					array(
-						'id'                  => 2,
+						'user_id'             => 99,
 						'vendor_name'         => 'Vendor Two',
 						'vendor_code'         => 'V2',
-						'contact_email'       => 'vendor2@example.com',
 						'status'              => 'active',
 					),
 				);
@@ -73,13 +72,48 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'Vendor One', $model['assigned_vendors'][0]['vendor_name'] );
 	}
 
+	public function testNavModelHidesPortalForNonVendorPerson(): void {
+		TestState::set_current_user_id( 42 );
+		TestState::set_user(
+			42,
+			(object) array(
+				'ID'          => 42,
+				'roles'       => array( 'customer' ),
+				'user_email'  => 'vendor1@example.com',
+				'display_name' => 'Customer User',
+			)
+		);
+
+		$vendor_service = new class() extends \AIMS_Vendor_Service {
+			public function __construct() {}
+
+			public function list_vendors( string $status = '' ): array {
+				return array(
+					array(
+						'user_id'       => 42,
+						'vendor_name'   => 'Vendor One',
+						'status'        => 'active',
+					),
+				);
+			}
+		};
+
+		$service = new AIMS_Vendor_Portal_Navigation_Service( $vendor_service );
+		$model   = $service->get_nav_model();
+
+		$this->assertTrue( $model['logged_in'] );
+		$this->assertEmpty( $model['assigned_vendors'] );
+		$this->assertEmpty( $model['authorized_events'] );
+	}
+
 	public function testNavModelShowsAuthorizedEvents(): void {
 		TestState::set_current_user_id( 42 );
-		TestState::set_current_time( '2026-03-25 10:00:00' );
+		TestState::set_current_time( '2026-03-26 10:00:00' );
 		TestState::set_user(
 			42,
 			(object) array(
 				'ID'         => 42,
+				'roles'      => array( 'aims_vendor_user' ),
 				'user_email' => 'vendor1@example.com',
 			)
 		);
@@ -90,9 +124,8 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			public function list_vendors( string $status = '' ): array {
 				return array(
 					array(
-						'id'            => 1,
+						'user_id'       => 42,
 						'vendor_name'   => 'Vendor One',
-						'contact_email' => 'vendor1@example.com',
 					),
 				);
 			}
@@ -102,7 +135,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			public function __construct() {}
 
 			public function get_for_vendor( int $vendor_id ): array {
-				if ( 1 === $vendor_id ) {
+				if ( 42 === $vendor_id ) {
 					return array(
 						array(
 							'id'       => 101,
@@ -131,10 +164,19 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			}
 		};
 
+		$auth_service = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function can_submit_vendor_checkin( int $user_id = 0 ): bool {
+				return 42 === $user_id;
+			}
+		};
+
 		$service = new AIMS_Vendor_Portal_Navigation_Service(
 			$vendor_service,
 			$vendor_event_assignments,
-			$events_repository
+			$events_repository,
+			$auth_service
 		);
 		$model   = $service->get_nav_model();
 
@@ -153,6 +195,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			42,
 			(object) array(
 				'ID'         => 42,
+				'roles'      => array( 'aims_vendor_user' ),
 				'user_email' => 'vendor1@example.com',
 			)
 		);
@@ -163,9 +206,8 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			public function list_vendors( string $status = '' ): array {
 				return array(
 					array(
-						'id'            => 1,
+						'user_id'       => 42,
 						'vendor_name'   => 'Vendor One',
-						'contact_email' => 'vendor1@example.com',
 					),
 				);
 			}
@@ -175,6 +217,10 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			public function __construct() {}
 
 			public function get_for_vendor( int $vendor_id ): array {
+				if ( 42 !== $vendor_id ) {
+					return array();
+				}
+
 				return array(
 					array(
 						'id'        => 101,
@@ -196,10 +242,19 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			}
 		};
 
+		$auth_service = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function can_submit_vendor_checkin( int $user_id = 0 ): bool {
+				return 42 === $user_id;
+			}
+		};
+
 		$service = new AIMS_Vendor_Portal_Navigation_Service(
 			$vendor_service,
 			$vendor_event_assignments,
-			$events_repository
+			$events_repository,
+			$auth_service
 		);
 		$model   = $service->get_nav_model();
 
@@ -211,11 +266,12 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 
 	public function testNavModelOnlyEnablesCheckInInPreEventWindow(): void {
 		TestState::set_current_user_id( 42 );
-		TestState::set_current_time( '2026-03-25 10:00:00' );
+		TestState::set_current_time( '2026-03-26 10:00:00' );
 		TestState::set_user(
 			42,
 			(object) array(
 				'ID'         => 42,
+				'roles'      => array( 'aims_vendor_user' ),
 				'user_email' => 'vendor1@example.com',
 			)
 		);
@@ -226,9 +282,8 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			public function list_vendors( string $status = '' ): array {
 				return array(
 					array(
-						'id'            => 1,
+						'user_id'       => 42,
 						'vendor_name'   => 'Vendor One',
-						'contact_email' => 'vendor1@example.com',
 					),
 				);
 			}
@@ -238,6 +293,10 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			public function __construct() {}
 
 			public function get_for_vendor( int $vendor_id ): array {
+				if ( 42 !== $vendor_id ) {
+					return array();
+				}
+
 				return array(
 					array(
 						'id'        => 101,
@@ -259,14 +318,23 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			}
 		};
 
+		$auth_service = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function can_submit_vendor_checkin( int $user_id = 0 ): bool {
+				return 42 === $user_id;
+			}
+		};
+
 		$service = new AIMS_Vendor_Portal_Navigation_Service(
 			$vendor_service,
 			$vendor_event_assignments,
-			$events_repository
+			$events_repository,
+			$auth_service
 		);
 		$model   = $service->get_nav_model();
 
-		// 2026-03-25 10:00:00 is exactly 3 days before 2026-03-28 10:00:00.
+		// This is safely within the three-day vendor check-in window.
 		$this->assertCount( 1, $model['authorized_events'] );
 		$this->assertTrue( $model['authorized_events'][0]['can_checkin'] );
 	}

@@ -14,6 +14,8 @@ final class FakeWpdb {
 	public array $query_log = array();
 	private array $results_queue = array();
 	private array $row_queue = array();
+	private array $var_queue = array();
+	private array $col_queue = array();
 
 	public function __construct( string $prefix = 'wp_' ) {
 		$this->prefix = $prefix;
@@ -28,6 +30,8 @@ final class FakeWpdb {
 		$this->query_log         = array();
 		$this->results_queue     = array();
 		$this->row_queue         = array();
+		$this->var_queue         = array();
+		$this->col_queue         = array();
 	}
 
 	public function queue_results( array $results ): void {
@@ -36,6 +40,14 @@ final class FakeWpdb {
 
 	public function queue_row( ?array $row ): void {
 		$this->row_queue[] = $row;
+	}
+
+	public function queue_var( $value ): void {
+		$this->var_queue[] = $value;
+	}
+
+	public function queue_col( array $col ): void {
+		$this->col_queue[] = $col;
 	}
 
 	public function prepare( string $query, ...$args ): string {
@@ -80,6 +92,30 @@ final class FakeWpdb {
 		$this->query_log[] = array( 'type' => 'row', 'query' => $query, 'output' => $output );
 
 		return array_shift( $this->row_queue );
+	}
+
+	public function get_var( string $query, int $x = 0, int $y = 0 ) {
+		$this->last_query = $query;
+		$this->query_log[] = array( 'type' => 'var', 'query' => $query, 'x' => $x, 'y' => $y );
+
+		if ( empty( $this->var_queue ) ) {
+			return null;
+		}
+
+		return array_shift( $this->var_queue );
+	}
+
+	public function get_col( string $query, int $x = 0 ): array {
+		$this->last_query = $query;
+		$this->query_log[] = array( 'type' => 'col', 'query' => $query, 'x' => $x );
+
+		if ( empty( $this->col_queue ) ) {
+			return array();
+		}
+
+		$col = array_shift( $this->col_queue );
+
+		return is_array( $col ) ? $col : array();
 	}
 
 	public function insert( string $table, array $data ): bool {

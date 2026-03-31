@@ -9,12 +9,9 @@ class AIMS_Schema {
 		global $wpdb;
 
 		return array(
-			$wpdb->prefix . 'aims_vendors',
-			$wpdb->prefix . 'aims_vendor_user_access',
 			$wpdb->prefix . 'aims_responsibility_templates',
 			$wpdb->prefix . 'aims_template_responsibilities',
 			$wpdb->prefix . 'aims_user_responsibilities',
-			$wpdb->prefix . 'aims_supervisor_user_relationships',
 			$wpdb->prefix . 'aims_customers',
 			$wpdb->prefix . 'aims_customer_addresses',
 			$wpdb->prefix . 'aims_events',
@@ -57,12 +54,9 @@ class AIMS_Schema {
 		global $wpdb;
 
 		$charset_collate         = $wpdb->get_charset_collate();
-		$vendors_table           = $wpdb->prefix . 'aims_vendors';
-		$vendor_access_table     = $wpdb->prefix . 'aims_vendor_user_access';
 		$responsibility_templates_table = $wpdb->prefix . 'aims_responsibility_templates';
 		$template_responsibilities_table = $wpdb->prefix . 'aims_template_responsibilities';
 		$user_responsibilities_table = $wpdb->prefix . 'aims_user_responsibilities';
-		$supervisor_relationships_table = $wpdb->prefix . 'aims_supervisor_user_relationships';
 		$customers_table         = $wpdb->prefix . 'aims_customers';
 		$customer_addresses_table = $wpdb->prefix . 'aims_customer_addresses';
 		$events_table            = $wpdb->prefix . 'aims_events';
@@ -100,48 +94,6 @@ class AIMS_Schema {
 		$event_reconciliation_discrepancies_table = $wpdb->prefix . 'aims_event_reconciliation_discrepancies';
 
 		return array(
-			"CREATE TABLE {$vendors_table} (
-				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-				vendor_code varchar(64) NOT NULL DEFAULT '',
-				vendor_name varchar(255) NOT NULL,
-				status varchar(32) NOT NULL DEFAULT 'active',
-				square_location_id varchar(191) NOT NULL DEFAULT '',
-				square_team_member_id varchar(191) NOT NULL DEFAULT '',
-				default_bucket_id bigint(20) unsigned DEFAULT NULL,
-				default_bucket_code varchar(191) NOT NULL DEFAULT '',
-				commission_rate decimal(7,4) NOT NULL DEFAULT 0.0000,
-				phone_number varchar(50) NOT NULL DEFAULT '',
-				email_address varchar(190) NOT NULL DEFAULT '',
-				address_line_1 varchar(255) NOT NULL DEFAULT '',
-				address_line_2 varchar(255) NOT NULL DEFAULT '',
-				city varchar(100) NOT NULL DEFAULT '',
-				state_region varchar(100) NOT NULL DEFAULT '',
-				postal_code varchar(30) NOT NULL DEFAULT '',
-				country_code varchar(2) NOT NULL DEFAULT 'US',
-				notes longtext NULL,
-				created_at datetime NOT NULL,
-				updated_at datetime NOT NULL,
-				PRIMARY KEY  (id),
-				UNIQUE KEY vendor_code (vendor_code),
-				UNIQUE KEY vendor_name (vendor_name),
-				KEY status (status),
-				KEY square_location_id (square_location_id),
-				KEY square_team_member_id (square_team_member_id),
-				KEY default_bucket_id (default_bucket_id),
-				KEY default_bucket_code (default_bucket_code)
-			) {$charset_collate};",
-			"CREATE TABLE {$vendor_access_table} (
-				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-				vendor_id bigint(20) unsigned NOT NULL,
-				user_id bigint(20) unsigned NOT NULL,
-				access_role varchar(50) NOT NULL DEFAULT 'viewer',
-				created_at datetime NOT NULL,
-				updated_at datetime NOT NULL,
-				PRIMARY KEY  (id),
-				UNIQUE KEY vendor_user (vendor_id, user_id),
-				KEY user_id (user_id),
-				KEY access_role (access_role)
-			) {$charset_collate};",
 			"CREATE TABLE {$responsibility_templates_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 				template_key varchar(100) NOT NULL,
@@ -193,20 +145,6 @@ class AIMS_Schema {
 				KEY template_key (template_key),
 				KEY granted_by (granted_by),
 				KEY revoked_by (revoked_by)
-			) {$charset_collate};",
-			"CREATE TABLE {$supervisor_relationships_table} (
-				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-				supervisor_user_id bigint(20) unsigned NOT NULL,
-				subordinate_user_id bigint(20) unsigned NOT NULL,
-				hierarchy_level int(11) NOT NULL DEFAULT 1,
-				status varchar(32) NOT NULL DEFAULT 'active',
-				created_at datetime NOT NULL,
-				updated_at datetime NOT NULL,
-				PRIMARY KEY  (id),
-				UNIQUE KEY supervisor_subordinate (supervisor_user_id, subordinate_user_id),
-				KEY supervisor_user_id (supervisor_user_id),
-				KEY subordinate_user_id (subordinate_user_id),
-				KEY status (status)
 			) {$charset_collate};",
 			"CREATE TABLE {$customers_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

@@ -119,4 +119,47 @@ class AIMS_Responsibility_Assignment_Repository {
 
 		return array_values( array_unique( $scope_ref_ids ) );
 	}
+
+	public function get_user_ids_for_responsibility( string $responsibility_key, string $scope_type = self::SCOPE_GLOBAL, int $scope_ref_id = 0 ): array {
+		global $wpdb;
+
+		$responsibility_key = sanitize_key( $responsibility_key );
+		$scope_type         = sanitize_key( $scope_type );
+
+		if ( '' === $responsibility_key ) {
+			return array();
+		}
+
+		if ( $scope_ref_id > 0 ) {
+			$rows = $wpdb->get_col(
+				$wpdb->prepare(
+					'SELECT DISTINCT user_id FROM ' . $this->get_table_name() . ' WHERE responsibility_key = %s AND scope_type = %s AND scope_ref_id = %d AND is_active = 1 AND revoked_at IS NULL',
+					$responsibility_key,
+					$scope_type,
+					$scope_ref_id
+				)
+			);
+		} elseif ( self::SCOPE_GLOBAL !== $scope_type ) {
+			$rows = $wpdb->get_col(
+				$wpdb->prepare(
+					'SELECT DISTINCT user_id FROM ' . $this->get_table_name() . ' WHERE responsibility_key = %s AND scope_type = %s AND is_active = 1 AND revoked_at IS NULL',
+					$responsibility_key,
+					$scope_type
+				)
+			);
+		} else {
+			$rows = $wpdb->get_col(
+				$wpdb->prepare(
+					'SELECT DISTINCT user_id FROM ' . $this->get_table_name() . ' WHERE responsibility_key = %s AND is_active = 1 AND revoked_at IS NULL',
+					$responsibility_key
+				)
+			);
+		}
+
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		return array_values( array_map( 'intval', $rows ) );
+	}
 }

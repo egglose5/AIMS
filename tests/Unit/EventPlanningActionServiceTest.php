@@ -8,9 +8,7 @@ use AIMS\Tests\Support\TestState;
 
 /**
  * Tests for event planning actions service using responsibility-based authorization (RBAC).
- * 
- * Legacy tests for vendor user access and supervisor hierarchy fallbacks have been removed
- * as this product is preproduction RBAC-only and no longer supports hybrid authorization.
+	 * This product is preproduction RBAC-only and no longer supports hybrid authorization.
  */
 final class EventPlanningActionServiceTest extends \AIMS\Tests\TestCase {
 	public function testAssignBucketRejectsUnauthorizedEventBeforeMutation(): void {
