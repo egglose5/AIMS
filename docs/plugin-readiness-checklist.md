@@ -40,8 +40,9 @@ This checklist maps release tasks to concrete code areas in this repository.
   - `includes/services/class-aims-event-planning-workspace-service.php`
   - `includes/services/class-aims-event-execution-service.php`
 - [x] Validate end-to-end event CRUD and assignment lifecycle capabilities and nonce protections.
-  - Planning workspace now includes hierarchy-scoped team visibility, bulk actions, assignment timeline visibility, team activity visibility, planner-level filtering, and warehouse telemetry hooks.
-  - Execution SLA/risk metrics should be revised to start from real-world `loaded` / `in_transit` transitions rather than planning/staging age alone.
+  - Planning workspace now includes hierarchy-scoped team visibility, bulk actions, assignment timeline with age-band analytics, team activity visibility, planner-level filtering, and warehouse telemetry hooks.
+  - Age-band metrics (Staged > 24h, Open > 8h) are informational KPI analytics only; no time-based threshold triggers any inventory movement or operational action.
+  - Stock movement is driven exclusively by real-world action transitions: `loaded`/`in_transit`, `vendor_event_checkin`, and `event_return`.
 
 ## Milestone D - Square Safety and Operator UX
 

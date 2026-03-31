@@ -195,15 +195,15 @@ class AIMS_Event_Planning_Workspace_Page {
 			),
 			array(
 				'label' => 'Staged > 24h',
-				'value' => (string) (int) ( $summary['assigned_staged_over_sla_count'] ?? 0 ),
+				'value' => (string) (int) ( $summary['staged_over_24h_count'] ?? 0 ),
 			),
 			array(
 				'label' => 'At Event Buckets',
 				'value' => (string) (int) ( $summary['assigned_at_event_bucket_count'] ?? 0 ),
 			),
 			array(
-				'label' => 'Check-In Lag > 8h',
-				'value' => (string) (int) ( $summary['checkin_lag_bucket_count'] ?? 0 ),
+				'label' => 'Open > 8h',
+				'value' => (string) (int) ( $summary['open_over_8h_count'] ?? 0 ),
 			),
 			array(
 				'label' => 'Available Pool Buckets',
@@ -263,7 +263,7 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td>' . esc_html( (string) ( $row['display_name'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) (int) ( $row['assigned_count'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) (int) ( $row['staged_count'] ?? 0 ) ) . '</td>';
-			echo '<td>' . esc_html( (string) (int) ( $row['staged_over_sla_count'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( (string) (int) ( $row['staged_over_24h_count'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) (int) ( $row['at_event_count'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['last_assigned_at'] ?? '' ) ) . '</td>';
 			echo '</tr>';
@@ -287,7 +287,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<th>Status</th>';
 		echo '<th>Planner</th>';
 		echo '<th>Age (hrs)</th>';
-		echo '<th>SLA</th>';
+		echo '<th>Age Band</th>';
 		echo '</tr></thead>';
 		echo '<tbody>';
 
@@ -302,7 +302,7 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td>' . esc_html( (string) ( $row['assignment_label'] ?? $row['assignment_status'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_by_label'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->format_quantity( (float) ( $row['age_hours'] ?? 0 ) ) ) . '</td>';
-			echo '<td>' . esc_html( (string) ( $row['sla_state'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['age_band'] ?? '' ) ) . '</td>';
 			echo '</tr>';
 		}
 

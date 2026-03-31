@@ -659,11 +659,11 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$model = $service->get_page_model( array( 'event_id' => 10 ) );
 
 		$this->assertSame( 1, $model['workspace']['summary']['assigned_staged_bucket_count'] );
-		$this->assertSame( 1, $model['workspace']['summary']['assigned_staged_over_sla_count'] );
-		$this->assertSame( 2, $model['workspace']['summary']['checkin_lag_bucket_count'] );
+		$this->assertSame( 1, $model['workspace']['summary']['staged_over_24h_count'] );
+		$this->assertSame( 2, $model['workspace']['summary']['open_over_8h_count'] );
 		$this->assertCount( 3, $model['workspace']['assignment_timeline'] );
 		$this->assertSame( 502, $model['workspace']['assignment_timeline'][0]['assignment_id'] );
-		$this->assertSame( 'Watch', $model['workspace']['assignment_timeline'][0]['sla_state'] );
-		$this->assertSame( 1, $model['workspace']['team_activity'][0]['staged_over_sla_count'] );
+		$this->assertSame( '8–24h', $model['workspace']['assignment_timeline'][0]['age_band'] );
+		$this->assertSame( 1, $model['workspace']['team_activity'][0]['staged_over_24h_count'] );
 	}
 }

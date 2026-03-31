@@ -157,10 +157,10 @@ class AIMS_Event_Planning_Workspace_Service {
 		$open_quantity      = 0.0;
 		$assigned_available = 0.0;
 		$available_pool     = 0.0;
-		$staged_count       = 0;
-		$at_event_count     = 0;
-		$staged_over_sla_count = 0;
-		$checkin_lag_count  = 0;
+		$staged_count          = 0;
+		$at_event_count        = 0;
+		$staged_over_24h_count = 0;
+		$open_over_8h_count    = 0;
 
 		foreach ( $demand_rows as $demand_row ) {
 			if ( ! is_array( $demand_row ) ) {
@@ -181,7 +181,7 @@ class AIMS_Event_Planning_Workspace_Service {
 			if ( 'staged' === $status ) {
 				++$staged_count;
 				if ( $age_hours >= 24.0 ) {
-					++$staged_over_sla_count;
+					++$staged_over_24h_count;
 				}
 			}
 
@@ -190,7 +190,7 @@ class AIMS_Event_Planning_Workspace_Service {
 			}
 
 			if ( in_array( $status, array( 'assigned', 'staged', 'in_transit' ), true ) && $age_hours >= 8.0 ) {
-				++$checkin_lag_count;
+				++$open_over_8h_count;
 			}
 
 			$summary            = (array) ( $assigned_row['content_summary'] ?? array() );
@@ -210,10 +210,10 @@ class AIMS_Event_Planning_Workspace_Service {
 			'demand_requested_quantity'      => $requested_quantity,
 			'demand_open_quantity'           => $open_quantity,
 			'assigned_bucket_count'          => count( $assigned_rows ),
-			'assigned_staged_bucket_count'   => $staged_count,
-			'assigned_staged_over_sla_count' => $staged_over_sla_count,
+			'assigned_staged_bucket_count' => $staged_count,
+			'staged_over_24h_count'        => $staged_over_24h_count,
 			'assigned_at_event_bucket_count' => $at_event_count,
-			'checkin_lag_bucket_count'       => $checkin_lag_count,
+			'open_over_8h_count'           => $open_over_8h_count,
 			'available_bucket_count'         => count( $available_rows ),
 			'assigned_available_quantity'    => $assigned_available,
 			'available_pool_quantity'        => $available_pool,
@@ -237,10 +237,10 @@ class AIMS_Event_Planning_Workspace_Service {
 				$activity[ $user_id ] = array(
 					'user_id'          => $user_id,
 					'display_name'     => (string) ( $assigned_row['assigned_by_label'] ?? '' ),
-					'assigned_count'   => 0,
-					'staged_count'     => 0,
-					'staged_over_sla_count' => 0,
-					'at_event_count'   => 0,
+					'assigned_count'      => 0,
+					'staged_count'        => 0,
+					'staged_over_24h_count' => 0,
+					'at_event_count'      => 0,
 					'last_assigned_at' => '',
 				);
 			}
@@ -250,7 +250,7 @@ class AIMS_Event_Planning_Workspace_Service {
 			if ( 'staged' === $status ) {
 				++$activity[ $user_id ]['staged_count'];
 				if ( $this->calculate_assignment_age_hours( (string) ( $assigned_row['assigned_at'] ?? '' ) ) >= 24.0 ) {
-					$activity[ $user_id ]['staged_over_sla_count'] = (int) ( $activity[ $user_id ]['staged_over_sla_count'] ?? 0 ) + 1;
+					$activity[ $user_id ]['staged_over_24h_count'] = (int) ( $activity[ $user_id ]['staged_over_24h_count'] ?? 0 ) + 1;
 				}
 			}
 
@@ -303,7 +303,7 @@ class AIMS_Event_Planning_Workspace_Service {
 				'assigned_by_label' => sanitize_text_field( (string) ( $assigned_row['assigned_by_label'] ?? '' ) ),
 				'assigned_at'      => $assigned_at,
 				'age_hours'        => $age_hours,
-				'sla_state'        => $this->build_timeline_sla_state( $status, $age_hours ),
+				'age_band'         => $this->build_assignment_age_band( $status, $age_hours ),
 			);
 		}
 
@@ -336,24 +336,24 @@ class AIMS_Event_Planning_Workspace_Service {
 		return round( $seconds / 3600, 1 );
 	}
 
-	private function build_timeline_sla_state( string $status, float $age_hours ): string {
+	private function build_assignment_age_band( string $status, float $age_hours ): string {
 		if ( in_array( $status, array( 'at_event', 'returned', 'released', 'cancelled' ), true ) ) {
-			return 'Closed';
+			return '—';
 		}
 
 		if ( $age_hours >= 24.0 ) {
-			return 'Overdue';
+			return '> 24h';
 		}
 
 		if ( $age_hours >= 8.0 ) {
-			return 'Watch';
+			return '8–24h';
 		}
 
-		return 'On Track';
+		return '< 8h';
 	}
 
 	private function resolve_now_timestamp(): int {
-		$now = function_exists( 'current_time' ) ? (string) current_time( 'mysql' ) : gmdate( 'Y-m-d H:i:s' );
+		$now       = function_exists( 'current_time' ) ? (string) current_time( 'mysql' ) : gmdate( 'Y-m-d H:i:s' );
 		$timestamp = strtotime( $now );
 
 		return false === $timestamp ? time() : (int) $timestamp;
