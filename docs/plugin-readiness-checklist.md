@@ -84,6 +84,19 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Keep the design expandable for multiple concurrent shows and future replenishment into downstream custody pools.
 - [x] Shape the transfer and receipt seams so they can later be driven by a mobile fulfillment app / API without changing the operational truth model.
 
+## Next Milestone - Capability-First Role Model
+
+- [ ] Treat built-in AIMS roles as templates only rather than required production identities.
+- [ ] Allow custom site roles to fully replace shipped AIMS roles across portal, planning, inventory, stitching, and reporting workflows.
+- [ ] Refactor remaining AIMS responsibilities into first-class capabilities so they can be granted by the AIMS role editor or third-party role builders.
+- [ ] Remove remaining runtime checks that depend on exact shipped AIMS role slugs when equivalent custom roles carry the same template metadata and capabilities.
+- [ ] Keep assignment tables only for scoped access narrowing:
+  - event scope
+  - vendor scope
+  - custody scope
+  - subordinate-tree scope
+- [ ] Audit person-subtype resolution, endpoint resolution, and menu gating so template-backed custom roles preserve vendor, stitch, warehouse, supervisor, and manager behavior.
+
 ## Next Milestone - Transfer Endpoint Hardening
 
 - [ ] Create custody endpoint resolver for logged-in user and responsibility-to-endpoint mapping.
