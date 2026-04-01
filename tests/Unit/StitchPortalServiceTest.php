@@ -102,6 +102,84 @@ final class StitchPortalServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'In Progress', $model['open_jobs'][0]['job_status_label'] );
 	}
 
+	public function testPageModelSupportsCapabilityOnlyExternalStitchRole(): void {
+		TestState::add_role(
+			'site_stitch_operator',
+			'Site Stitch Operator',
+			array(
+				\AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL => true,
+				\AIMS_Capabilities::CAP_RESP_STITCH_ORDER_MANAGEMENT => true,
+			)
+		);
+
+		TestState::set_current_user_id( 89 );
+		TestState::set_user(
+			89,
+			(object) array(
+				'ID'           => 89,
+				'roles'        => array( 'site_stitch_operator' ),
+				'display_name' => 'External Stitcher',
+			)
+		);
+
+		$service = new \AIMS_Stitch_Portal_Service(
+			new class() extends \AIMS_Stitch_Job_Repository {
+				public function get_open_for_user( int $user_id ): array {
+					return array(
+						array(
+							'id'               => 801,
+							'job_code'         => 'ST-801',
+							'event_id'         => 901,
+							'assigned_user_id' => $user_id,
+							'status'           => self::STATUS_IN_PROGRESS,
+						),
+					);
+				}
+			},
+			new class() extends \AIMS_Physical_Bucket_Repository {
+				public function get_for_vendor( int $vendor_id ): array {
+					return 89 === $vendor_id ? array(
+						array(
+							'id'           => 302,
+							'bucket_code'  => 'ST-302',
+							'bucket_label' => 'Stitch Rack 2',
+							'bucket_type'  => \AIMS_Physical_Bucket_Types::STITCHER,
+							'status'       => 'available',
+						),
+					) : array();
+				}
+			},
+			new class() extends \AIMS_Bucket_Inventory_Position_Repository {
+				public function get_bucket_contents_summary( int $bucket_id ): array {
+					return 302 === $bucket_id ? array(
+						array(
+							'product_id'        => 503,
+							'quantity'          => 3,
+							'reserved_quantity' => 0,
+						),
+					) : array();
+				}
+			},
+			new class() extends \AIMS_Event_Repository {
+				public function find( int $event_id ): ?array {
+					return 901 === $event_id ? array(
+						'id'         => 901,
+						'event_name' => 'External Stitch Batch',
+					) : null;
+				}
+			}
+		);
+
+		$model = $service->get_page_model();
+
+		$this->assertTrue( $model['logged_in'] );
+		$this->assertTrue( $model['can_view'] );
+		$this->assertSame( 'External Stitcher', $model['stitcher_name'] );
+		$this->assertCount( 1, $model['stitcher_buckets'] );
+		$this->assertCount( 1, $model['open_jobs'] );
+		$this->assertSame( 'External Stitch Batch', $model['open_jobs'][0]['event_name'] );
+	}
+
 	public function testCompleteJobMarksWorkInTransitBackWithoutReceiptClaim(): void {
 		TestState::set_current_user_id( 88 );
 		TestState::set_user(

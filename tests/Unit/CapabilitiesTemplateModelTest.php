@@ -61,5 +61,7 @@ final class CapabilitiesTemplateModelTest extends \AIMS\Tests\TestCase {
 		$this->assertNotContains( \AIMS_Capabilities::ROLE_VENDOR_USER, (array) ( $user->roles ?? array() ) );
 		$this->assertArrayHasKey( 'aims_migrated_vendor_user', \AIMS_Capabilities::get_custom_role_registry() );
 		$this->assertInstanceOf( \WP_Role::class, get_role( 'aims_migrated_vendor_user' ) );
+		$this->assertTrue( ( new \AIMS_Person_Identity_Service() )->is_aims_person( 201 ) );
+		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_VENDOR, ( new \AIMS_Person_Identity_Service() )->get_person_subtypes( 201 ) );
 	}
 }

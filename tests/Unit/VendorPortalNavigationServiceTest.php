@@ -86,6 +86,51 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'Vendor One', $model['assigned_vendors'][0]['vendor_name'] );
 	}
 
+	public function testNavModelSupportsCapabilityOnlyExternalVendorRole(): void {
+		TestState::add_role(
+			'site_vendor_portal_partner',
+			'Site Vendor Portal Partner',
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL => true,
+				\AIMS_Capabilities::CAP_RESP_VENDOR_SUBMIT_CHECKIN => true,
+			)
+		);
+
+		TestState::set_current_user_id( 43 );
+		TestState::set_current_time( '2026-03-25 08:00:00' );
+		TestState::set_user(
+			43,
+			(object) array(
+				'ID'           => 43,
+				'roles'        => array( 'site_vendor_portal_partner' ),
+				'user_email'   => 'vendor43@example.com',
+				'display_name' => 'Vendor Forty Three',
+			)
+		);
+
+		$vendor_service = new class() extends \AIMS_Vendor_Service {
+			public function __construct() {}
+
+			public function list_vendors( string $status = '' ): array {
+				return array(
+					array(
+						'user_id'     => 43,
+						'vendor_name' => 'Vendor Forty Three',
+						'vendor_code' => 'V43',
+						'status'      => 'active',
+					),
+				);
+			}
+		};
+
+		$service = new AIMS_Vendor_Portal_Navigation_Service( $vendor_service );
+		$model   = $service->get_nav_model();
+
+		$this->assertTrue( $model['logged_in'] );
+		$this->assertCount( 1, $model['assigned_vendors'] );
+		$this->assertSame( 'Vendor Forty Three', $model['assigned_vendors'][0]['vendor_name'] );
+	}
+
 	public function testNavModelHidesPortalForNonVendorPerson(): void {
 		TestState::set_current_user_id( 42 );
 		TestState::set_user(
