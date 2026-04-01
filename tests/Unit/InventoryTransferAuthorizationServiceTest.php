@@ -7,10 +7,58 @@ namespace AIMS\Tests\Unit;
 use AIMS\Tests\Support\TestState;
 
 final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCase {
-	public function testCanOverrideTransferRouteRequiresElevatedInventoryAccess(): void {
+	public function testWarehouseOperatorRoleHasGlobalCustodyAuthority(): void {
+		TestState::set_current_user_id( 50 );
+		TestState::set_user_capabilities(
+			50,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+			)
+		);
+		TestState::set_user(
+			50,
+			(object) array(
+				'ID'           => 50,
+				'display_name' => 'Warehouse Operator',
+				'roles'        => array( \AIMS_Capabilities::ROLE_WAREHOUSE_USER ),
+			)
+		);
+
+		$service = new \AIMS_Inventory_Transfer_Authorization_Service();
+
+		$this->assertTrue( $service->can_manage_inventory_transfers( 50 ) );
+		$this->assertTrue( $service->can_manage_transfer_nodes( 50, 'vendor', 10, 'warehouse', 20 ) );
+		$this->assertTrue( $service->can_override_transfer_route( 50, 'direct_collection' ) );
+	}
+
+	public function testNarrowerStorageAndBucketCapsDoNotGrantGlobalTransferAuthority(): void {
 		TestState::set_current_user_id( 51 );
+		TestState::set_user(
+			51,
+			(object) array(
+				'ID'           => 51,
+				'display_name' => 'Scoped Operator',
+				'roles'        => array( 'aims_supervisor_user' ),
+			)
+		);
 		TestState::set_user_capabilities(
 			51,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS,
+				\AIMS_Capabilities::CAP_MANAGE_PHYSICAL_BUCKETS,
+			)
+		);
+
+		$service = new \AIMS_Inventory_Transfer_Authorization_Service();
+
+		$this->assertFalse( $service->can_manage_inventory_transfers( 51 ) );
+		$this->assertFalse( $service->can_manage_transfer_nodes( 51, 'warehouse', 10, 'warehouse', 20 ) );
+	}
+
+	public function testCanOverrideTransferRouteRequiresElevatedInventoryAccess(): void {
+		TestState::set_current_user_id( 52 );
+		TestState::set_user_capabilities(
+			52,
 			array(
 				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
 			)
@@ -18,7 +66,7 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 
 		$service = new \AIMS_Inventory_Transfer_Authorization_Service();
 
-		$this->assertFalse( $service->can_override_transfer_route( 51, 'direct_collection' ) );
+		$this->assertFalse( $service->can_override_transfer_route( 52, 'direct_collection' ) );
 	}
 
 	public function testCanManageTransferNodesAllowsResolvedSourceAndTargetEndpoints(): void {
@@ -59,7 +107,7 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 		$this->assertTrue( $service->can_manage_transfer_nodes( 53, 'vendor', 10, 'warehouse', 20 ) );
 	}
 
-		public function testCanManageTransferNodesRejectsUnresolvedTargetEventNode(): void {
+	public function testCanManageTransferNodesRejectsUnresolvedTargetEventNode(): void {
 		TestState::set_current_user_id( 54 );
 		TestState::set_user_capabilities(
 			54,
@@ -90,9 +138,9 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 	}
 
 	public function testCanOverrideTransferRouteAllowsElevatedOperators(): void {
-		TestState::set_current_user_id( 52 );
+		TestState::set_current_user_id( 55 );
 		TestState::set_user_capabilities(
-			52,
+			55,
 			array(
 				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
 				\AIMS_Capabilities::CAP_MANAGE_PRODUCTION,
@@ -101,8 +149,8 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 
 		$service = new \AIMS_Inventory_Transfer_Authorization_Service();
 
-		$this->assertTrue( $service->can_override_transfer_route( 52, 'recovery' ) );
-		$this->assertTrue( $service->can_use_exceptional_transfer_type( 52, 'termination_collection' ) );
+		$this->assertTrue( $service->can_override_transfer_route( 55, 'recovery' ) );
+		$this->assertTrue( $service->can_use_exceptional_transfer_type( 55, 'termination_collection' ) );
 		$this->assertTrue( $service->is_exceptional_transfer_type( 'direct_collection' ) );
 		$this->assertSame( 'recovery', $service->normalize_transfer_type( 'Recovery' ) );
 	}

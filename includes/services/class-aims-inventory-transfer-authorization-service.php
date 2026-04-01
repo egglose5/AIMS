@@ -14,6 +14,12 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 	public const NODE_CONTEXT_DISPATCH = 'dispatch';
 	public const NODE_CONTEXT_RECEIPT  = 'receipt';
 
+	private const GLOBAL_WAREHOUSE_OPERATOR_ROLES = array(
+		'aims_warehouse_user',
+		'aims_warehouse_operator',
+		'warehouse_operator',
+	);
+
 	private $endpoint_directory;
 	private $person_identity;
 
@@ -32,11 +38,15 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 			return false;
 		}
 
-		if ( function_exists( 'current_user_can' ) && current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY ) ) {
+		if ( $this->has_global_custody_authority( $user_id ) ) {
 			return true;
 		}
 
-		return function_exists( 'current_user_can' ) && current_user_can( AIMS_Capabilities::CAP_MANAGE );
+		if ( $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_INVENTORY ) ) {
+			return true;
+		}
+
+		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE );
 	}
 
 	public function can_override_transfer_route( int $user_id = 0, string $transfer_type = self::TRANSFER_TYPE_STANDARD ): bool {
@@ -47,12 +57,11 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 			return false;
 		}
 
-		$allowed = function_exists( 'current_user_can' ) && (
-			current_user_can( AIMS_Capabilities::CAP_MANAGE )
-			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_PRODUCTION )
-			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_FULFILLMENT )
-			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_RECONCILIATION )
-		);
+		$allowed = $this->has_global_custody_authority( $user_id )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_PRODUCTION )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_FULFILLMENT )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_RECONCILIATION );
 
 		if ( function_exists( 'apply_filters' ) ) {
 			$allowed = (bool) apply_filters( 'aims_inventory_transfer_can_override_route', $allowed, $user_id, $transfer_type );
@@ -83,6 +92,10 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 
 		if ( ! $this->can_manage_inventory_transfers( $user_id ) ) {
 			return false;
+		}
+
+		if ( $this->has_global_custody_authority( $user_id ) ) {
+			return true;
 		}
 
 		if ( is_object( $this->endpoint_directory ) && method_exists( $this->endpoint_directory, 'resolve_endpoint_from_node' ) ) {
@@ -157,6 +170,41 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 		return 0;
 	}
 
+	private function has_global_custody_authority( int $user_id ): bool {
+		$user_id = $this->resolve_user_id( $user_id );
+
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+
+		if ( $this->user_has_warehouse_operator_role( $user_id ) ) {
+			return true;
+		}
+
+		if ( is_object( $this->person_identity ) && method_exists( $this->person_identity, 'has_person_subtype' ) ) {
+			if ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE ) ) {
+				return true;
+			}
+		}
+
+		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE );
+	}
+
+	private function user_has_warehouse_operator_role( int $user_id ): bool {
+		$user = null;
+		if ( function_exists( 'get_user_by' ) ) {
+			$user = get_user_by( 'id', $user_id );
+		}
+
+		if ( ! is_object( $user ) || empty( $user->roles ) || ! is_array( $user->roles ) ) {
+			return false;
+		}
+
+		$roles = array_map( 'sanitize_key', $user->roles );
+
+		return ! empty( array_intersect( self::GLOBAL_WAREHOUSE_OPERATOR_ROLES, $roles ) );
+	}
+
 	private function matches_node_type_authority( int $user_id, string $node_type, string $context = self::NODE_CONTEXT_CREATE ): bool {
 		$node_type = sanitize_key( $node_type );
 		$context   = sanitize_key( $context );
@@ -164,34 +212,43 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 
 		switch ( $node_type ) {
 			case 'warehouse':
-				return current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_PHYSICAL_BUCKETS )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_BUCKETS );
+				return $this->has_global_custody_authority( $user_id )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_INVENTORY )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_PHYSICAL_BUCKETS )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENT_BUCKETS );
 
 			case 'supervisor':
-				return current_user_can( AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING )
+				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING )
 					|| ( $is_person && function_exists( 'apply_filters' ) && (bool) apply_filters( 'aims_inventory_transfer_allow_supervisor_node', false, $user_id, $context ) );
 
 			case 'vendor':
-				return current_user_can( AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS )
+				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS )
 					|| ( $is_person && $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) );
 
 			case 'stitcher':
-				return current_user_can( AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_STITCH )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_STITCH_ORDERS )
+				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STITCH )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STITCH_ORDERS )
 					|| ( $is_person && $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_STITCH ) );
 
 			case 'event':
-				return current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING )
-					|| current_user_can( AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENTS );
+				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_EVENTS_SHELL )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENTS );
 
 			default:
-				return current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY );
+				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_INVENTORY );
 		}
+	}
+
+	private function user_has_cap( int $user_id, string $cap ): bool {
+		if ( $user_id <= 0 || '' === $cap ) {
+			return false;
+		}
+
+		return function_exists( 'user_can' ) && user_can( $user_id, $cap );
 	}
 }

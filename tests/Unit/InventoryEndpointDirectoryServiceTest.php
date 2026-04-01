@@ -28,7 +28,7 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 			(object) array(
 				'ID'           => 52,
 				'display_name' => 'Warehouse Operator',
-				'roles'        => array( 'aims_supervisor_user' ),
+				'roles'        => array( \AIMS_Capabilities::ROLE_WAREHOUSE_USER, \AIMS_Capabilities::ROLE_SUPERVISOR_USER ),
 			)
 		);
 		TestState::set_user(
@@ -36,7 +36,7 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 			(object) array(
 				'ID'           => 81,
 				'display_name' => 'Abby',
-				'roles'        => array( 'aims_supervisor_user' ),
+				'roles'        => array( \AIMS_Capabilities::ROLE_SUPERVISOR_USER ),
 			)
 		);
 		TestState::set_user(
@@ -44,7 +44,7 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 			(object) array(
 				'ID'           => 91,
 				'display_name' => 'Melissa',
-				'roles'        => array( 'aims_vendor_user' ),
+				'roles'        => array( \AIMS_Capabilities::ROLE_VENDOR_USER ),
 			)
 		);
 
@@ -68,6 +68,28 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 		}
 	}
 
+	public function testWarehouseOperatorRoleExplicitlySurfacesWarehouseRuntimeEndpoint(): void {
+		TestState::set_current_user_id( 64 );
+		TestState::set_user(
+			64,
+			(object) array(
+				'ID'           => 64,
+				'display_name' => 'Warehouse Lead',
+				'roles'        => array( \AIMS_Capabilities::ROLE_WAREHOUSE_USER ),
+			)
+		);
+
+		$service  = new \AIMS_Inventory_Endpoint_Directory_Service();
+		$endpoints = $service->get_runtime_endpoints( 64 );
+		$resolved  = $service->resolve_runtime_endpoint( 64 );
+
+		$this->assertArrayHasKey( 'warehouse', $endpoints );
+		$this->assertArrayHasKey( 'warehouse_main', $endpoints );
+		$this->assertTrue( ! empty( $endpoints['warehouse_main']['is_current'] ) );
+		$this->assertSame( 'warehouse_main', $resolved['endpoint_key'] );
+		$this->assertSame( 'warehouse', $resolved['node_type'] );
+	}
+
 	public function testResolveEndpointFromNodeHonorsExplicitNodeType(): void {
 		TestState::set_current_user_id( 61 );
 		TestState::set_user(
@@ -75,7 +97,7 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 			(object) array(
 				'ID'           => 61,
 				'display_name' => 'Supervisor User',
-				'roles'        => array( 'aims_supervisor_user' ),
+				'roles'        => array( \AIMS_Capabilities::ROLE_SUPERVISOR_USER ),
 			)
 		);
 
@@ -99,7 +121,7 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 			(object) array(
 				'ID'           => 62,
 				'display_name' => 'Vendor User',
-				'roles'        => array( 'aims_vendor_user' ),
+				'roles'        => array( \AIMS_Capabilities::ROLE_VENDOR_USER ),
 			)
 		);
 

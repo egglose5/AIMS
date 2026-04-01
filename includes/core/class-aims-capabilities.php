@@ -5,6 +5,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Capabilities {
+	public const ROLE_VENDOR_USER     = 'aims_vendor_user';
+	public const ROLE_STITCH_USER     = 'aims_stitch_user';
+	public const ROLE_WAREHOUSE_USER  = 'aims_warehouse_user';
+	public const ROLE_SUPERVISOR_USER = 'aims_supervisor_user';
+	public const ROLE_MANAGER_USER    = 'aims_manager_user';
+
 	public const CAP_MANAGE         = 'manage_aims';
 	public const CAP_MANAGE_VENDORS = 'manage_aims_vendors';
 	public const CAP_MANAGE_EVENTS  = 'manage_aims_events';
@@ -60,7 +66,7 @@ class AIMS_Capabilities {
 		}
 
 		self::sync_role_caps(
-			'aims_vendor_user',
+			self::ROLE_VENDOR_USER,
 			'AIMS Vendor User',
 			array(
 				'read' => true,
@@ -69,7 +75,7 @@ class AIMS_Capabilities {
 		);
 
 		self::sync_role_caps(
-			'aims_stitch_user',
+			self::ROLE_STITCH_USER,
 			'AIMS Stitch User',
 			array(
 				'read' => true,
@@ -78,7 +84,26 @@ class AIMS_Capabilities {
 		);
 
 		self::sync_role_caps(
-			'aims_supervisor_user',
+			self::ROLE_WAREHOUSE_USER,
+			'AIMS Main Warehouse Operator',
+			array(
+				'read' => true,
+				self::CAP_VIEW_DASHBOARD => true,
+				self::CAP_VIEW_REPORTS => true,
+				self::CAP_VIEW_EVENTS_SHELL => true,
+				self::CAP_VIEW_INVENTORY_SHELL => true,
+				self::CAP_MANAGE_INVENTORY => true,
+				self::CAP_MANAGE_STORAGE_LOCATIONS => true,
+				self::CAP_MANAGE_PHYSICAL_BUCKETS => true,
+				self::CAP_MANAGE_EVENT_BUCKETS => true,
+				self::CAP_VIEW_BUCKET_LEDGER => true,
+				self::CAP_MANAGE_PICK_PACK => true,
+				self::CAP_MANAGE_FULFILLMENT => true,
+			)
+		);
+
+		self::sync_role_caps(
+			self::ROLE_SUPERVISOR_USER,
 			'AIMS Supervisor User',
 			array(
 				'read' => true,
@@ -90,7 +115,7 @@ class AIMS_Capabilities {
 		);
 
 		self::sync_role_caps(
-			'aims_manager_user',
+			self::ROLE_MANAGER_USER,
 			'AIMS Manager User',
 			array(
 				'read' => true,
@@ -180,10 +205,11 @@ class AIMS_Capabilities {
 
 	public static function get_portal_roles(): array {
 		return array(
-			'aims_vendor_user'     => 'AIMS Vendor User',
-			'aims_stitch_user'     => 'AIMS Stitch User',
-			'aims_supervisor_user' => 'AIMS Supervisor User',
-			'aims_manager_user'    => 'AIMS Manager User',
+			self::ROLE_VENDOR_USER     => 'AIMS Vendor User',
+			self::ROLE_STITCH_USER     => 'AIMS Stitch User',
+			self::ROLE_WAREHOUSE_USER  => 'AIMS Main Warehouse Operator',
+			self::ROLE_SUPERVISOR_USER => 'AIMS Supervisor User',
+			self::ROLE_MANAGER_USER    => 'AIMS Manager User',
 		);
 	}
 

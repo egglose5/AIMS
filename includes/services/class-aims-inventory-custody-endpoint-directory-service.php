@@ -259,7 +259,9 @@ class AIMS_Inventory_Custody_Endpoint_Directory_Service {
 
 		$node_ref_type = '';
 		if ( is_object( $this->person_identity ) ) {
-			if ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_STITCH ) ) {
+			if ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE ) ) {
+				$node_ref_type = self::TYPE_WAREHOUSE;
+			} elseif ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_STITCH ) ) {
 				$node_ref_type = self::TYPE_STITCHER;
 			} elseif ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) ) {
 				$node_ref_type = self::TYPE_VENDOR;
@@ -269,9 +271,9 @@ class AIMS_Inventory_Custody_Endpoint_Directory_Service {
 		}
 
 		if ( '' === $node_ref_type ) {
-			if ( current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY ) || current_user_can( AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS ) ) {
+			if ( user_can( $user_id, AIMS_Capabilities::CAP_MANAGE_INVENTORY ) || user_can( $user_id, AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS ) ) {
 				$node_ref_type = self::TYPE_WAREHOUSE;
-			} elseif ( current_user_can( AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL ) || current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING ) ) {
+			} elseif ( user_can( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL ) || user_can( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING ) ) {
 				$node_ref_type = self::TYPE_SUPERVISOR;
 			} else {
 				$node_ref_type = self::TYPE_VENDOR;

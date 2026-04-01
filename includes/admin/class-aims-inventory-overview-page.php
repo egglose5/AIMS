@@ -164,14 +164,22 @@ class AIMS_Inventory_Overview_Page {
 			<input type="hidden" name="transfer_context" value="<?php echo esc_attr( $context ); ?>" />
 			<input type="hidden" name="source_node_type" value="<?php echo esc_attr( (string) ( $operator['node_type'] ?? 'vendor' ) ); ?>" />
 			<input type="hidden" name="source_node_id" value="<?php echo esc_attr( (string) ( $operator['node_id'] ?? 0 ) ); ?>" />
-			<input type="hidden" name="source_endpoint_selection" value="<?php echo esc_attr( (string) ( $operator['node_type'] ?? 'vendor' ) . ':' . (string) ( $operator['node_id'] ?? 0 ) ); ?>" />
 			<table class="form-table">
 				<tbody>
 					<tr>
 						<th scope="row"><?php esc_html_e( 'Source Endpoint', 'ai-man-sys' ); ?></th>
 						<td>
-							<strong><?php echo esc_html( (string) ( $operator['node_label'] ?? 'Current endpoint' ) ); ?></strong>
-							<p class="description"><?php esc_html_e( 'The draft starts from your current custody node. You will choose the destination below, then assign actual buckets per line item.', 'ai-man-sys' ); ?></p>
+							<?php if ( $can_override ) : ?>
+								<select id="source_endpoint_selection" name="source_endpoint_selection" required>
+									<option value=""><?php esc_html_e( '-- Select Source Endpoint --', 'ai-man-sys' ); ?></option>
+									<?php $this->render_endpoint_options( $endpoints, '', $current_key ); ?>
+								</select>
+								<p class="description"><?php esc_html_e( 'Elevated operators can originate transfers from any authorized custody node. Use this for normal warehouse routing, direct collection, or recovery work.', 'ai-man-sys' ); ?></p>
+							<?php else : ?>
+								<input type="hidden" name="source_endpoint_selection" value="<?php echo esc_attr( (string) ( $operator['node_type'] ?? 'vendor' ) . ':' . (string) ( $operator['node_id'] ?? 0 ) ); ?>" />
+								<strong><?php echo esc_html( (string) ( $operator['node_label'] ?? 'Current endpoint' ) ); ?></strong>
+								<p class="description"><?php esc_html_e( 'The draft starts from your current custody node. You will choose the destination below, then assign actual buckets per line item.', 'ai-man-sys' ); ?></p>
+							<?php endif; ?>
 						</td>
 					</tr>
 					<tr>
@@ -234,14 +242,14 @@ class AIMS_Inventory_Overview_Page {
 		<?php
 	}
 
-	private function render_endpoint_options( array $endpoints, string $current_key ): void {
+	private function render_endpoint_options( array $endpoints, string $exclude_key = '', string $selected_key = '' ): void {
 		foreach ( $endpoints as $endpoint_key => $endpoint ) {
 			if ( ! is_array( $endpoint ) || ! empty( $endpoint['is_alias'] ) ) {
 				continue;
 			}
 
 			$endpoint_key = sanitize_key( (string) $endpoint_key );
-			if ( '' === $endpoint_key || $endpoint_key === sanitize_key( $current_key ) ) {
+			if ( '' === $endpoint_key || ( '' !== $exclude_key && $endpoint_key === sanitize_key( $exclude_key ) ) ) {
 				continue;
 			}
 
@@ -253,7 +261,8 @@ class AIMS_Inventory_Overview_Page {
 
 			$value = $node_type . ':' . $node_id;
 			$label = (string) ( $endpoint['endpoint_label'] ?? $endpoint_key );
-			echo '<option value="' . esc_attr( $value ) . '">' . esc_html( $label ) . '</option>';
+			$selected = ( $endpoint_key === sanitize_key( $selected_key ) ) ? ' selected="selected"' : '';
+			echo '<option value="' . esc_attr( $value ) . '"' . $selected . '>' . esc_html( $label ) . '</option>';
 		}
 	}
 

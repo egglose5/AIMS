@@ -7,6 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Person_Identity_Service {
 	public const SUBTYPE_VENDOR  = 'vendor';
 	public const SUBTYPE_STITCH  = 'stitch';
+	public const SUBTYPE_WAREHOUSE = 'warehouse';
 	public const SUBTYPE_MANAGER = 'manager';
 
 	public function is_aims_person( int $user_id ): bool {
@@ -40,15 +41,19 @@ class AIMS_Person_Identity_Service {
 		$roles = $this->extract_roles( $user );
 		$subtypes = array();
 
-		if ( in_array( 'aims_vendor_user', $roles, true ) ) {
+		if ( in_array( AIMS_Capabilities::ROLE_VENDOR_USER, $roles, true ) ) {
 			$subtypes[] = self::SUBTYPE_VENDOR;
 		}
 
-		if ( in_array( 'aims_stitch_user', $roles, true ) ) {
+		if ( in_array( AIMS_Capabilities::ROLE_STITCH_USER, $roles, true ) ) {
 			$subtypes[] = self::SUBTYPE_STITCH;
 		}
 
-		if ( in_array( 'aims_manager_user', $roles, true ) ) {
+		if ( in_array( AIMS_Capabilities::ROLE_WAREHOUSE_USER, $roles, true ) ) {
+			$subtypes[] = self::SUBTYPE_WAREHOUSE;
+		}
+
+		if ( in_array( AIMS_Capabilities::ROLE_MANAGER_USER, $roles, true ) ) {
 			$subtypes[] = self::SUBTYPE_MANAGER;
 		}
 

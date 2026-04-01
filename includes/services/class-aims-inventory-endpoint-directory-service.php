@@ -201,6 +201,10 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			}
 		}
 
+		if ( '' !== $node_type ) {
+			return array();
+		}
+
 		return $this->resolve_runtime_endpoint( $user_id );
 	}
 
@@ -420,20 +424,23 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 
 		switch ( sanitize_key( $endpoint_key ) ) {
 			case self::ENDPOINT_WAREHOUSE:
-				return current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_PHYSICAL_BUCKETS )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_BUCKETS );
+				if ( $this->user_has_warehouse_authority( $user_id ) ) {
+					return true;
+				}
+
+				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_PHYSICAL_BUCKETS )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENT_BUCKETS );
 
 			case self::ENDPOINT_SUPERVISOR:
-				return current_user_can( AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING );
+				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING );
 
 			case self::ENDPOINT_VENDOR:
 			default:
-				return current_user_can( AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL )
-					|| current_user_can( AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL )
-					|| current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS );
+				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS );
 		}
 	}
 
@@ -479,7 +486,9 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 
 		$node_ref_type = '';
 		if ( is_object( $this->person_identity ) ) {
-			if ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_STITCH ) ) {
+			if ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE ) ) {
+				$node_ref_type = 'warehouse';
+			} elseif ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_STITCH ) ) {
 				$node_ref_type = 'stitcher';
 			} elseif ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) ) {
 				$node_ref_type = 'vendor';
@@ -489,9 +498,9 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		}
 
 		if ( '' === $node_ref_type ) {
-			if ( current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY ) || current_user_can( AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS ) ) {
+			if ( $this->user_has_warehouse_authority( $user_id ) || $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS ) ) {
 				$node_ref_type = 'warehouse';
-			} elseif ( current_user_can( AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL ) || current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING ) ) {
+			} elseif ( $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL ) || $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING ) ) {
 				$node_ref_type = 'supervisor';
 			} else {
 				$node_ref_type = 'vendor';
@@ -522,6 +531,21 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		}
 
 		return null;
+	}
+
+	private function user_has_warehouse_role( int $user_id ): bool {
+		if ( $user_id <= 0 || ! function_exists( 'get_user_by' ) ) {
+			return false;
+		}
+
+		$user = get_user_by( 'id', $user_id );
+		if ( ! is_object( $user ) || empty( $user->roles ) || ! is_array( $user->roles ) ) {
+			return false;
+		}
+
+		$roles = array_values( array_filter( array_map( 'sanitize_key', $user->roles ) ) );
+
+		return in_array( AIMS_Capabilities::ROLE_WAREHOUSE_USER, $roles, true );
 	}
 
 	private function normalize_route_guidance_suggestions( array $runtime_guidance ): array {
@@ -640,11 +664,11 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			return false;
 		}
 
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY )
-			|| current_user_can( AIMS_Capabilities::CAP_MANAGE )
-			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_PRODUCTION )
-			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS )
-			|| current_user_can( AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL );
+		return $this->user_has_warehouse_authority( $user_id )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_PRODUCTION )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL );
 	}
 
 	private function get_runtime_users_for_role( string $role_slug ): array {
@@ -672,7 +696,7 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 	private function user_prefers_endpoint_type( int $user_id, string $endpoint_type ): bool {
 		switch ( $endpoint_type ) {
 			case self::ENDPOINT_WAREHOUSE:
-				return current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY );
+				return $this->user_has_warehouse_authority( $user_id );
 
 			case self::ENDPOINT_SUPERVISOR:
 				return $this->user_matches_endpoint_type( $user_id, self::ENDPOINT_SUPERVISOR );
@@ -693,20 +717,40 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 
 		switch ( $endpoint_type ) {
 			case self::ENDPOINT_SUPERVISOR:
-				return in_array( 'aims_supervisor_user', $roles, true ) || current_user_can( AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL );
+				return in_array( AIMS_Capabilities::ROLE_SUPERVISOR_USER, $roles, true ) || $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL );
 
 			case self::ENDPOINT_VENDOR:
-				if ( in_array( 'aims_vendor_user', $roles, true ) ) {
+				if ( in_array( AIMS_Capabilities::ROLE_VENDOR_USER, $roles, true ) ) {
 					return true;
 				}
 
 				return is_object( $this->person_identity ) && $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_VENDOR );
 
 			case self::ENDPOINT_WAREHOUSE:
-				return current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY );
+				return $this->user_has_warehouse_authority( $user_id );
 
 			default:
 				return false;
 		}
+	}
+
+	private function user_has_warehouse_authority( int $user_id ): bool {
+		if ( $this->user_has_warehouse_role( $user_id ) ) {
+			return true;
+		}
+
+		if ( is_object( $this->person_identity ) && $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE ) ) {
+			return true;
+		}
+
+		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_INVENTORY );
+	}
+
+	private function user_has_cap( int $user_id, string $cap ): bool {
+		if ( $user_id <= 0 || '' === $cap ) {
+			return false;
+		}
+
+		return function_exists( 'user_can' ) && user_can( $user_id, $cap );
 	}
 }

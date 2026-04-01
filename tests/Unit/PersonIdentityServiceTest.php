@@ -65,4 +65,26 @@ final class PersonIdentityServiceTest extends \AIMS\Tests\TestCase {
 
 		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_STITCH, $subtypes );
 	}
+
+	public function testSubtypesResolveWarehouseOperator(): void {
+		TestState::set_user(
+			105,
+			(object) array(
+				'ID'    => 105,
+				'roles' => array( \AIMS_Capabilities::ROLE_WAREHOUSE_USER ),
+			)
+		);
+
+		$service = new \AIMS_Person_Identity_Service();
+		$subtypes = $service->get_person_subtypes( 105 );
+
+		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE, $subtypes );
+	}
+
+	public function testAimsRoleListIncludesWarehouseOperators(): void {
+		$roles = \AIMS_Capabilities::get_aims_role_slugs();
+
+		$this->assertContains( \AIMS_Capabilities::ROLE_WAREHOUSE_USER, $roles );
+		$this->assertArrayHasKey( \AIMS_Capabilities::ROLE_WAREHOUSE_USER, \AIMS_Capabilities::get_portal_roles() );
+	}
 }
