@@ -16,6 +16,6 @@ final class SchemaResponsibilityCleanupTest extends \AIMS\Tests\TestCase {
 	}
 
 	public function testSchemaVersionBumpsWithIdentityCleanup(): void {
-		$this->assertSame( '0.10.0', \AIMS_Plugin::SCHEMA_VERSION );
+		$this->assertSame( '0.11.0', \AIMS_Plugin::SCHEMA_VERSION );
 	}
 }

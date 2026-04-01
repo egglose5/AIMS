@@ -37,6 +37,21 @@ require_once $root . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'aut
 require_once AIMS_PLUGIN_PATH . 'includes/core/class-aims-loader.php';
 AIMS_Loader::init();
 
+spl_autoload_register(
+	static function ( string $class_name ) use ( $root ): void {
+		if ( 0 !== strpos( $class_name, 'AIMS\\Core\\' ) ) {
+			return;
+		}
+
+		$relative = str_replace( '\\', DIRECTORY_SEPARATOR, substr( $class_name, strlen( 'AIMS\\Core\\' ) ) );
+		$path     = $root . DIRECTORY_SEPARATOR . 'core' . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . $relative . '.php';
+
+		if ( file_exists( $path ) ) {
+			require_once $path;
+		}
+	}
+);
+
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
 		private $code;

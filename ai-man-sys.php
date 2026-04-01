@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       AIMS
  * Plugin URI:        https://aims.local
- * Description:       AIMS is an operations plugin for vendor management, event planning and execution, Square sync, and reporting.
+ * Description:       AIMS thin client for the headless core API, with dashboard, settings, and remote sync controls.
  * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
