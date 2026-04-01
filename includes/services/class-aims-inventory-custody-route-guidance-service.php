@@ -7,13 +7,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Inventory_Custody_Route_Guidance_Service {
 	private $endpoints;
 	private $relationships;
+	private $person_identity;
 
 	public function __construct(
 		AIMS_Inventory_Custody_Endpoint_Repository $endpoints = null,
-		AIMS_Inventory_Custody_Endpoint_Relationship_Repository $relationships = null
+		AIMS_Inventory_Custody_Endpoint_Relationship_Repository $relationships = null,
+		AIMS_Person_Identity_Service $person_identity = null
 	) {
 		$this->endpoints     = $endpoints ?: new AIMS_Inventory_Custody_Endpoint_Repository();
 		$this->relationships = $relationships ?: new AIMS_Inventory_Custody_Endpoint_Relationship_Repository();
+		$this->person_identity = $person_identity ?: ( class_exists( 'AIMS_Person_Identity_Service' ) ? new AIMS_Person_Identity_Service() : null );
 	}
 
 	public function get_route_guidance_for_endpoint( int $endpoint_id ): array {
@@ -42,6 +45,15 @@ class AIMS_Inventory_Custody_Route_Guidance_Service {
 			);
 		}
 
+		$default_route = null;
+		if ( is_object( $this->relationships ) && method_exists( $this->relationships, 'get_default_route_for_source_endpoint' ) ) {
+			$default_route = $this->relationships->get_default_route_for_source_endpoint( $endpoint_id );
+		}
+
+		if ( ! is_array( $default_route ) && ! empty( $routes[0] ) ) {
+			$default_route = $routes[0];
+		}
+
 		return array(
 			'success'                  => true,
 			'endpoint'                 => $endpoint,
@@ -49,7 +61,7 @@ class AIMS_Inventory_Custody_Route_Guidance_Service {
 			'allows_direct_collection' => ! empty( $endpoint['allows_direct_collection'] ),
 			'allows_direct_recovery'   => ! empty( $endpoint['allows_direct_recovery'] ),
 			'routes'                   => $routes,
-			'default_route'            => ! empty( $routes[0] ) ? $routes[0] : null,
+			'default_route'            => $default_route,
 		);
 	}
 
@@ -75,9 +87,69 @@ class AIMS_Inventory_Custody_Route_Guidance_Service {
 
 		return array(
 			'success'   => true,
+			'node_ref_type' => sanitize_key( $node_ref_type ),
+			'node_ref_id'   => $node_ref_id,
 			'endpoints' => $endpoints,
 			'guidance'  => $guidance,
 		);
+	}
+
+	public function get_route_guidance_for_runtime_user( int $user_id = 0 ): array {
+		$user_id = $this->resolve_user_id( $user_id );
+		$node_ref = $this->resolve_user_node_reference( $user_id );
+
+		if ( '' === (string) ( $node_ref['node_ref_type'] ?? '' ) || (int) ( $node_ref['node_ref_id'] ?? 0 ) <= 0 ) {
+			return $this->failure_response( 'No custody node could be resolved for this user.' );
+		}
+
+		return $this->get_route_guidance_for_node(
+			(string) $node_ref['node_ref_type'],
+			(int) $node_ref['node_ref_id']
+		);
+	}
+
+	public function resolve_user_node_reference( int $user_id ): array {
+		$user_id = $this->resolve_user_id( $user_id );
+		if ( $user_id <= 0 ) {
+			return array(
+				'node_ref_type' => '',
+				'node_ref_id'   => 0,
+			);
+		}
+
+		$node_ref_type = '';
+		if ( is_object( $this->person_identity ) ) {
+			if ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_STITCH ) ) {
+				$node_ref_type = 'stitcher';
+			} elseif ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) ) {
+				$node_ref_type = 'vendor';
+			} elseif ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_MANAGER ) ) {
+				$node_ref_type = 'supervisor';
+			}
+		}
+
+		if ( '' === $node_ref_type ) {
+			if ( current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY ) || current_user_can( AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS ) ) {
+				$node_ref_type = 'warehouse';
+			} elseif ( current_user_can( AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL ) || current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING ) ) {
+				$node_ref_type = 'supervisor';
+			} else {
+				$node_ref_type = 'vendor';
+			}
+		}
+
+		return array(
+			'node_ref_type' => sanitize_key( $node_ref_type ),
+			'node_ref_id'   => $user_id,
+		);
+	}
+
+	private function resolve_user_id( int $user_id ): int {
+		if ( $user_id > 0 ) {
+			return $user_id;
+		}
+
+		return function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 	}
 
 	private function failure_response( string $message ): array {

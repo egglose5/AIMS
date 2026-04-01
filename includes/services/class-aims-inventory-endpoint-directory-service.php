@@ -12,10 +12,19 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 
 	private $responsibility_auth;
 	private $person_identity;
+	private $endpoint_repository;
+	private $route_guidance;
 
-	public function __construct( AIMS_Responsibility_Authorization_Service $responsibility_auth = null, AIMS_Person_Identity_Service $person_identity = null ) {
+	public function __construct(
+		AIMS_Responsibility_Authorization_Service $responsibility_auth = null,
+		AIMS_Person_Identity_Service $person_identity = null,
+		AIMS_Inventory_Custody_Endpoint_Repository $endpoint_repository = null,
+		AIMS_Inventory_Custody_Route_Guidance_Service $route_guidance = null
+	) {
 		$this->responsibility_auth = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
-		$this->person_identity    = $person_identity ?: ( class_exists( 'AIMS_Person_Identity_Service' ) ? new AIMS_Person_Identity_Service() : null );
+		$this->person_identity     = $person_identity ?: ( class_exists( 'AIMS_Person_Identity_Service' ) ? new AIMS_Person_Identity_Service() : null );
+		$this->endpoint_repository = $endpoint_repository ?: ( class_exists( 'AIMS_Inventory_Custody_Endpoint_Repository' ) ? new AIMS_Inventory_Custody_Endpoint_Repository() : null );
+		$this->route_guidance      = $route_guidance ?: ( class_exists( 'AIMS_Inventory_Custody_Route_Guidance_Service' ) ? new AIMS_Inventory_Custody_Route_Guidance_Service() : null );
 	}
 
 	public function get_directory(): array {
@@ -60,7 +69,13 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 	}
 
 	public function get_runtime_endpoints( int $user_id = 0 ): array {
-		$user_id   = $this->resolve_user_id( $user_id );
+		$user_id = $this->resolve_user_id( $user_id );
+		$persisted = $this->get_persisted_runtime_endpoints( $user_id );
+
+		if ( ! empty( $persisted ) ) {
+			return $persisted;
+		}
+
 		$templates = $this->get_directory();
 		$choices   = array();
 
@@ -161,7 +176,8 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		$node_id = max( 0, $node_id );
 		$node_type = sanitize_key( $node_type );
 
-		foreach ( $this->get_runtime_endpoints( $user_id ) as $endpoint ) {
+		$runtime = $this->get_runtime_endpoints( $user_id );
+		foreach ( $runtime as $endpoint ) {
 			if ( ! is_array( $endpoint ) ) {
 				continue;
 			}
@@ -188,6 +204,59 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		return $this->resolve_runtime_endpoint( $user_id );
 	}
 
+	public function get_persisted_runtime_endpoints( int $user_id = 0 ): array {
+		$user_id = $this->resolve_user_id( $user_id );
+		$node_ref = $this->resolve_user_node_reference( $user_id );
+
+		if ( ! is_object( $this->endpoint_repository ) ) {
+			return array();
+		}
+
+		$node_ref_type = sanitize_key( (string) ( $node_ref['node_ref_type'] ?? '' ) );
+		$node_ref_id   = (int) ( $node_ref['node_ref_id'] ?? 0 );
+		if ( '' === $node_ref_type || $node_ref_id <= 0 ) {
+			return array();
+		}
+
+		$endpoints = array();
+		$rows = array();
+		if ( method_exists( $this->endpoint_repository, 'get_active_for_node' ) ) {
+			$rows = $this->endpoint_repository->get_active_for_node( $node_ref_type, $node_ref_id );
+		} elseif ( method_exists( $this->endpoint_repository, 'get_for_node' ) ) {
+			$rows = $this->endpoint_repository->get_for_node(
+				$node_ref_type,
+				$node_ref_id,
+				array( 'endpoint_status' => AIMS_Inventory_Custody_Endpoint_Repository::STATUS_ACTIVE )
+			);
+		}
+
+		foreach ( (array) $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$endpoint_key = sanitize_key( (string) ( $row['endpoint_key'] ?? '' ) );
+			if ( '' === $endpoint_key ) {
+				continue;
+			}
+
+			$endpoints[ $endpoint_key ] = $this->normalize_endpoint(
+				array_merge(
+					$row,
+					array(
+						'endpoint_key'  => $endpoint_key,
+						'endpoint_type'  => (string) ( $row['endpoint_type'] ?? $row['node_type'] ?? $node_ref_type ),
+						'node_type'     => (string) ( $row['node_type'] ?? $node_ref_type ),
+						'node_id'       => (int) ( $row['node_ref_id'] ?? $node_ref_id ),
+						'is_current'    => true,
+					)
+				)
+			);
+		}
+
+		return $endpoints;
+	}
+
 	public function get_endpoint_choices( int $user_id = 0 ): array {
 		$choices = array();
 		foreach ( $this->get_runtime_endpoints( $user_id ) as $endpoint_key => $endpoint ) {
@@ -198,6 +267,14 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 	}
 
 	public function get_route_suggestions( int $user_id = 0 ): array {
+		$runtime_guidance = $this->call_route_guidance( $user_id );
+		if ( is_array( $runtime_guidance ) && ! empty( $runtime_guidance['success'] ) && ! empty( $runtime_guidance['guidance'] ) ) {
+			$suggestions = $this->normalize_route_guidance_suggestions( $runtime_guidance );
+			if ( ! empty( $suggestions ) ) {
+				return $suggestions;
+			}
+		}
+
 		$current     = $this->resolve_runtime_endpoint( $user_id );
 		$directory   = $this->get_runtime_endpoints( $user_id );
 		$suggestions = array();
@@ -232,6 +309,20 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 	}
 
 	public function get_suggested_route_label( int $user_id = 0 ): string {
+		$runtime_guidance = $this->call_route_guidance( $user_id );
+		if ( is_array( $runtime_guidance ) && ! empty( $runtime_guidance['success'] ) ) {
+			foreach ( (array) ( $runtime_guidance['guidance'] ?? array() ) as $guidance ) {
+				if ( ! is_array( $guidance ) ) {
+					continue;
+				}
+
+				$default_route = is_array( $guidance['default_route'] ?? null ) ? $guidance['default_route'] : array();
+				if ( ! empty( $default_route['guidance_label'] ) ) {
+					return sanitize_text_field( (string) $default_route['guidance_label'] );
+				}
+			}
+		}
+
 		$current = $this->resolve_runtime_endpoint( $user_id );
 
 		return sprintf(
@@ -241,6 +332,33 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 	}
 
 	public function get_suggested_route_note( int $user_id = 0 ): string {
+		$runtime_guidance = $this->call_route_guidance( $user_id );
+		if ( is_array( $runtime_guidance ) && ! empty( $runtime_guidance['success'] ) ) {
+			$notes = array();
+			foreach ( (array) $runtime_guidance['guidance'] as $guidance ) {
+				if ( ! is_array( $guidance ) ) {
+					continue;
+				}
+
+				$default_route = is_array( $guidance['default_route'] ?? null ) ? $guidance['default_route'] : array();
+				$parts = array();
+				if ( ! empty( $default_route['guidance_notes'] ) ) {
+					$parts[] = sanitize_textarea_field( (string) $default_route['guidance_notes'] );
+				}
+				if ( ! empty( $default_route['guidance_label'] ) ) {
+					$parts[] = sanitize_text_field( (string) $default_route['guidance_label'] );
+				}
+
+				if ( ! empty( $parts ) ) {
+					$notes[] = implode( ' | ', array_values( array_unique( $parts ) ) );
+				}
+			}
+
+			if ( ! empty( $notes ) ) {
+				return implode( ' ', array_values( array_unique( $notes ) ) );
+			}
+		}
+
 		$suggestions = $this->get_route_suggestions( $user_id );
 		if ( empty( $suggestions ) ) {
 			return 'Default route guidance is available, but elevated operators can still collect directly with an audit reason.';
@@ -348,6 +466,104 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		}
 
 		return function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+	}
+
+	private function resolve_user_node_reference( int $user_id ): array {
+		$user_id = $this->resolve_user_id( $user_id );
+		if ( $user_id <= 0 ) {
+			return array(
+				'node_ref_type' => '',
+				'node_ref_id'   => 0,
+			);
+		}
+
+		$node_ref_type = '';
+		if ( is_object( $this->person_identity ) ) {
+			if ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_STITCH ) ) {
+				$node_ref_type = 'stitcher';
+			} elseif ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) ) {
+				$node_ref_type = 'vendor';
+			} elseif ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_MANAGER ) ) {
+				$node_ref_type = 'supervisor';
+			}
+		}
+
+		if ( '' === $node_ref_type ) {
+			if ( current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY ) || current_user_can( AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS ) ) {
+				$node_ref_type = 'warehouse';
+			} elseif ( current_user_can( AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL ) || current_user_can( AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING ) ) {
+				$node_ref_type = 'supervisor';
+			} else {
+				$node_ref_type = 'vendor';
+			}
+		}
+
+		return array(
+			'node_ref_type' => sanitize_key( $node_ref_type ),
+			'node_ref_id'   => $user_id,
+		);
+	}
+
+	private function call_route_guidance( int $user_id ): ?array {
+		if ( is_object( $this->route_guidance ) && method_exists( $this->route_guidance, 'get_route_guidance_for_runtime_user' ) ) {
+			return $this->route_guidance->get_route_guidance_for_runtime_user( $user_id );
+		}
+
+		$node_ref = $this->resolve_user_node_reference( $user_id );
+		if ( '' === (string) ( $node_ref['node_ref_type'] ?? '' ) || (int) ( $node_ref['node_ref_id'] ?? 0 ) <= 0 ) {
+			return null;
+		}
+
+		if ( is_object( $this->route_guidance ) && method_exists( $this->route_guidance, 'get_route_guidance_for_node' ) ) {
+			return $this->route_guidance->get_route_guidance_for_node(
+				(string) $node_ref['node_ref_type'],
+				(int) $node_ref['node_ref_id']
+			);
+		}
+
+		return null;
+	}
+
+	private function normalize_route_guidance_suggestions( array $runtime_guidance ): array {
+		$suggestions = array();
+
+		foreach ( (array) ( $runtime_guidance['guidance'] ?? array() ) as $guidance ) {
+			if ( ! is_array( $guidance ) ) {
+				continue;
+			}
+
+			$endpoint = is_array( $guidance['endpoint'] ?? null ) ? $guidance['endpoint'] : array();
+			$current_key = sanitize_key( (string) ( $endpoint['endpoint_key'] ?? $endpoint['endpoint_type'] ?? '' ) );
+			foreach ( (array) ( $guidance['routes'] ?? array() ) as $route ) {
+				if ( ! is_array( $route ) ) {
+					continue;
+				}
+
+				$relationship = is_array( $route['relationship'] ?? null ) ? $route['relationship'] : array();
+				$target = is_array( $route['target_endpoint'] ?? null ) ? $route['target_endpoint'] : array();
+				$target_key = sanitize_key( (string) ( $target['endpoint_key'] ?? $target['endpoint_type'] ?? '' ) );
+
+				if ( '' === $current_key || '' === $target_key || $current_key === $target_key ) {
+					continue;
+				}
+
+				$suggestions[] = array(
+					'source_endpoint_key' => $current_key,
+					'source_label'        => (string) ( $endpoint['endpoint_label'] ?? $current_key ),
+					'target_endpoint_key' => $target_key,
+					'target_label'        => (string) ( $target['endpoint_label'] ?? $target_key ),
+					'label'               => ! empty( $relationship['guidance_label'] )
+						? sanitize_text_field( (string) $relationship['guidance_label'] )
+						: sprintf(
+							'%s -> %s',
+							(string) ( $endpoint['endpoint_label'] ?? $current_key ),
+							(string) ( $target['endpoint_label'] ?? $target_key )
+						),
+				);
+			}
+		}
+
+		return $suggestions;
 	}
 
 	private function build_runtime_endpoint( array $template, string $endpoint_key, string $label, int $node_id, string $endpoint_type, array $extra = array() ): array {

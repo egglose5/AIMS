@@ -41,6 +41,13 @@ class AIMS_Inventory_Transfer_Actions {
 		$target_selection = $this->parse_endpoint_selection( sanitize_text_field( $_POST['target_endpoint_selection'] ?? '' ) );
 		$source_node_id = (int) ( $source_selection['node_id'] ?? ( $_POST['source_node_id'] ?? ( $_POST['source_vendor_id'] ?? 0 ) ) );
 		$target_node_id = (int) ( $target_selection['node_id'] ?? ( $_POST['target_node_id'] ?? ( $_POST['target_vendor_id'] ?? 0 ) ) );
+		$transfer_type   = sanitize_text_field( $_POST['transfer_type'] ?? 'standard' );
+
+		if ( $source_node_id > 0 && $target_node_id > 0 && '' !== (string) ( $source_selection['node_type'] ?? '' ) && '' !== (string) ( $target_selection['node_type'] ?? '' ) ) {
+			if ( ! $this->authorization->can_manage_transfer_nodes( get_current_user_id(), (string) $source_selection['node_type'], $source_node_id, (string) $target_selection['node_type'], $target_node_id, $transfer_type ) ) {
+				wp_die( esc_html__( 'You do not have custody access to one or more selected transfer nodes.', 'ai-man-sys' ) );
+			}
+		}
 
 		$result = $this->service->create_draft(
 			$source_node_id,
@@ -48,7 +55,7 @@ class AIMS_Inventory_Transfer_Actions {
 			array(
 				'source_node_type' => sanitize_key( (string) ( $source_selection['node_type'] ?? ( $_POST['source_node_type'] ?? 'vendor' ) ) ),
 				'target_node_type' => sanitize_key( (string) ( $target_selection['node_type'] ?? ( $_POST['target_node_type'] ?? 'vendor' ) ) ),
-				'transfer_type'    => sanitize_text_field( $_POST['transfer_type'] ?? 'standard' ),
+				'transfer_type'    => $transfer_type,
 				'override_route'   => ! empty( $_POST['override_route'] ),
 				'override_reason'  => isset( $_POST['override_reason'] ) ? sanitize_textarea_field( $_POST['override_reason'] ) : null,
 				'route_guidance'   => isset( $_POST['route_guidance'] ) ? sanitize_text_field( $_POST['route_guidance'] ) : null,

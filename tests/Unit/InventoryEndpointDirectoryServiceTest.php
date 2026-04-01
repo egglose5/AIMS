@@ -85,4 +85,30 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'supervisor', $service->resolve_endpoint_from_node( 11, 'supervisor', 0 )['endpoint_type'] );
 		$this->assertSame( 'warehouse', $service->resolve_endpoint_from_node( 11, 'warehouse', 0 )['endpoint_type'] );
 	}
+
+	public function testUnauthorizedUserDoesNotSurfaceWarehouseRuntimeEndpoint(): void {
+		TestState::set_current_user_id( 62 );
+		TestState::set_user_capabilities(
+			62,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL,
+			)
+		);
+		TestState::set_user(
+			62,
+			(object) array(
+				'ID'           => 62,
+				'display_name' => 'Vendor User',
+				'roles'        => array( 'aims_vendor_user' ),
+			)
+		);
+
+		$service   = new \AIMS_Inventory_Endpoint_Directory_Service();
+		$endpoints  = $service->get_runtime_endpoints( 62 );
+
+		$this->assertArrayHasKey( 'vendor', $endpoints );
+		$this->assertArrayNotHasKey( 'warehouse', $endpoints );
+		$this->assertArrayNotHasKey( 'warehouse_main', $endpoints );
+		$this->assertSame( array(), $service->get_route_suggestions( 62 ) );
+	}
 }

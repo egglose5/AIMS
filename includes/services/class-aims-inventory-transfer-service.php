@@ -60,6 +60,10 @@ class AIMS_Inventory_Transfer_Service {
 			return $this->error_response( 'An override reason is required for exceptional routing.', 'missing_override_reason' );
 		}
 
+		if ( ! $this->authorization_service->can_manage_transfer_nodes( $initiated_by, $source_node_type, $source_node_id, $target_node_type, $target_node_id, $transfer_type ) ) {
+			return $this->error_response( 'You are not authorized to act on the selected custody nodes.', 'transfer_node_access_denied' );
+		}
+
 		$transfer_data = array(
 			'source_node_type' => $source_node_type,
 			'source_node_id'   => $source_node_id,
@@ -142,6 +146,17 @@ class AIMS_Inventory_Transfer_Service {
 
 		if ( $quantity <= 0 ) {
 			return $this->error_response( 'Quantity must be greater than zero.', 'invalid_quantity' );
+		}
+
+		if ( ! $this->authorization_service->can_manage_transfer_nodes(
+			(int) ( $data['user_id'] ?? get_current_user_id() ),
+			(string) ( $transfer['source_node_type'] ?? 'vendor' ),
+			(int) ( $transfer['source_node_id'] ?? 0 ),
+			(string) ( $transfer['target_node_type'] ?? 'vendor' ),
+			(int) ( $transfer['target_node_id'] ?? 0 ),
+			(string) ( $transfer['transfer_type'] ?? AIMS_Inventory_Transfer_Authorization_Service::TRANSFER_TYPE_STANDARD )
+		) ) {
+			return $this->error_response( 'You are not authorized to act on the selected custody nodes.', 'transfer_node_access_denied' );
 		}
 
 		$vendor_id = (int) ( $data['vendor_id'] ?? $transfer['source_vendor_id'] ?? 0 );
@@ -238,6 +253,19 @@ class AIMS_Inventory_Transfer_Service {
 			return $this->error_response( 'Only pending transfers can be dispatched.', 'invalid_transfer_status' );
 		}
 
+		$user_id = (int) ( $data['user_id'] ?? get_current_user_id() );
+
+		if ( ! $this->authorization_service->can_manage_transfer_nodes(
+			$user_id,
+			(string) ( $transfer['source_node_type'] ?? 'vendor' ),
+			(int) ( $transfer['source_node_id'] ?? 0 ),
+			(string) ( $transfer['target_node_type'] ?? 'vendor' ),
+			(int) ( $transfer['target_node_id'] ?? 0 ),
+			(string) ( $transfer['transfer_type'] ?? AIMS_Inventory_Transfer_Authorization_Service::TRANSFER_TYPE_STANDARD )
+		) ) {
+			return $this->error_response( 'You are not authorized to act on the selected custody nodes.', 'transfer_node_access_denied' );
+		}
+
 		$items = $this->items_repo->get_for_transfer( $transfer_id );
 		if ( empty( $items ) ) {
 			return $this->error_response( 'Transfer has no items to dispatch.', 'no_items' );
@@ -326,6 +354,19 @@ class AIMS_Inventory_Transfer_Service {
 
 		if ( 'dispatched' !== (string) $transfer['transfer_status'] ) {
 			return $this->error_response( 'Only dispatched transfers can be received.', 'invalid_transfer_status' );
+		}
+
+		$user_id = (int) ( $data['user_id'] ?? get_current_user_id() );
+
+		if ( ! $this->authorization_service->can_manage_transfer_nodes(
+			$user_id,
+			(string) ( $transfer['source_node_type'] ?? 'vendor' ),
+			(int) ( $transfer['source_node_id'] ?? 0 ),
+			(string) ( $transfer['target_node_type'] ?? 'vendor' ),
+			(int) ( $transfer['target_node_id'] ?? 0 ),
+			(string) ( $transfer['transfer_type'] ?? AIMS_Inventory_Transfer_Authorization_Service::TRANSFER_TYPE_STANDARD )
+		) ) {
+			return $this->error_response( 'You are not authorized to act on the selected custody nodes.', 'transfer_node_access_denied' );
 		}
 
 		$items = $this->items_repo->get_for_transfer( $transfer_id );
