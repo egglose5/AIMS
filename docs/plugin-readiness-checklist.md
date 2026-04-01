@@ -59,7 +59,7 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Run lint/tests for touched areas and document upgrade path.
   - Touched-area test coverage validated via PHPUnit.
   - Upgrade notes documented in `docs/upgrade-path.md`.
-  - Full-suite run currently passes (`76/76`).
+  - Full-suite run currently passes on the active baseline.
 
 ## Milestone F - Frontend Vendor Portal Navigation
 
@@ -74,15 +74,21 @@ This checklist maps release tasks to concrete code areas in this repository.
 
 ## Next Milestone - Inventory Transfers v1 (Distributed Custody)
 
-- [ ] Model inventory transfers as custody changes between operational nodes instead of a single warehouse-out / warehouse-back loop.
+- [x] Model inventory transfers as custody changes between operational nodes instead of a single warehouse-out / warehouse-back loop.
   - Main warehouse remains the central stocking and prepack node.
   - Supervisor custody nodes (for example Abby) can hold stock and redistribute it to their subordinate vendors or events.
   - Direct vendor custody nodes (for example Melissa) can receive stock without an intermediate supervisor layer.
-- [ ] Add transfer workflows for warehouse-to-supervisor, warehouse-to-direct-vendor, and supervisor-to-subordinate movements.
-- [ ] Add receive/return workflows so downstream custody pools can confirm handoff without forcing every event flow back through the main warehouse.
-- [ ] Preserve movement-only inventory authority so transfer out and receipt in are the physical events that write ledger changes.
-- [ ] Keep the design expandable for multiple concurrent shows and future replenishment into downstream custody pools.
-- [ ] Shape the transfer and receipt seams so they can later be driven by a mobile fulfillment app / API without changing the operational truth model.
+- [x] Add transfer workflows for warehouse-to-supervisor, warehouse-to-direct-vendor, and supervisor-to-subordinate movements.
+- [x] Add receive/return workflows so downstream custody pools can confirm handoff without forcing every event flow back through the main warehouse.
+- [x] Preserve movement-only inventory authority so transfer out and receipt in are the physical events that write ledger changes.
+- [x] Keep the design expandable for multiple concurrent shows and future replenishment into downstream custody pools.
+- [x] Shape the transfer and receipt seams so they can later be driven by a mobile fulfillment app / API without changing the operational truth model.
+
+## Next Milestone - Transfer Endpoint Hardening
+
+- [ ] Create custody endpoint resolver for logged-in user and responsibility-to-endpoint mapping.
+- [ ] Build a real endpoint directory for transfer target selection.
+- [ ] Split source and target bucket queries by resolved endpoint scope.
 
 ## Following Milestone - Execution Telemetry and Exception Visibility
 

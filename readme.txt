@@ -21,6 +21,11 @@ AIMS provides production workflows for vendor management, event planning and exe
 
 == Changelog ==
 
+= Unreleased =
+* Added node-centric inventory transfer workflow foundation with source and target custody endpoints.
+* Added transfer dispatch and receipt operational flow in Inventory workspace with custody movement authority.
+* Updated repository documentation to reflect distributed custody transfer implementation status and next endpoint hardening milestones.
+
 = 1.0.0 =
 * Production release with module-boot parity for vendor, event, square sync, and reports.
 * Added admin workflows for vendor create/edit/archive and event create/edit/archive.
