@@ -8,6 +8,16 @@ use AIMS\Tests\Support\TestState;
 
 final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCase {
 	public function testWarehouseOperatorRoleHasGlobalCustodyAuthority(): void {
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_warehouse_operator',
+			\AIMS_Capabilities::ROLE_WAREHOUSE_USER,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+				\AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
+			),
+			'Test Warehouse Operator'
+		);
+
 		TestState::set_current_user_id( 50 );
 		TestState::set_user_capabilities(
 			50,
@@ -21,7 +31,7 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 			(object) array(
 				'ID'           => 50,
 				'display_name' => 'Warehouse Operator',
-				'roles'        => array( \AIMS_Capabilities::ROLE_WAREHOUSE_USER ),
+				'roles'        => array( 'aims_test_warehouse_operator' ),
 			)
 		);
 
@@ -33,13 +43,23 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 	}
 
 	public function testBypassCapabilityCanBeGrantedToAnotherInventoryRole(): void {
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_trusted_operator',
+			\AIMS_Capabilities::ROLE_MANAGER_USER,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+				\AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
+			),
+			'Test Trusted Operator'
+		);
+
 		TestState::set_current_user_id( 56 );
 		TestState::set_user(
 			56,
 			(object) array(
 				'ID'           => 56,
 				'display_name' => 'Trusted Operator',
-				'roles'        => array( \AIMS_Capabilities::ROLE_MANAGER_USER ),
+				'roles'        => array( 'aims_test_trusted_operator' ),
 			)
 		);
 		TestState::set_user_capabilities(
@@ -58,13 +78,23 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 	}
 
 	public function testNarrowerStorageAndBucketCapsDoNotGrantGlobalTransferAuthority(): void {
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_scoped_supervisor',
+			\AIMS_Capabilities::ROLE_SUPERVISOR_USER,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS,
+				\AIMS_Capabilities::CAP_MANAGE_PHYSICAL_BUCKETS,
+			),
+			'Test Scoped Supervisor'
+		);
+
 		TestState::set_current_user_id( 51 );
 		TestState::set_user(
 			51,
 			(object) array(
 				'ID'           => 51,
 				'display_name' => 'Scoped Operator',
-				'roles'        => array( 'aims_supervisor_user' ),
+				'roles'        => array( 'aims_test_scoped_supervisor' ),
 			)
 		);
 		TestState::set_user_capabilities(

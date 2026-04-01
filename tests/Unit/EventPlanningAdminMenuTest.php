@@ -9,6 +9,7 @@ use AIMS\Tests\Support\TestState;
 final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 	public function testRegisterAddsThePlanningWorkspaceUnderTheEventsMenu(): void {
 		TestState::set_current_user_id( 1 );
+		TestState::set_user_capabilities( 1, array( \AIMS_Capabilities::CAP_RESP_EVENT_PLANNING_ACCESS ) );
 
 		$repo = new class() extends \AIMS_Responsibility_Assignment_Repository {
 			public function has_active_assignments_for_user( int $user_id ): bool { return true; }
@@ -63,6 +64,7 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 	public function testVendorsSubmenuAppearsWhenUserHasVendorManagementResponsibility(): void {
 		TestState::set_current_user_id( 5 );
 		TestState::update_option( \AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+		TestState::set_user_capabilities( 5, array( \AIMS_Capabilities::CAP_RESP_VENDOR_MANAGEMENT ) );
 
 		$repo = new class() extends \AIMS_Responsibility_Assignment_Repository {
 			public function has_active_assignments_for_user( int $user_id ): bool { return true; }
@@ -117,6 +119,7 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 	public function testReportsSubmenuAppearsWhenUserHasReportsViewResponsibility(): void {
 		TestState::set_current_user_id( 9 );
 		TestState::update_option( \AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+		TestState::set_user_capabilities( 9, array( \AIMS_Capabilities::CAP_RESP_REPORTS_VIEW ) );
 
 		$repo = new class() extends \AIMS_Responsibility_Assignment_Repository {
 			public function has_active_assignments_for_user( int $user_id ): bool { return true; }

@@ -21,7 +21,7 @@ if ( '' !== $notice_status && '' !== $notice_message ) {
 
 echo '<div class="postbox" style="padding:16px; margin:16px 0;">';
 echo '<h2 style="margin-top:0;">Built-in Role Templates</h2>';
-echo '<p>These ship with AIMS and act as the starting point for custom roles on a customer site.</p>';
+echo '<p>These ship with AIMS and act as templates only. Use them to create custom roles on a customer site, then edit the custom copy instead of the built-in role.</p>';
 if ( empty( $templates ) ) {
 	echo '<p>No templates are available.</p>';
 } else {

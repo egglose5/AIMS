@@ -7,13 +7,27 @@ namespace AIMS\Tests\Unit;
 use AIMS\Tests\Support\TestState;
 
 final class StitchPortalServiceTest extends \AIMS\Tests\TestCase {
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_stitch_portal_user',
+			\AIMS_Capabilities::ROLE_STITCH_USER,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL => true,
+				\AIMS_Capabilities::CAP_RESP_STITCH_ORDER_MANAGEMENT => true,
+			),
+			'Test Stitch Portal User'
+		);
+	}
+
 	public function testPageModelShowsStitchCustodyBucketsAndOpenJobs(): void {
 		TestState::set_current_user_id( 88 );
 		TestState::set_user(
 			88,
 			(object) array(
 				'ID'          => 88,
-				'roles'       => array( 'aims_stitch_user' ),
+				'roles'       => array( 'aims_test_stitch_portal_user' ),
 				'display_name' => 'Stitcher One',
 			)
 		);
@@ -94,7 +108,7 @@ final class StitchPortalServiceTest extends \AIMS\Tests\TestCase {
 			88,
 			(object) array(
 				'ID'          => 88,
-				'roles'       => array( 'aims_stitch_user' ),
+				'roles'       => array( 'aims_test_stitch_portal_user' ),
 				'display_name' => 'Stitcher One',
 			)
 		);
@@ -154,7 +168,7 @@ final class StitchPortalServiceTest extends \AIMS\Tests\TestCase {
 			88,
 			(object) array(
 				'ID'          => 88,
-				'roles'       => array( 'aims_stitch_user' ),
+				'roles'       => array( 'aims_test_stitch_portal_user' ),
 			)
 		);
 		TestState::set_user_capabilities( 88, array( \AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL ) );

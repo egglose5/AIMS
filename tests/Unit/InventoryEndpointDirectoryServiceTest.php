@@ -39,12 +39,25 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 				'roles'        => array( \AIMS_Capabilities::ROLE_SUPERVISOR_USER ),
 			)
 		);
+		TestState::set_user_capabilities(
+			81,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL,
+			)
+		);
 		TestState::set_user(
 			91,
 			(object) array(
 				'ID'           => 91,
 				'display_name' => 'Melissa',
 				'roles'        => array( \AIMS_Capabilities::ROLE_VENDOR_USER ),
+			)
+		);
+		TestState::set_user_capabilities(
+			91,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL,
+				\AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL,
 			)
 		);
 
@@ -70,6 +83,12 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 
 	public function testWarehouseOperatorRoleExplicitlySurfacesWarehouseRuntimeEndpoint(): void {
 		TestState::set_current_user_id( 64 );
+		TestState::set_user_capabilities(
+			64,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+			)
+		);
 		TestState::set_user(
 			64,
 			(object) array(
@@ -86,6 +105,34 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertArrayHasKey( 'warehouse', $endpoints );
 		$this->assertArrayHasKey( 'warehouse_main', $endpoints );
 		$this->assertTrue( ! empty( $endpoints['warehouse_main']['is_current'] ) );
+		$this->assertSame( 'warehouse_main', $resolved['endpoint_key'] );
+		$this->assertSame( 'warehouse', $resolved['node_type'] );
+	}
+
+	public function testCapabilityOnlyUserSurfacesWarehouseRuntimeEndpointWithoutLegacyRole(): void {
+		TestState::set_current_user_id( 67 );
+		TestState::set_user_capabilities(
+			67,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+				\AIMS_Capabilities::CAP_MANAGE_STORAGE_LOCATIONS,
+			)
+		);
+		TestState::set_user(
+			67,
+			(object) array(
+				'ID'           => 67,
+				'display_name' => 'Warehouse Capability User',
+				'roles'        => array(),
+			)
+		);
+
+		$service   = new \AIMS_Inventory_Endpoint_Directory_Service();
+		$endpoints = $service->get_runtime_endpoints( 67 );
+		$resolved  = $service->resolve_runtime_endpoint( 67 );
+
+		$this->assertArrayHasKey( 'warehouse', $endpoints );
+		$this->assertArrayHasKey( 'warehouse_main', $endpoints );
 		$this->assertSame( 'warehouse_main', $resolved['endpoint_key'] );
 		$this->assertSame( 'warehouse', $resolved['node_type'] );
 	}
@@ -115,12 +162,26 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 				'roles'        => array( \AIMS_Capabilities::ROLE_SUPERVISOR_USER ),
 			)
 		);
+		TestState::set_user_capabilities(
+			82,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL,
+				\AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING,
+			)
+		);
 		TestState::set_user(
 			92,
 			(object) array(
 				'ID'           => 92,
 				'display_name' => 'Melissa',
 				'roles'        => array( \AIMS_Capabilities::ROLE_VENDOR_USER ),
+			)
+		);
+		TestState::set_user_capabilities(
+			92,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL,
+				\AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL,
 			)
 		);
 

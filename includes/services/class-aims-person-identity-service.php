@@ -25,7 +25,13 @@ class AIMS_Person_Identity_Service {
 			return false;
 		}
 
-		return ! empty( array_intersect( $roles, AIMS_Capabilities::get_aims_role_slugs() ) );
+		foreach ( $roles as $role_slug ) {
+			if ( is_array( AIMS_Capabilities::get_runtime_role_definitions()[ $role_slug ] ?? null ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public function get_person_subtypes( int $user_id ): array {

@@ -19,7 +19,7 @@ class AIMS_Role_Editor_Page {
 
 		echo '<div class="wrap aims-role-editor">';
 		echo '<h1>AIMS Role Editor</h1>';
-		echo '<p>Create website-local AIMS roles from built-in templates, then toggle AIMS capabilities the same way people expect from WordPress role-builder plugins. Built-in AIMS roles remain available as templates.</p>';
+		echo '<p>Create website-local AIMS roles from built-in templates, then toggle AIMS capabilities the same way people expect from WordPress role-builder plugins. Built-in AIMS roles are template-only; create and edit custom roles instead of changing the built-ins directly.</p>';
 
 		if ( file_exists( $template_path ) ) {
 			$aims_role_editor = $model;

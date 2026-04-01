@@ -11,6 +11,26 @@ use AIMS\Tests\Support\TestState;
 final class ResponsibilityAuthorizationServiceTest extends \AIMS\Tests\TestCase {
 	public function testSystemAdminCanViewAllEvents(): void {
 		update_option( AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_system_admin_manager',
+			\AIMS_Capabilities::ROLE_MANAGER_USER,
+			array(
+				\AIMS_Capabilities::CAP_RESP_SYSTEM_ADMIN => true,
+			),
+			'System Admin Manager'
+		);
+
+		TestState::set_user(
+			11,
+			(object) array(
+				'ID'    => 11,
+				'roles' => array( 'aims_test_system_admin_manager' ),
+			)
+		);
+		TestState::set_user_capabilities(
+			11,
+			array( \AIMS_Capabilities::CAP_RESP_SYSTEM_ADMIN )
+		);
 
 		$repo = new class() extends AIMS_Responsibility_Assignment_Repository {
 			public function has_active_assignments_for_user( int $user_id ): bool {
@@ -37,6 +57,26 @@ final class ResponsibilityAuthorizationServiceTest extends \AIMS\Tests\TestCase 
 
 	public function testEventScopedMutateOnlyAllowsMatchingEvent(): void {
 		update_option( AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_event_mutator',
+			\AIMS_Capabilities::ROLE_MANAGER_USER,
+			array(
+				\AIMS_Capabilities::CAP_RESP_EVENT_PLANNING_MUTATE => true,
+			),
+			'Event Mutator'
+		);
+
+		TestState::set_user(
+			22,
+			(object) array(
+				'ID'    => 22,
+				'roles' => array( 'aims_test_event_mutator' ),
+			)
+		);
+		TestState::set_user_capabilities(
+			22,
+			array( \AIMS_Capabilities::CAP_RESP_EVENT_PLANNING_MUTATE )
+		);
 
 		$repo = new class() extends AIMS_Responsibility_Assignment_Repository {
 			public function has_active_assignments_for_user( int $user_id ): bool {
@@ -86,6 +126,34 @@ final class ResponsibilityAuthorizationServiceTest extends \AIMS\Tests\TestCase 
 
 	public function testGlobalResponsibilitiesAuthorizeVendorSquareAndReportsChecks(): void {
 		update_option( AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_operations_manager',
+			\AIMS_Capabilities::ROLE_MANAGER_USER,
+			array(
+				\AIMS_Capabilities::CAP_RESP_VENDOR_MANAGEMENT => true,
+				\AIMS_Capabilities::CAP_RESP_SQUARE_SYNC_MANAGEMENT => true,
+				\AIMS_Capabilities::CAP_RESP_SQUARE_SYNC_REPLAY => true,
+				\AIMS_Capabilities::CAP_RESP_REPORTS_VIEW => true,
+			),
+			'Operations Manager'
+		);
+
+		TestState::set_user(
+			33,
+			(object) array(
+				'ID'    => 33,
+				'roles' => array( 'aims_test_operations_manager' ),
+			)
+		);
+		TestState::set_user_capabilities(
+			33,
+			array(
+				\AIMS_Capabilities::CAP_RESP_VENDOR_MANAGEMENT,
+				\AIMS_Capabilities::CAP_RESP_SQUARE_SYNC_MANAGEMENT,
+				\AIMS_Capabilities::CAP_RESP_SQUARE_SYNC_REPLAY,
+				\AIMS_Capabilities::CAP_RESP_REPORTS_VIEW,
+			)
+		);
 
 		$repo = new class() extends AIMS_Responsibility_Assignment_Repository {
 			public function has_active_assignments_for_user( int $user_id ): bool {
@@ -147,12 +215,20 @@ final class ResponsibilityAuthorizationServiceTest extends \AIMS\Tests\TestCase 
 
 	public function testVendorScopedInventoryAuthorizationAllowsAimsManagerWithScope(): void {
 		update_option( AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+		\AIMS_Capabilities::create_or_update_custom_role(
+			'aims_custom_inventory_manager',
+			'Inventory Manager',
+			\AIMS_Capabilities::ROLE_MANAGER_USER,
+			array(
+				\AIMS_Capabilities::CAP_RESP_VENDOR_MANAGE_INVENTORY => true,
+			)
+		);
 
 		TestState::set_user(
 			71,
 			(object) array(
 				'ID'    => 71,
-				'roles' => array( 'aims_manager_user' ),
+				'roles' => array( 'aims_custom_inventory_manager' ),
 			)
 		);
 
@@ -163,6 +239,14 @@ final class ResponsibilityAuthorizationServiceTest extends \AIMS\Tests\TestCase 
 				}
 
 				return self::SCOPE_VENDOR === $scope_type && 201 === $scope_ref_id;
+			}
+
+			public function get_scope_ref_ids_for_user( int $user_id, string $responsibility_key, string $scope_type ): array {
+				if ( 71 !== $user_id || AIMS_Responsibility_Authorization_Service::RESP_VENDOR_MANAGE_INVENTORY !== $responsibility_key || self::SCOPE_VENDOR !== $scope_type ) {
+					return array();
+				}
+
+				return array( 201 );
 			}
 		};
 

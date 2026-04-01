@@ -11,6 +11,20 @@ use AIMS_Vendor_Portal_Navigation_Service;
 use AIMS\Tests\Support\TestState;
 
 final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_vendor_portal_user',
+			\AIMS_Capabilities::ROLE_VENDOR_USER,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL => true,
+				\AIMS_Capabilities::CAP_RESP_VENDOR_SUBMIT_CHECKIN => true,
+			),
+			'Test Vendor Portal User'
+		);
+	}
+
 	public function testNavModelEmptyWhenNotLoggedIn(): void {
 		TestState::set_current_user_id( 0 );
 
@@ -37,7 +51,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			42,
 			(object) array(
 				'ID'          => 42,
-				'roles'       => array( 'aims_vendor_user' ),
+				'roles'       => array( 'aims_test_vendor_portal_user' ),
 				'user_email'  => 'vendor1@example.com',
 				'display_name' => 'Vendor One',
 			)
@@ -113,7 +127,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			42,
 			(object) array(
 				'ID'         => 42,
-				'roles'      => array( 'aims_vendor_user' ),
+				'roles'      => array( 'aims_test_vendor_portal_user' ),
 				'user_email' => 'vendor1@example.com',
 			)
 		);
@@ -195,7 +209,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			42,
 			(object) array(
 				'ID'         => 42,
-				'roles'      => array( 'aims_vendor_user' ),
+				'roles'      => array( 'aims_test_vendor_portal_user' ),
 				'user_email' => 'vendor1@example.com',
 			)
 		);
@@ -271,7 +285,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 			42,
 			(object) array(
 				'ID'         => 42,
-				'roles'      => array( 'aims_vendor_user' ),
+				'roles'      => array( 'aims_test_vendor_portal_user' ),
 				'user_email' => 'vendor1@example.com',
 			)
 		);

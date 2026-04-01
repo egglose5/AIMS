@@ -28,7 +28,7 @@ final class StitchProducerAuthorizationServiceTest extends \AIMS\Tests\TestCase 
 		$this->assertTrue( $service->can_manage_stitch_orders( 88 ) );
 	}
 
-	public function testCanManageStitchOrdersViaResponsibilityAssignment(): void {
+	public function testCanManageStitchOrdersDoesNotGrantFromAssignmentOnly(): void {
 		$service = new \AIMS_Stitch_Producer_Authorization_Service(
 			new class() extends \AIMS_Responsibility_Assignment_Repository {
 				public function __construct() {}
@@ -40,7 +40,7 @@ final class StitchProducerAuthorizationServiceTest extends \AIMS\Tests\TestCase 
 			}
 		);
 
-		$this->assertTrue( $service->can_manage_stitch_orders( 77 ) );
+		$this->assertFalse( $service->can_manage_stitch_orders( 77 ) );
 	}
 
 	public function testCanManageStitchOrdersReturnsFalseWithoutAccess(): void {

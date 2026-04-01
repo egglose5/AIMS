@@ -26,4 +26,20 @@ abstract class TestCase extends BaseTestCase {
 	protected function wpdb(): FakeWpdb {
 		return $this->wpdb;
 	}
+
+	protected function registerRuntimeRoleFromTemplate( string $role_slug, string $template_key, array $caps = array(), ?string $role_name = null ): array {
+		$template = \AIMS_Capabilities::get_role_templates()[ $template_key ] ?? array();
+		$resolved_role_name = $role_name ?: (string) ( $template['role_name'] ?? $role_slug );
+
+		$result = \AIMS_Capabilities::create_or_update_custom_role(
+			$role_slug,
+			$resolved_role_name,
+			$template_key,
+			$caps
+		);
+
+		$this->assertTrue( $result['success'] ?? false, 'Expected runtime role registration to succeed.' );
+
+		return (array) ( $result['role'] ?? array() );
+	}
 }

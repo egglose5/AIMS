@@ -7,6 +7,20 @@ namespace AIMS\Tests\Unit;
 use AIMS\Tests\Support\TestState;
 
 final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_vendor_checkin_user',
+			\AIMS_Capabilities::ROLE_VENDOR_USER,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL => true,
+				\AIMS_Capabilities::CAP_RESP_VENDOR_SUBMIT_CHECKIN => true,
+			),
+			'Test Vendor Check-In User'
+		);
+	}
+
 	public function testFirstCheckInCreatesOperationalRecordExecutesArrivalAndPublishesUpdate(): void {
 		TestState::set_current_user_id( 77 );
 		TestState::set_current_time( '2026-03-23 12:00:00' );
@@ -14,7 +28,7 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 			77,
 			(object) array(
 				'ID'    => 77,
-				'roles' => array( 'aims_vendor_user' ),
+				'roles' => array( 'aims_test_vendor_checkin_user' ),
 			)
 		);
 
@@ -207,7 +221,7 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 			77,
 			(object) array(
 				'ID'    => 77,
-				'roles' => array( 'aims_vendor_user' ),
+				'roles' => array( 'aims_test_vendor_checkin_user' ),
 			)
 		);
 
@@ -372,7 +386,7 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 			77,
 			(object) array(
 				'ID'    => 77,
-				'roles' => array( 'aims_vendor_user' ),
+				'roles' => array( 'aims_test_vendor_checkin_user' ),
 			)
 		);
 
@@ -458,7 +472,7 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 			77,
 			(object) array(
 				'ID'    => 77,
-				'roles' => array( 'aims_vendor_user' ),
+				'roles' => array( 'aims_test_vendor_checkin_user' ),
 			)
 		);
 
@@ -553,7 +567,7 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 			77,
 			(object) array(
 				'ID'    => 77,
-				'roles' => array( 'aims_vendor_user' ),
+				'roles' => array( 'aims_test_vendor_checkin_user' ),
 			)
 		);
 

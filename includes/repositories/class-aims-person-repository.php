@@ -31,7 +31,7 @@ class AIMS_Person_Repository {
 
 		$users = get_users(
 			array(
-				'role__in' => AIMS_Capabilities::get_aims_role_slugs(),
+				'fields' => array( 'ID' ),
 			)
 		);
 

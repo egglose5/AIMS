@@ -160,13 +160,22 @@ final class InventoryCustodyRouteGuidanceServiceTest extends \AIMS\Tests\TestCas
 	}
 
 	public function testRouteGuidanceForRuntimeUserResolvesPersistedNodeReference(): void {
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_runtime_vendor_user',
+			\AIMS_Capabilities::ROLE_VENDOR_USER,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL => true,
+			),
+			'Runtime Vendor User'
+		);
+
 		\AIMS\Tests\Support\TestState::set_current_user_id( 77 );
 		\AIMS\Tests\Support\TestState::set_user(
 			77,
 			(object) array(
 				'ID'           => 77,
 				'display_name' => 'Vendor Runtime',
-				'roles'        => array( 'aims_vendor_user' ),
+				'roles'        => array( 'aims_test_runtime_vendor_user' ),
 			)
 		);
 

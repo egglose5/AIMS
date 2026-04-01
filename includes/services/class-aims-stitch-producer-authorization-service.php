@@ -24,11 +24,19 @@ class AIMS_Stitch_Producer_Authorization_Service {
 			return true;
 		}
 
+		if ( function_exists( 'user_can' ) && user_can( $user_id, AIMS_Capabilities::CAP_RESP_STITCH_ORDER_MANAGEMENT ) ) {
+			return true;
+		}
+
 		if ( function_exists( 'current_user_can' ) && function_exists( 'get_current_user_id' ) && (int) get_current_user_id() === $user_id && current_user_can( AIMS_Capabilities::CAP_MANAGE_STITCH_ORDERS ) ) {
 			return true;
 		}
 
-		return $this->assignments->user_has_responsibility( $user_id, self::RESP_STITCH_ORDER_MANAGEMENT );
+		if ( function_exists( 'current_user_can' ) && function_exists( 'get_current_user_id' ) && (int) get_current_user_id() === $user_id && current_user_can( AIMS_Capabilities::CAP_RESP_STITCH_ORDER_MANAGEMENT ) ) {
+			return true;
+		}
+
+		return false;
 	}
 
 	private function resolve_user_id( int $user_id ): int {

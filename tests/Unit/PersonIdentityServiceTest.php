@@ -8,11 +8,17 @@ use AIMS\Tests\Support\TestState;
 
 final class PersonIdentityServiceTest extends \AIMS\Tests\TestCase {
 	public function testIsAimsPersonTrueForAimsRoleUser(): void {
+		\AIMS_Capabilities::create_or_update_custom_role(
+			'aims_custom_vendor_runtime',
+			'Vendor Runtime',
+			\AIMS_Capabilities::ROLE_VENDOR_USER
+		);
+
 		TestState::set_user(
 			101,
 			(object) array(
 				'ID'    => 101,
-				'roles' => array( 'aims_vendor_user' ),
+				'roles' => array( 'aims_custom_vendor_runtime' ),
 			)
 		);
 
@@ -36,11 +42,21 @@ final class PersonIdentityServiceTest extends \AIMS\Tests\TestCase {
 	}
 
 	public function testSubtypesResolveVendorAndManager(): void {
+		\AIMS_Capabilities::create_or_update_custom_role(
+			'aims_custom_vendor_manager',
+			'Vendor Manager',
+			\AIMS_Capabilities::ROLE_VENDOR_USER,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL => true,
+			),
+			array( \AIMS_Person_Identity_Service::SUBTYPE_MANAGER )
+		);
+
 		TestState::set_user(
 			103,
 			(object) array(
 				'ID'    => 103,
-				'roles' => array( 'aims_vendor_user', 'aims_manager_user' ),
+				'roles' => array( 'aims_custom_vendor_manager' ),
 			)
 		);
 
@@ -52,11 +68,17 @@ final class PersonIdentityServiceTest extends \AIMS\Tests\TestCase {
 	}
 
 	public function testSubtypesResolveStitcher(): void {
+		\AIMS_Capabilities::create_or_update_custom_role(
+			'aims_custom_stitch_runtime',
+			'Stitch Runtime',
+			\AIMS_Capabilities::ROLE_STITCH_USER
+		);
+
 		TestState::set_user(
 			104,
 			(object) array(
 				'ID'    => 104,
-				'roles' => array( 'aims_stitch_user' ),
+				'roles' => array( 'aims_custom_stitch_runtime' ),
 			)
 		);
 
@@ -67,11 +89,17 @@ final class PersonIdentityServiceTest extends \AIMS\Tests\TestCase {
 	}
 
 	public function testSubtypesResolveWarehouseOperator(): void {
+		\AIMS_Capabilities::create_or_update_custom_role(
+			'aims_custom_warehouse_runtime',
+			'Warehouse Runtime',
+			\AIMS_Capabilities::ROLE_WAREHOUSE_USER
+		);
+
 		TestState::set_user(
 			105,
 			(object) array(
 				'ID'    => 105,
-				'roles' => array( \AIMS_Capabilities::ROLE_WAREHOUSE_USER ),
+				'roles' => array( 'aims_custom_warehouse_runtime' ),
 			)
 		);
 
@@ -81,11 +109,11 @@ final class PersonIdentityServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE, $subtypes );
 	}
 
-	public function testAimsRoleListIncludesWarehouseOperators(): void {
-		$roles = \AIMS_Capabilities::get_aims_role_slugs();
+	public function testWarehouseRoleTemplateMapsToWarehouseSubtype(): void {
+		$template = \AIMS_Capabilities::get_role_definition( \AIMS_Capabilities::ROLE_WAREHOUSE_USER );
 
-		$this->assertContains( \AIMS_Capabilities::ROLE_WAREHOUSE_USER, $roles );
-		$this->assertArrayHasKey( \AIMS_Capabilities::ROLE_WAREHOUSE_USER, \AIMS_Capabilities::get_portal_roles() );
+		$this->assertIsArray( $template );
+		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE, (array) ( $template['person_subtypes'] ?? array() ) );
 	}
 
 	public function testCustomRoleBasedOnWarehouseTemplateResolvesWarehouseSubtype(): void {

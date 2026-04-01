@@ -60,6 +60,7 @@ class AIMS_Capabilities {
 	public const CAP_RESP_SQUARE_SYNC_REPLAY        = 'aims_resp_square_sync_replay';
 	public const CAP_RESP_SQUARE_SYNC_UNDO          = 'aims_resp_square_sync_undo';
 	public const CAP_RESP_REPORTS_VIEW              = 'aims_resp_reports_view';
+	public const CAP_RESP_STITCH_ORDER_MANAGEMENT   = 'aims_resp_stitch_order_management';
 
 	public function register(): void {
 		self::register_roles_and_caps();
@@ -79,7 +80,9 @@ class AIMS_Capabilities {
 			}
 		}
 
-		foreach ( self::get_role_definitions() as $definition ) {
+		self::remove_template_roles_from_runtime();
+
+		foreach ( self::get_runtime_role_definitions() as $definition ) {
 			self::sync_role_definition( $definition );
 		}
 	}
@@ -94,7 +97,14 @@ class AIMS_Capabilities {
 			}
 		}
 
-		$aims_roles = self::get_aims_role_slugs();
+		$aims_roles = array_values(
+			array_unique(
+				array_merge(
+					self::get_runtime_role_slugs(),
+					self::get_role_template_slugs()
+				)
+			)
+		);
 		$custom_users = get_users(
 			array(
 				'role__in' => $aims_roles,
@@ -184,6 +194,7 @@ class AIMS_Capabilities {
 			'square_sync_replay'        => self::CAP_RESP_SQUARE_SYNC_REPLAY,
 			'square_sync_undo'          => self::CAP_RESP_SQUARE_SYNC_UNDO,
 			'reports_view'              => self::CAP_RESP_REPORTS_VIEW,
+			'stitch_order_management'   => self::CAP_RESP_STITCH_ORDER_MANAGEMENT,
 		);
 	}
 
@@ -235,6 +246,7 @@ class AIMS_Capabilities {
 					self::CAP_MANAGE_STITCH,
 					self::CAP_MANAGE_STITCH_ORDERS,
 					self::CAP_MANAGE_PRODUCTION,
+					self::CAP_RESP_STITCH_ORDER_MANAGEMENT,
 					self::CAP_VIEW_STITCH_PORTAL,
 				),
 			),
@@ -295,6 +307,7 @@ class AIMS_Capabilities {
 				'person_subtypes'  => array( AIMS_Person_Identity_Service::SUBTYPE_STITCH ),
 				'caps'             => array(
 					'read'                   => true,
+					self::CAP_RESP_STITCH_ORDER_MANAGEMENT => true,
 					self::CAP_VIEW_STITCH_PORTAL => true,
 				),
 				'is_builtin_template' => true,
@@ -362,7 +375,7 @@ class AIMS_Capabilities {
 	public static function get_portal_roles(): array {
 		$roles = array();
 
-		foreach ( self::get_role_definitions() as $definition ) {
+		foreach ( self::get_runtime_role_definitions() as $definition ) {
 			$roles[ $definition['role_slug'] ] = (string) $definition['role_name'];
 		}
 
@@ -370,7 +383,7 @@ class AIMS_Capabilities {
 	}
 
 	public static function get_aims_role_slugs(): array {
-		return array_keys( self::get_portal_roles() );
+		return self::get_runtime_role_slugs();
 	}
 
 	public static function get_role_definitions(): array {
@@ -381,6 +394,18 @@ class AIMS_Capabilities {
 		}
 
 		return $definitions;
+	}
+
+	public static function get_runtime_role_definitions(): array {
+		return self::get_custom_role_registry();
+	}
+
+	public static function get_role_template_slugs(): array {
+		return array_keys( self::get_role_templates() );
+	}
+
+	public static function get_runtime_role_slugs(): array {
+		return array_keys( self::get_runtime_role_definitions() );
 	}
 
 	public static function get_role_definition( string $role_slug ): ?array {
@@ -403,13 +428,19 @@ class AIMS_Capabilities {
 	}
 
 	public static function get_role_slugs_for_person_subtype( string $subtype ): array {
+		return self::get_role_slugs_for_person_subtype_runtime( $subtype, true );
+	}
+
+	public static function get_role_slugs_for_person_subtype_runtime( string $subtype, bool $include_templates = false ): array {
 		$subtype = sanitize_key( $subtype );
 		if ( '' === $subtype ) {
 			return array();
 		}
 
 		$matches = array();
-		foreach ( self::get_role_definitions() as $definition ) {
+		$definitions = $include_templates ? self::get_role_definitions() : self::get_runtime_role_definitions();
+
+		foreach ( $definitions as $definition ) {
 			if ( in_array( $subtype, (array) ( $definition['person_subtypes'] ?? array() ), true ) ) {
 				$matches[] = (string) $definition['role_slug'];
 			}
@@ -538,6 +569,14 @@ class AIMS_Capabilities {
 	private static function persist_custom_role_registry( array $registry ): void {
 		if ( function_exists( 'update_option' ) ) {
 			update_option( self::OPTION_CUSTOM_ROLE_REGISTRY, $registry );
+		}
+	}
+
+	private static function remove_template_roles_from_runtime(): void {
+		foreach ( self::get_role_template_slugs() as $role_slug ) {
+			if ( null !== get_role( $role_slug ) ) {
+				remove_role( $role_slug );
+			}
 		}
 	}
 

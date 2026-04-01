@@ -13,13 +13,22 @@ final class InventoryCustodyEndpointDirectoryServiceTest extends \AIMS\Tests\Tes
 	}
 
 	public function testRuntimeEndPointsPreferPersistedCustodyGraphData(): void {
+		$this->registerRuntimeRoleFromTemplate(
+			'aims_test_inventory_vendor_user',
+			\AIMS_Capabilities::ROLE_VENDOR_USER,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL => true,
+			),
+			'Inventory Vendor Runtime User'
+		);
+
 		TestState::set_current_user_id( 61 );
 		TestState::set_user(
 			61,
 			(object) array(
 				'ID'           => 61,
 				'display_name' => 'Vendor User',
-				'roles'        => array( 'aims_vendor_user' ),
+				'roles'        => array( 'aims_test_inventory_vendor_user' ),
 			)
 		);
 
