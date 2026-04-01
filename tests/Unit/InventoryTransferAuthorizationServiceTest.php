@@ -13,6 +13,7 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 			50,
 			array(
 				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+				\AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
 			)
 		);
 		TestState::set_user(
@@ -29,6 +30,31 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 		$this->assertTrue( $service->can_manage_inventory_transfers( 50 ) );
 		$this->assertTrue( $service->can_manage_transfer_nodes( 50, 'vendor', 10, 'warehouse', 20 ) );
 		$this->assertTrue( $service->can_override_transfer_route( 50, 'direct_collection' ) );
+	}
+
+	public function testBypassCapabilityCanBeGrantedToAnotherInventoryRole(): void {
+		TestState::set_current_user_id( 56 );
+		TestState::set_user(
+			56,
+			(object) array(
+				'ID'           => 56,
+				'display_name' => 'Trusted Operator',
+				'roles'        => array( \AIMS_Capabilities::ROLE_MANAGER_USER ),
+			)
+		);
+		TestState::set_user_capabilities(
+			56,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+				\AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
+			)
+		);
+
+		$service = new \AIMS_Inventory_Transfer_Authorization_Service();
+
+		$this->assertTrue( $service->can_manage_inventory_transfers( 56 ) );
+		$this->assertTrue( $service->can_override_transfer_route( 56, 'recovery' ) );
+		$this->assertTrue( $service->can_manage_transfer_nodes( 56, 'stitcher', 30, 'vendor', 40, 'direct_collection' ) );
 	}
 
 	public function testNarrowerStorageAndBucketCapsDoNotGrantGlobalTransferAuthority(): void {
@@ -143,7 +169,7 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 			55,
 			array(
 				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
-				\AIMS_Capabilities::CAP_MANAGE_PRODUCTION,
+				\AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
 			)
 		);
 

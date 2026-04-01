@@ -40,7 +40,10 @@ class AIMS_Inventory_Overview_Data_Provider {
 	public function get_operator_context(): array {
 		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 		$user    = function_exists( 'wp_get_current_user' ) ? wp_get_current_user() : null;
-		$is_elevated = current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY )
+		$can_bypass_route = current_user_can( AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL )
+			|| current_user_can( AIMS_Capabilities::CAP_MANAGE );
+		$is_elevated = $can_bypass_route
+			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY )
 			|| current_user_can( AIMS_Capabilities::CAP_MANAGE_PRODUCTION )
 			|| current_user_can( AIMS_Capabilities::CAP_MANAGE );
 		$endpoint = $this->resolve_operator_endpoint( $user_id );
@@ -49,7 +52,7 @@ class AIMS_Inventory_Overview_Data_Provider {
 			'user_id'             => $user_id,
 			'display_name'        => is_object( $user ) ? sanitize_text_field( (string) $user->display_name ) : '',
 			'is_elevated'         => $is_elevated,
-			'can_override_route'  => $is_elevated,
+			'can_override_route'  => $can_bypass_route,
 			'node_id'             => (int) ( $endpoint['node_id'] ?? $this->resolve_operator_node_id( $user_id ) ),
 			'node_type'           => (string) ( $endpoint['node_type'] ?? $this->resolve_operator_node_type( $user_id ) ),
 			'node_label'          => (string) ( $endpoint['endpoint_label'] ?? $this->resolve_operator_node_label( $user_id ) ),

@@ -14,12 +14,6 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 	public const NODE_CONTEXT_DISPATCH = 'dispatch';
 	public const NODE_CONTEXT_RECEIPT  = 'receipt';
 
-	private const GLOBAL_WAREHOUSE_OPERATOR_ROLES = array(
-		'aims_warehouse_user',
-		'aims_warehouse_operator',
-		'warehouse_operator',
-	);
-
 	private $endpoint_directory;
 	private $person_identity;
 
@@ -57,11 +51,7 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 			return false;
 		}
 
-		$allowed = $this->has_global_custody_authority( $user_id )
-			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE )
-			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_PRODUCTION )
-			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_FULFILLMENT )
-			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_RECONCILIATION );
+		$allowed = $this->has_global_custody_authority( $user_id );
 
 		if ( function_exists( 'apply_filters' ) ) {
 			$allowed = (bool) apply_filters( 'aims_inventory_transfer_can_override_route', $allowed, $user_id, $transfer_type );
@@ -177,32 +167,8 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 			return false;
 		}
 
-		if ( $this->user_has_warehouse_operator_role( $user_id ) ) {
-			return true;
-		}
-
-		if ( is_object( $this->person_identity ) && method_exists( $this->person_identity, 'has_person_subtype' ) ) {
-			if ( $this->person_identity->has_person_subtype( $user_id, AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE ) ) {
-				return true;
-			}
-		}
-
-		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE );
-	}
-
-	private function user_has_warehouse_operator_role( int $user_id ): bool {
-		$user = null;
-		if ( function_exists( 'get_user_by' ) ) {
-			$user = get_user_by( 'id', $user_id );
-		}
-
-		if ( ! is_object( $user ) || empty( $user->roles ) || ! is_array( $user->roles ) ) {
-			return false;
-		}
-
-		$roles = array_map( 'sanitize_key', $user->roles );
-
-		return ! empty( array_intersect( self::GLOBAL_WAREHOUSE_OPERATOR_ROLES, $roles ) );
+		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE );
 	}
 
 	private function matches_node_type_authority( int $user_id, string $node_type, string $context = self::NODE_CONTEXT_CREATE ): bool {

@@ -90,6 +90,48 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'warehouse', $resolved['node_type'] );
 	}
 
+	public function testBypassCapabilitySurfacesWarehouseAndTransferTargetsForTrustedOperator(): void {
+		TestState::set_current_user_id( 65 );
+		TestState::set_user_capabilities(
+			65,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+				\AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
+			)
+		);
+		TestState::set_user(
+			65,
+			(object) array(
+				'ID'           => 65,
+				'display_name' => 'Trusted Operator',
+				'roles'        => array( \AIMS_Capabilities::ROLE_MANAGER_USER ),
+			)
+		);
+		TestState::set_user(
+			82,
+			(object) array(
+				'ID'           => 82,
+				'display_name' => 'Abby',
+				'roles'        => array( \AIMS_Capabilities::ROLE_SUPERVISOR_USER ),
+			)
+		);
+		TestState::set_user(
+			92,
+			(object) array(
+				'ID'           => 92,
+				'display_name' => 'Melissa',
+				'roles'        => array( \AIMS_Capabilities::ROLE_VENDOR_USER ),
+			)
+		);
+
+		$service   = new \AIMS_Inventory_Endpoint_Directory_Service();
+		$endpoints = $service->get_runtime_endpoints( 65 );
+
+		$this->assertArrayHasKey( 'warehouse_main', $endpoints );
+		$this->assertArrayHasKey( 'supervisor_82', $endpoints );
+		$this->assertArrayHasKey( 'vendor_92', $endpoints );
+	}
+
 	public function testResolveEndpointFromNodeHonorsExplicitNodeType(): void {
 		TestState::set_current_user_id( 61 );
 		TestState::set_user(

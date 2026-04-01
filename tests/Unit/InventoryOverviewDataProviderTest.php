@@ -13,6 +13,7 @@ final class InventoryOverviewDataProviderTest extends \AIMS\Tests\TestCase {
 			44,
 			array(
 				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+				\AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
 			)
 		);
 		TestState::set_user(

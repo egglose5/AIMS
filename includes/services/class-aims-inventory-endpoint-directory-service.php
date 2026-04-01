@@ -424,7 +424,7 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 
 		switch ( sanitize_key( $endpoint_key ) ) {
 			case self::ENDPOINT_WAREHOUSE:
-				if ( $this->user_has_warehouse_authority( $user_id ) ) {
+				if ( $this->user_has_warehouse_authority( $user_id ) || $this->user_can_bypass_transfer_protocol( $user_id ) ) {
 					return true;
 				}
 
@@ -665,6 +665,7 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		}
 
 		return $this->user_has_warehouse_authority( $user_id )
+			|| $this->user_can_bypass_transfer_protocol( $user_id )
 			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE )
 			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_PRODUCTION )
 			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS )
@@ -744,6 +745,11 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		}
 
 		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_INVENTORY );
+	}
+
+	private function user_can_bypass_transfer_protocol( int $user_id ): bool {
+		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE );
 	}
 
 	private function user_has_cap( int $user_id, string $cap ): bool {

@@ -21,6 +21,7 @@ class AIMS_Capabilities {
 	public const CAP_VIEW_EVENTS_SHELL = 'view_aims_events_shell';
 	public const CAP_VIEW_INVENTORY_SHELL = 'view_aims_inventory_shell';
 	public const CAP_MANAGE_INVENTORY = 'manage_aims_inventory';
+	public const CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL = 'bypass_aims_inventory_transfer_protocol';
 	public const CAP_MANAGE_STORAGE_LOCATIONS = 'manage_aims_storage_locations';
 	public const CAP_MANAGE_PHYSICAL_BUCKETS = 'manage_aims_physical_buckets';
 	public const CAP_MANAGE_EVENT_BUCKETS = 'manage_aims_event_buckets';
@@ -93,6 +94,7 @@ class AIMS_Capabilities {
 				self::CAP_VIEW_EVENTS_SHELL => true,
 				self::CAP_VIEW_INVENTORY_SHELL => true,
 				self::CAP_MANAGE_INVENTORY => true,
+				self::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL => true,
 				self::CAP_MANAGE_STORAGE_LOCATIONS => true,
 				self::CAP_MANAGE_PHYSICAL_BUCKETS => true,
 				self::CAP_MANAGE_EVENT_BUCKETS => true,
@@ -175,6 +177,7 @@ class AIMS_Capabilities {
 			self::CAP_VIEW_EVENTS_SHELL,
 			self::CAP_VIEW_INVENTORY_SHELL,
 			self::CAP_MANAGE_INVENTORY,
+			self::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
 			self::CAP_MANAGE_STORAGE_LOCATIONS,
 			self::CAP_MANAGE_PHYSICAL_BUCKETS,
 			self::CAP_MANAGE_EVENT_BUCKETS,
