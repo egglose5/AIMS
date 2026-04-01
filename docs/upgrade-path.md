@@ -27,6 +27,7 @@ Use this procedure for safe rollout and rollback.
 4. Activate the plugin.
 5. Visit wp-admin once as an administrator so installer hooks can apply schema updates.
 6. Verify role and capability registration on admin, manager, and supervisor accounts.
+7. Verify any custom AIMS roles created from templates still carry the expected capabilities and person-subtype behavior after the upgrade.
 
 ## Post-upgrade Verification
 
@@ -50,6 +51,12 @@ Use this procedure for safe rollout and rollback.
 - Create a transfer draft, add line items, dispatch, and confirm receipt.
 - Confirm transfer records persist with node endpoint fields and status transitions.
 - Confirm dispatch and receipt create custody movement ledger rows.
+
+5. Capability-First Role Model
+- Open the AIMS Role Editor.
+- Verify built-in AIMS roles appear as templates.
+- Verify custom roles cloned from templates retain their capability set.
+- Verify a user assigned only a custom AIMS role can still reach the expected AIMS workflow screens.
 
 ## Rollback Procedure
 

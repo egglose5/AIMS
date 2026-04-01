@@ -12,6 +12,7 @@ The repository currently provides:
 - installer and schema registration
 - explicit custom table definitions with indexes across events, demand, buckets, inventory, Square sync, attribution, and fulfillment
 - capability and admin menu shells
+- custom AIMS role editor with template-based role creation and capability assignment
 - vendor, event, Square sync, and reporting module bootstraps
 - ledger-first inventory movement backbone
 - physical bucket, storage, and event-bucket assignment architecture
@@ -48,6 +49,18 @@ The repository currently provides:
 - AIMS is SKU-first operationally.
 - BOPIS and reservations remain a separate future v2 add-on.
 - Inventory is assigned to events only by explicit manager or supervisor planning action. Never automatically.
+- Built-in AIMS roles are starter templates, not required runtime identities.
+- Runtime authorization should resolve from capabilities first.
+- Scoped access should remain assignment-driven for events, vendors, custody nodes, and subordinate trees.
+
+## Capability-first role model
+
+- Built-in AIMS roles should serve as default templates only.
+- Site owners should be able to replace built-in AIMS roles entirely with custom website roles.
+- AIMS responsibilities should be treated as capabilities so they can be granted through the role editor or any other capability-aware role plugin.
+- AIMS runtime checks should not require specific built-in role slugs when an equivalent custom role carries the same capabilities.
+- Person subtype and endpoint behavior should resolve from template or role-definition metadata, not from a hard-coded dependency on shipped AIMS roles.
+- Scoped assignment records remain important, but they should narrow access after capability checks rather than act as a separate parallel identity system.
 
 ## Event planning model
 
@@ -116,6 +129,14 @@ The repository currently provides:
 5. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention after the custody transfer workflow is stable.
 6. Expand Square replay and fulfillment wiring only after planning and distributed custody workflows remain stable under team usage.
 7. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+
+## Next authorization implementation gaps
+
+1. Finish refactoring any remaining responsibility-specific runtime checks so capability checks are canonical.
+2. Remove any remaining runtime dependence on shipped AIMS role slugs where a template-backed custom role should work.
+3. Treat built-in AIMS roles as templates in docs, admin copy, and upgrade guidance rather than as required production roles.
+4. Keep scoped assignment tables only for narrowing access by event, vendor, custody node, or subordinate tree.
+5. Preserve person-subtype metadata resolution for custom roles so vendor, stitch, warehouse, supervisor, and manager behavior remains portable after role replacement.
 
 ## Upgrade path
 
