@@ -55,6 +55,14 @@ class AIMS_Responsibility_Authorization_Service {
 			return true;
 		}
 
+		if ( $this->user_has_responsibility_cap( $user_id, self::RESP_EVENT_PLANNING_ACCESS ) ) {
+			return true;
+		}
+
+		if ( $this->user_has_responsibility_cap( $user_id, self::RESP_EVENT_PLANNING_MUTATE ) ) {
+			return true;
+		}
+
 		if ( $this->assignments->user_has_responsibility( $user_id, self::RESP_EVENT_PLANNING_ACCESS ) ) {
 			return true;
 		}
@@ -73,6 +81,14 @@ class AIMS_Responsibility_Authorization_Service {
 			return false;
 		}
 
+		if ( $this->user_has_responsibility_cap( $user_id, self::RESP_SYSTEM_ADMIN ) ) {
+			return true;
+		}
+
+		if ( $this->user_has_responsibility_cap( $user_id, self::RESP_EVENT_PLANNING_ALL ) ) {
+			return true;
+		}
+
 		if ( $this->assignments->user_has_responsibility( $user_id, self::RESP_SYSTEM_ADMIN ) ) {
 			return true;
 		}
@@ -89,6 +105,10 @@ class AIMS_Responsibility_Authorization_Service {
 		}
 
 		if ( $this->can_view_all_events( $user_id ) ) {
+			return true;
+		}
+
+		if ( $this->user_has_responsibility_cap( $user_id, self::RESP_EVENT_PLANNING_MUTATE ) ) {
 			return true;
 		}
 
@@ -262,11 +282,23 @@ class AIMS_Responsibility_Authorization_Service {
 	}
 
 	private function has_global_responsibility( int $user_id, string $responsibility_key ): bool {
-		if ( $user_id <= 0 || ! $this->is_enabled() ) {
+		if ( $user_id <= 0 ) {
 			return false;
 		}
 
 		if ( $this->should_enforce_person_boundary( $user_id ) && ! $this->is_aims_person( $user_id ) ) {
+			return false;
+		}
+
+		if ( $this->user_has_responsibility_cap( $user_id, self::RESP_SYSTEM_ADMIN ) ) {
+			return true;
+		}
+
+		if ( $this->user_has_responsibility_cap( $user_id, $responsibility_key ) ) {
+			return true;
+		}
+
+		if ( ! $this->is_enabled() ) {
 			return false;
 		}
 
@@ -333,5 +365,14 @@ class AIMS_Responsibility_Authorization_Service {
 		}
 
 		return false;
+	}
+
+	private function user_has_responsibility_cap( int $user_id, string $responsibility_key ): bool {
+		$cap = AIMS_Capabilities::get_responsibility_cap_map()[ $responsibility_key ] ?? '';
+		if ( $user_id <= 0 || '' === $cap ) {
+			return false;
+		}
+
+		return function_exists( 'user_can' ) && user_can( $user_id, $cap );
 	}
 }

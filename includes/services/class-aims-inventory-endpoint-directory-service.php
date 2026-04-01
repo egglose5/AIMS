@@ -108,14 +108,14 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		}
 
 		if ( $this->can_directory_enumerate_transfer_targets( $user_id ) ) {
-			foreach ( $this->get_runtime_users_for_role( 'aims_supervisor_user' ) as $supervisor ) {
+			foreach ( $this->get_runtime_users_for_subtype( AIMS_Person_Identity_Service::SUBTYPE_MANAGER ) as $supervisor ) {
 				$endpoint = $this->build_user_endpoint_from_user( $supervisor, self::ENDPOINT_SUPERVISOR, $templates );
 				if ( ! empty( $endpoint ) ) {
 					$choices[ $endpoint['endpoint_key'] ] = $endpoint;
 				}
 			}
 
-			foreach ( $this->get_runtime_users_for_role( 'aims_vendor_user' ) as $vendor_user ) {
+			foreach ( $this->get_runtime_users_for_subtype( AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) as $vendor_user ) {
 				$endpoint = $this->build_user_endpoint_from_user( $vendor_user, self::ENDPOINT_VENDOR, $templates );
 				if ( ! empty( $endpoint ) ) {
 					$choices[ $endpoint['endpoint_key'] ] = $endpoint;
@@ -545,7 +545,7 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 
 		$roles = array_values( array_filter( array_map( 'sanitize_key', $user->roles ) ) );
 
-		return in_array( AIMS_Capabilities::ROLE_WAREHOUSE_USER, $roles, true );
+		return ! empty( array_intersect( $roles, AIMS_Capabilities::get_role_slugs_for_person_subtype( AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE ) ) );
 	}
 
 	private function normalize_route_guidance_suggestions( array $runtime_guidance ): array {
@@ -672,14 +672,14 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL );
 	}
 
-	private function get_runtime_users_for_role( string $role_slug ): array {
+	private function get_runtime_users_for_subtype( string $subtype ): array {
 		if ( ! function_exists( 'get_users' ) ) {
 			return array();
 		}
 
 		$users = get_users(
 			array(
-				'role' => sanitize_key( $role_slug ),
+				'role__in' => AIMS_Capabilities::get_role_slugs_for_person_subtype( $subtype ),
 			)
 		);
 
@@ -718,10 +718,11 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 
 		switch ( $endpoint_type ) {
 			case self::ENDPOINT_SUPERVISOR:
-				return in_array( AIMS_Capabilities::ROLE_SUPERVISOR_USER, $roles, true ) || $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL );
+				return ! empty( array_intersect( $roles, AIMS_Capabilities::get_role_slugs_for_person_subtype( AIMS_Person_Identity_Service::SUBTYPE_MANAGER ) ) )
+					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL );
 
 			case self::ENDPOINT_VENDOR:
-				if ( in_array( AIMS_Capabilities::ROLE_VENDOR_USER, $roles, true ) ) {
+				if ( ! empty( array_intersect( $roles, AIMS_Capabilities::get_role_slugs_for_person_subtype( AIMS_Person_Identity_Service::SUBTYPE_VENDOR ) ) ) ) {
 					return true;
 				}
 

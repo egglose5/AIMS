@@ -175,4 +175,30 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertArrayNotHasKey( 'warehouse_main', $endpoints );
 		$this->assertSame( array(), $service->get_route_suggestions( 62 ) );
 	}
+
+	public function testCustomWarehouseTemplateRoleSurfacesWarehouseEndpoint(): void {
+		\AIMS_Capabilities::create_or_update_custom_role(
+			'aims_custom_warehouse_ops',
+			'Warehouse Ops',
+			\AIMS_Capabilities::ROLE_WAREHOUSE_USER,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY => true,
+			)
+		);
+
+		TestState::set_current_user_id( 66 );
+		TestState::set_user(
+			66,
+			(object) array(
+				'ID'           => 66,
+				'display_name' => 'Warehouse Ops',
+				'roles'        => array( 'aims_custom_warehouse_ops' ),
+			)
+		);
+
+		$service   = new \AIMS_Inventory_Endpoint_Directory_Service();
+		$endpoints = $service->get_runtime_endpoints( 66 );
+
+		$this->assertArrayHasKey( 'warehouse_main', $endpoints );
+	}
 }

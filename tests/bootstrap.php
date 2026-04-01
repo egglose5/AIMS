@@ -63,6 +63,28 @@ if ( ! class_exists( 'WP_Error' ) ) {
 	}
 }
 
+if ( ! class_exists( 'WP_Role' ) ) {
+	class WP_Role {
+		public $name;
+		public $capabilities;
+
+		public function __construct( string $name, array $capabilities = array() ) {
+			$this->name         = $name;
+			$this->capabilities = $capabilities;
+		}
+
+		public function add_cap( string $cap, bool $grant = true ): void {
+			\AIMS\Tests\Support\TestState::set_role_capability( $this->name, $cap, $grant );
+			$this->capabilities[ sanitize_key( $cap ) ] = (bool) $grant;
+		}
+
+		public function remove_cap( string $cap ): void {
+			\AIMS\Tests\Support\TestState::set_role_capability( $this->name, $cap, false );
+			unset( $this->capabilities[ sanitize_key( $cap ) ] );
+		}
+	}
+}
+
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( $thing ): bool {
 		return $thing instanceof WP_Error;
@@ -216,6 +238,17 @@ if ( ! function_exists( 'esc_url' ) ) {
 	}
 }
 
+if ( ! function_exists( 'selected' ) ) {
+	function selected( $selected, $current = true, bool $echo = true ): string {
+		$result = (string) $selected === (string) $current ? ' selected="selected"' : '';
+		if ( $echo ) {
+			echo $result;
+		}
+
+		return $result;
+	}
+}
+
 if ( ! function_exists( 'current_user_can' ) ) {
 	function current_user_can( string $cap ): bool {
 		return \AIMS\Tests\Support\TestState::current_user_can( $cap );
@@ -243,6 +276,24 @@ if ( ! function_exists( 'delete_option' ) ) {
 if ( ! function_exists( 'user_can' ) ) {
 	function user_can( $user_id, string $cap ): bool {
 		return \AIMS\Tests\Support\TestState::user_can( (int) $user_id, $cap );
+	}
+}
+
+if ( ! function_exists( 'get_role' ) ) {
+	function get_role( string $role_slug ) {
+		return \AIMS\Tests\Support\TestState::get_role( $role_slug );
+	}
+}
+
+if ( ! function_exists( 'add_role' ) ) {
+	function add_role( string $role_slug, string $display_name, array $capabilities = array() ) {
+		return \AIMS\Tests\Support\TestState::add_role( $role_slug, $display_name, $capabilities );
+	}
+}
+
+if ( ! function_exists( 'remove_role' ) ) {
+	function remove_role( string $role_slug ): void {
+		\AIMS\Tests\Support\TestState::remove_role( $role_slug );
 	}
 }
 

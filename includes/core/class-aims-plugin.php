@@ -86,6 +86,7 @@ class AIMS_Plugin {
 
 		// Register inventory transfer admin actions
 		add_action( 'init', array( new AIMS_Inventory_Transfer_Actions(), 'register' ), 7 );
+		add_action( 'init', array( new AIMS_Role_Editor_Actions(), 'register' ), 7 );
 
 		foreach ( $this->modules as $module ) {
 			if ( $module instanceof AIMS_Module ) {
