@@ -133,7 +133,9 @@ class AIMS_Inventory_Custody_Transfer_Service {
 		}
 
 		if ( isset( $data['note'] ) ) {
-			$movement_payload['note'] = sanitize_textarea_field( (string) $data['note'] );
+			$movement_payload['note'] = $this->compose_audit_note( (string) $data['note'], $data );
+		} elseif ( $this->has_audit_metadata( $data ) ) {
+			$movement_payload['note'] = $this->compose_audit_note( '', $data );
 		}
 
 		if ( isset( $data['position_status'] ) ) {
@@ -190,5 +192,39 @@ class AIMS_Inventory_Custody_Transfer_Service {
 			'message'    => $message,
 			'error_code' => sanitize_key( $error_code ),
 		);
+	}
+
+	private function has_audit_metadata( array $data ): bool {
+		return ! empty( $data['audit_reason'] ) || ! empty( $data['route_guidance'] ) || ! empty( $data['route_mode'] ) || ! empty( $data['transfer_type'] );
+	}
+
+	private function compose_audit_note( string $base_note, array $data ): string {
+		$parts = array();
+		$base_note = trim( $base_note );
+		if ( '' !== $base_note ) {
+			$parts[] = sanitize_textarea_field( $base_note );
+		}
+
+		$transfer_type = sanitize_key( (string) ( $data['transfer_type'] ?? '' ) );
+		if ( '' !== $transfer_type ) {
+			$parts[] = 'Transfer type: ' . $transfer_type;
+		}
+
+		$route_mode = sanitize_key( (string) ( $data['route_mode'] ?? '' ) );
+		if ( '' !== $route_mode ) {
+			$parts[] = 'Route mode: ' . $route_mode;
+		}
+
+		$route_guidance = trim( (string) ( $data['route_guidance'] ?? '' ) );
+		if ( '' !== $route_guidance ) {
+			$parts[] = 'Route guidance: ' . $route_guidance;
+		}
+
+		$audit_reason = trim( (string) ( $data['audit_reason'] ?? '' ) );
+		if ( '' !== $audit_reason ) {
+			$parts[] = 'Audit reason: ' . $audit_reason;
+		}
+
+		return implode( "\n", array_values( array_unique( array_filter( $parts ) ) ) );
 	}
 }

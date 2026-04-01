@@ -9,19 +9,22 @@ class AIMS_Inventory_Transfer_Service {
 	private $items_repo;
 	private $custody_service;
 	private $bucket_repo;
+	private $authorization_service;
 
 	public function __construct(
 		AIMS_Inventory_Transfer_Repository $transfer_repo = null,
 		AIMS_Inventory_Transfer_Items_Repository $items_repo = null,
 		AIMS_Inventory_Custody_Transfer_Service $custody_service = null,
-		AIMS_Physical_Bucket_Repository $bucket_repo = null
+		AIMS_Physical_Bucket_Repository $bucket_repo = null,
+		AIMS_Inventory_Transfer_Authorization_Service $authorization_service = null
 	) {
-		$this->transfer_repo    = $transfer_repo ?: new AIMS_Inventory_Transfer_Repository();
-		$this->items_repo       = $items_repo ?: new AIMS_Inventory_Transfer_Items_Repository();
-		$this->custody_service  = $custody_service ?: new AIMS_Inventory_Custody_Transfer_Service(
+		$this->transfer_repo         = $transfer_repo ?: new AIMS_Inventory_Transfer_Repository();
+		$this->items_repo            = $items_repo ?: new AIMS_Inventory_Transfer_Items_Repository();
+		$this->custody_service       = $custody_service ?: new AIMS_Inventory_Custody_Transfer_Service(
 			new AIMS_Bucket_Movement_Service( new AIMS_Bucket_Inventory_Movement_Repository() )
 		);
-		$this->bucket_repo      = $bucket_repo ?: new AIMS_Physical_Bucket_Repository();
+		$this->bucket_repo           = $bucket_repo ?: new AIMS_Physical_Bucket_Repository();
+		$this->authorization_service  = $authorization_service ?: new AIMS_Inventory_Transfer_Authorization_Service();
 	}
 
 	/**
@@ -43,20 +46,46 @@ class AIMS_Inventory_Transfer_Service {
 
 		$source_node_type = sanitize_key( (string) ( $data['source_node_type'] ?? 'vendor' ) );
 		$target_node_type = sanitize_key( (string) ( $data['target_node_type'] ?? 'vendor' ) );
+		$transfer_type    = $this->normalize_transfer_type( (string) ( $data['transfer_type'] ?? AIMS_Inventory_Transfer_Authorization_Service::TRANSFER_TYPE_STANDARD ) );
+		$override_route   = ! empty( $data['override_route'] ) || $this->is_exceptional_transfer_type( $transfer_type );
+		$override_reason  = isset( $data['override_reason'] ) ? sanitize_textarea_field( (string) $data['override_reason'] ) : '';
+		$route_guidance   = isset( $data['route_guidance'] ) ? sanitize_text_field( (string) $data['route_guidance'] ) : '';
+		$initiated_by     = (int) ( $data['initiated_by'] ?? get_current_user_id() );
+
+		if ( $override_route && ! $this->authorization_service->can_override_transfer_route( $initiated_by, $transfer_type ) ) {
+			return $this->error_response( 'You are not authorized to override the default transfer route.', 'transfer_override_denied' );
+		}
+
+		if ( $override_route && '' === $override_reason ) {
+			return $this->error_response( 'An override reason is required for exceptional routing.', 'missing_override_reason' );
+		}
 
 		$transfer_data = array(
-			'source_node_type'  => $source_node_type,
-			'source_node_id'    => $source_node_id,
-			'target_node_type'  => $target_node_type,
-			'target_node_id'    => $target_node_id,
-			'source_vendor_id'  => ( 'vendor' === $source_node_type ) ? $source_node_id : (int) ( $data['source_vendor_id'] ?? 0 ),
-			'target_vendor_id'  => ( 'vendor' === $target_node_type ) ? $target_node_id : (int) ( $data['target_vendor_id'] ?? 0 ),
-			'transfer_status'   => 'pending',
-			'transfer_type'     => sanitize_key( $data['transfer_type'] ?? 'standard' ),
-			'initiated_by'      => (int) ( $data['initiated_by'] ?? get_current_user_id() ),
-			'reference_type'    => sanitize_key( $data['reference_type'] ?? '' ),
-			'reference_id'      => sanitize_text_field( $data['reference_id'] ?? '' ),
-			'notes'             => isset( $data['notes'] ) ? sanitize_textarea_field( $data['notes'] ) : null,
+			'source_node_type' => $source_node_type,
+			'source_node_id'   => $source_node_id,
+			'target_node_type' => $target_node_type,
+			'target_node_id'   => $target_node_id,
+			'source_vendor_id' => ( 'vendor' === $source_node_type ) ? $source_node_id : (int) ( $data['source_vendor_id'] ?? 0 ),
+			'target_vendor_id' => ( 'vendor' === $target_node_type ) ? $target_node_id : (int) ( $data['target_vendor_id'] ?? 0 ),
+			'transfer_status'  => 'pending',
+			'transfer_type'    => $transfer_type,
+			'initiated_by'     => $initiated_by,
+			'reference_type'   => $this->resolve_reference_type( $transfer_type, $override_route, (string) ( $data['reference_type'] ?? '' ) ),
+			'reference_id'     => sanitize_text_field( $data['reference_id'] ?? '' ),
+			'override_route'   => $override_route ? 'override' : 'guidance',
+			'override_reason'  => $override_reason,
+			'override_note'    => $route_guidance,
+			'override_actor_id'=> $override_route ? $initiated_by : 0,
+			'override_at'      => $override_route ? current_time( 'mysql' ) : null,
+			'notes'            => $this->compose_audit_notes(
+				isset( $data['notes'] ) ? sanitize_textarea_field( (string) $data['notes'] ) : null,
+				array(
+					'transfer_type'   => $transfer_type,
+					'override_route'  => $override_route,
+					'override_reason' => $override_reason,
+					'route_guidance'  => $route_guidance,
+				)
+			),
 		);
 
 		$transfer_id = $this->transfer_repo->create( $transfer_data );
@@ -69,6 +98,12 @@ class AIMS_Inventory_Transfer_Service {
 			'success'     => true,
 			'transfer_id' => $transfer_id,
 			'message'     => 'Transfer draft created.',
+			'audit'       => array(
+				'transfer_type'   => $transfer_type,
+				'override_route'  => $override_route,
+				'override_reason' => $override_reason,
+				'route_guidance'  => $route_guidance,
+			),
 		);
 	}
 
@@ -209,6 +244,11 @@ class AIMS_Inventory_Transfer_Service {
 		}
 
 		$user_id = (int) ( $data['user_id'] ?? get_current_user_id() );
+		$audit_note = $this->compose_stage_audit_notes(
+			$transfer,
+			'dispatch',
+			$data
+		);
 
 		// Dispatch all items via custody transfer service
 		foreach ( $items as $item ) {
@@ -231,7 +271,11 @@ class AIMS_Inventory_Transfer_Service {
 				'vendor_id'        => $vendor_id,
 				'applied_by'       => $user_id,
 				'reference_id'     => 'transfer-' . $transfer_id . '-' . $item_id,
-				'note'             => sprintf( 'Transfer dispatch from transfer ID %d', $transfer_id ),
+				'note'             => $audit_note ?: sprintf( 'Transfer dispatch from transfer ID %d', $transfer_id ),
+				'audit_reason'     => isset( $data['audit_reason'] ) ? sanitize_textarea_field( (string) $data['audit_reason'] ) : null,
+				'route_guidance'   => isset( $data['route_guidance'] ) ? sanitize_text_field( (string) $data['route_guidance'] ) : null,
+				'route_mode'       => ! empty( $data['override_route'] ) ? 'override' : 'guidance',
+				'transfer_type'    => (string) ( $transfer['transfer_type'] ?? '' ),
 			) );
 
 			if ( ! isset( $custody_result['success'] ) || ! $custody_result['success'] ) {
@@ -251,7 +295,14 @@ class AIMS_Inventory_Transfer_Service {
 		}
 
 		// Update transfer status to dispatched/in_transit
-		$this->transfer_repo->update_status( $transfer_id, 'dispatched', array() );
+		$this->transfer_repo->update_status(
+			$transfer_id,
+			'dispatched',
+			array(
+				'notes'       => $audit_note,
+				'transfer_type' => (string) ( $transfer['transfer_type'] ?? '' ),
+			)
+		);
 
 		return array(
 			'success'  => true,
@@ -283,6 +334,11 @@ class AIMS_Inventory_Transfer_Service {
 		}
 
 		$user_id = (int) ( $data['user_id'] ?? get_current_user_id() );
+		$audit_note = $this->compose_stage_audit_notes(
+			$transfer,
+			'receipt',
+			$data
+		);
 
 		// Process receipts for all items
 		foreach ( $items as $item ) {
@@ -310,7 +366,11 @@ class AIMS_Inventory_Transfer_Service {
 				'vendor_id'        => $vendor_id,
 				'applied_by'       => $user_id,
 				'reference_id'     => 'transfer-receipt-' . $transfer_id . '-' . $item_id,
-				'note'             => sprintf( 'Transfer receipt for transfer ID %d', $transfer_id ),
+				'note'             => $audit_note ?: sprintf( 'Transfer receipt for transfer ID %d', $transfer_id ),
+				'audit_reason'     => isset( $data['audit_reason'] ) ? sanitize_textarea_field( (string) $data['audit_reason'] ) : null,
+				'route_guidance'   => isset( $data['route_guidance'] ) ? sanitize_text_field( (string) $data['route_guidance'] ) : null,
+				'route_mode'       => ! empty( $data['override_route'] ) ? 'override' : 'guidance',
+				'transfer_type'    => (string) ( $transfer['transfer_type'] ?? '' ),
 			) );
 
 			if ( ! isset( $custody_result['success'] ) || ! $custody_result['success'] ) {
@@ -338,7 +398,9 @@ class AIMS_Inventory_Transfer_Service {
 
 		// Update transfer status to received
 		$this->transfer_repo->update_status( $transfer_id, 'received', array(
-			'received_by' => $user_id,
+			'received_by'   => $user_id,
+			'notes'         => $audit_note,
+			'transfer_type' => (string) ( $transfer['transfer_type'] ?? '' ),
 		) );
 
 		return array(
@@ -445,5 +507,99 @@ class AIMS_Inventory_Transfer_Service {
 			'message' => $message,
 			'code'    => $code,
 		);
+	}
+
+	private function normalize_transfer_type( string $transfer_type ): string {
+		return $this->authorization_service->normalize_transfer_type( $transfer_type );
+	}
+
+	private function is_exceptional_transfer_type( string $transfer_type ): bool {
+		return $this->authorization_service->is_exceptional_transfer_type( $transfer_type );
+	}
+
+	private function resolve_reference_type( string $transfer_type, bool $override_route, string $reference_type ): string {
+		$reference_type = sanitize_key( $reference_type );
+
+		if ( '' !== $reference_type ) {
+			return $reference_type;
+		}
+
+		if ( $override_route || $this->is_exceptional_transfer_type( $transfer_type ) ) {
+			return 'inventory_route_override';
+		}
+
+		return 'inventory_transfer';
+	}
+
+	private function compose_audit_notes( ?string $notes, array $audit_data ): ?string {
+		$parts = array();
+		$notes  = is_string( $notes ) ? trim( $notes ) : '';
+
+		if ( '' !== $notes ) {
+			$parts[] = $notes;
+		}
+
+		$transfer_type = sanitize_key( (string) ( $audit_data['transfer_type'] ?? '' ) );
+		if ( '' !== $transfer_type ) {
+			$parts[] = 'Transfer type: ' . $transfer_type;
+		}
+
+		$route_mode = sanitize_key( (string) ( $audit_data['route_mode'] ?? '' ) );
+		if ( '' !== $route_mode ) {
+			$parts[] = 'Route mode: ' . $route_mode;
+		}
+
+		$route_guidance = trim( (string) ( $audit_data['route_guidance'] ?? '' ) );
+		if ( '' !== $route_guidance ) {
+			$parts[] = 'Route guidance: ' . $route_guidance;
+		}
+
+		$override_reason = trim( (string) ( $audit_data['override_reason'] ?? '' ) );
+		if ( '' !== $override_reason ) {
+			$parts[] = 'Override reason: ' . $override_reason;
+		}
+
+		$parts = array_values( array_unique( array_filter( $parts ) ) );
+
+		if ( empty( $parts ) ) {
+			return null;
+		}
+
+		return implode( "\n", $parts );
+	}
+
+	private function compose_stage_audit_notes( array $transfer, string $stage, array $data ): ?string {
+		$parts = array();
+
+		$notes = isset( $data['notes'] ) ? trim( (string) $data['notes'] ) : '';
+		if ( '' !== $notes ) {
+			$parts[] = $notes;
+		}
+
+		$transfer_type = sanitize_key( (string) ( $transfer['transfer_type'] ?? '' ) );
+		if ( '' !== $transfer_type ) {
+			$parts[] = 'Transfer type: ' . $transfer_type;
+		}
+
+		$route_mode = ! empty( $data['override_route'] ) ? 'override' : 'guidance';
+		$parts[]    = 'Route mode: ' . $route_mode;
+
+		$route_guidance = trim( (string) ( $data['route_guidance'] ?? '' ) );
+		if ( '' !== $route_guidance ) {
+			$parts[] = 'Route guidance: ' . $route_guidance;
+		}
+
+		$audit_reason = trim( (string) ( $data['audit_reason'] ?? $data['override_reason'] ?? '' ) );
+		if ( '' !== $audit_reason ) {
+			$parts[] = ucfirst( $stage ) . ' reason: ' . $audit_reason;
+		}
+
+		$parts = array_values( array_unique( array_filter( $parts ) ) );
+
+		if ( empty( $parts ) ) {
+			return null;
+		}
+
+		return implode( "\n", $parts );
 	}
 }

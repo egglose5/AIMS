@@ -144,6 +144,12 @@ if ( ! function_exists( 'get_user_by' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_users' ) ) {
+	function get_users( array $args = array() ): array {
+		return \AIMS\Tests\Support\TestState::get_users( $args );
+	}
+}
+
 if ( ! function_exists( 'get_user_meta' ) ) {
 	function get_user_meta( int $user_id, string $key, bool $single = true ) {
 		return \AIMS\Tests\Support\TestState::get_user_meta( $user_id, $key, $single );

@@ -56,4 +56,28 @@ final class PhysicalBucketRepositoryTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'Staging A', $rows[0]['current_storage_location']['location_name'] );
 		$this->assertSame( 'Warehouse A', $rows[0]['home_storage_location']['location_name'] );
 	}
+
+	public function testGetSourceAndTargetForEndpointApplyEndpointAwareFilters(): void {
+		$this->wpdb()->queue_results( array() );
+		$this->wpdb()->queue_results( array() );
+
+		$repo = new AIMS_Physical_Bucket_Repository();
+		$repo->get_source_for_endpoint( 'warehouse' );
+		$source_args = $this->wpdb()->last_prepare_args;
+
+		$this->assertContains( 'available', $source_args );
+		$this->assertContains( 'staged', $source_args );
+		$this->assertContains( 'in_transit', $source_args );
+		$this->assertContains( 'warehouse', $source_args );
+		$this->assertContains( 'staging', $source_args );
+
+		$repo->get_target_for_endpoint( 'warehouse' );
+		$target_args = $this->wpdb()->last_prepare_args;
+
+		$this->assertContains( 'available', $target_args );
+		$this->assertContains( 'staged', $target_args );
+		$this->assertNotContains( 'in_transit', $target_args );
+		$this->assertContains( 'warehouse', $target_args );
+		$this->assertContains( 'staging', $target_args );
+	}
 }

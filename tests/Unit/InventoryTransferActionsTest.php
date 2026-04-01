@@ -4,15 +4,20 @@ declare( strict_types=1 );
 
 namespace AIMS\Tests\Unit;
 
-final class InventoryTransferActionsTest extends \AIMS\Tests\TestCase {
-	public function testCreateDraftActionRequiresNonce(): void {
-		// This test verifies nonce validation behavior
-		// In the actual handler, check_admin_referer() is called
-		// which would exit if nonce is invalid
-		$this->assertTrue( true ); // Placeholder for nonce verification logic
-	}
+use AIMS\Tests\Support\TestState;
 
-	public function testCreateDraftActionCallsServiceMethod(): void {
+final class InventoryTransferActionsTest extends \AIMS\Tests\TestCase {
+	public function testCreateDraftActionPassesOverrideAuditFieldsToService(): void {
+		TestState::set_current_user_id( 14 );
+		TestState::set_user_capabilities(
+			14,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+				\AIMS_Capabilities::CAP_MANAGE_PRODUCTION,
+			)
+		);
+		TestState::set_throw_on_redirect( true );
+
 		$service = new class() extends \AIMS_Inventory_Transfer_Service {
 			public array $calls = array();
 
@@ -22,6 +27,7 @@ final class InventoryTransferActionsTest extends \AIMS\Tests\TestCase {
 				$this->calls[] = array(
 					'source_node_id' => $source_node_id,
 					'target_node_id' => $target_node_id,
+					'data'           => $data,
 				);
 
 				return array(
@@ -33,17 +39,29 @@ final class InventoryTransferActionsTest extends \AIMS\Tests\TestCase {
 		};
 
 		$handler = new \AIMS_Inventory_Transfer_Actions( $service );
-
-		// Simulate $_POST data
 		$_POST = array(
-			'source_node_id'    => 1,
-			'target_node_id'    => 2,
-			'transfer_type'     => 'standard',
+			'source_node_id'   => 1,
+			'target_node_id'   => 2,
+			'transfer_type'    => 'direct_collection',
+			'override_route'   => 1,
+			'override_reason'  => 'Direct collection approved by operations.',
+			'route_guidance'   => 'Default warehouse routing bypassed.',
+			'notes'            => 'Action note.',
 		);
 
-		// The handler would call wp_safe_redirect and exit
-		// For testing, we can verify the service was called
-		$this->assertCount( 0, $service->calls ); // Service not called without nonce/cap
+		try {
+			$handler->handle_create_draft();
+			$this->fail( 'Expected redirect exception was not thrown.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertStringStartsWith( 'redirect:', $exception->getMessage() );
+		}
+
+		$this->assertCount( 1, $service->calls );
+		$this->assertSame( 1, $service->calls[0]['source_node_id'] );
+		$this->assertSame( 2, $service->calls[0]['target_node_id'] );
+		$this->assertTrue( (bool) $service->calls[0]['data']['override_route'] );
+		$this->assertSame( 'Direct collection approved by operations.', $service->calls[0]['data']['override_reason'] );
+		$this->assertSame( 'Default warehouse routing bypassed.', $service->calls[0]['data']['route_guidance'] );
 	}
 
 	public function testAddItemActionValidatesInput(): void {

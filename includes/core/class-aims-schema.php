@@ -36,6 +36,8 @@ class AIMS_Schema {
 			$wpdb->prefix . 'aims_bucket_inventory_movements',
 			$wpdb->prefix . 'aims_inventory_transfers',
 			$wpdb->prefix . 'aims_inventory_transfer_items',
+			$wpdb->prefix . 'aims_inventory_custody_endpoints',
+			$wpdb->prefix . 'aims_inventory_custody_endpoint_relationships',
 			$wpdb->prefix . 'aims_sale_fulfillment_allocations',
 			$wpdb->prefix . 'aims_product_cost_rules',
 			$wpdb->prefix . 'aims_sync_runs',
@@ -85,6 +87,8 @@ class AIMS_Schema {
 		$bucket_moves_table      = $wpdb->prefix . 'aims_bucket_inventory_movements';
 		$inventory_transfers_table = $wpdb->prefix . 'aims_inventory_transfers';
 		$inventory_transfer_items_table = $wpdb->prefix . 'aims_inventory_transfer_items';
+		$inventory_custody_endpoints_table = $wpdb->prefix . 'aims_inventory_custody_endpoints';
+		$inventory_custody_endpoint_relationships_table = $wpdb->prefix . 'aims_inventory_custody_endpoint_relationships';
 		$fulfillment_allocations_table = $wpdb->prefix . 'aims_sale_fulfillment_allocations';
 		$product_cost_rules_table = $wpdb->prefix . 'aims_product_cost_rules';
 		$sync_runs_table         = $wpdb->prefix . 'aims_sync_runs';
@@ -721,6 +725,11 @@ class AIMS_Schema {
 				cancelled_by bigint(20) unsigned NOT NULL DEFAULT 0,
 				reference_type varchar(50) NOT NULL DEFAULT '',
 				reference_id varchar(191) NOT NULL DEFAULT '',
+				override_route varchar(64) NOT NULL DEFAULT '',
+				override_reason varchar(191) NOT NULL DEFAULT '',
+				override_note longtext NULL,
+				override_actor_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				override_at datetime NULL DEFAULT NULL,
 				notes longtext NULL,
 				created_at datetime NOT NULL,
 				updated_at datetime NOT NULL,
@@ -739,6 +748,8 @@ class AIMS_Schema {
 				KEY reference_id (reference_id),
 				KEY dispatch_confirmed_at (dispatch_confirmed_at),
 				KEY receipt_confirmed_at (receipt_confirmed_at),
+				KEY override_route (override_route),
+				KEY override_actor_id (override_actor_id),
 				KEY initiated_by (initiated_by),
 				KEY received_by (received_by)
 			) {$charset_collate};",
@@ -761,6 +772,11 @@ class AIMS_Schema {
 				dispatch_movement_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				receipt_movement_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				variance_movement_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				override_route varchar(64) NOT NULL DEFAULT '',
+				override_reason varchar(191) NOT NULL DEFAULT '',
+				override_note longtext NULL,
+				override_actor_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				override_at datetime NULL DEFAULT NULL,
 				notes longtext NULL,
 				created_at datetime NOT NULL,
 				updated_at datetime NOT NULL,
@@ -775,7 +791,54 @@ class AIMS_Schema {
 				KEY target_bucket_id (target_bucket_id),
 				KEY dispatch_movement_id (dispatch_movement_id),
 				KEY receipt_movement_id (receipt_movement_id),
-				KEY variance_movement_id (variance_movement_id)
+				KEY variance_movement_id (variance_movement_id),
+				KEY override_route (override_route),
+				KEY override_actor_id (override_actor_id)
+			) {$charset_collate};",
+			"CREATE TABLE {$inventory_custody_endpoints_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				endpoint_key varchar(100) NOT NULL DEFAULT '',
+				endpoint_name varchar(190) NOT NULL DEFAULT '',
+				endpoint_type varchar(32) NOT NULL DEFAULT 'custom',
+				endpoint_status varchar(32) NOT NULL DEFAULT 'active',
+				node_ref_type varchar(32) NOT NULL DEFAULT '',
+				node_ref_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				parent_endpoint_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				default_route_policy varchar(50) NOT NULL DEFAULT 'guidance',
+				allows_direct_collection tinyint(1) NOT NULL DEFAULT 1,
+				allows_direct_recovery tinyint(1) NOT NULL DEFAULT 1,
+				notes longtext NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY endpoint_key (endpoint_key),
+				KEY endpoint_type (endpoint_type),
+				KEY endpoint_status (endpoint_status),
+				KEY node_ref_lookup (node_ref_type, node_ref_id),
+				KEY parent_endpoint_id (parent_endpoint_id)
+			) {$charset_collate};",
+			"CREATE TABLE {$inventory_custody_endpoint_relationships_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				source_endpoint_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				target_endpoint_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				relationship_key varchar(100) NOT NULL DEFAULT '',
+				relationship_type varchar(32) NOT NULL DEFAULT 'default_route',
+				route_priority int(11) NOT NULL DEFAULT 0,
+				route_policy varchar(50) NOT NULL DEFAULT 'guidance',
+				is_default_route tinyint(1) NOT NULL DEFAULT 1,
+				is_active tinyint(1) NOT NULL DEFAULT 1,
+				guidance_label varchar(190) NOT NULL DEFAULT '',
+				guidance_notes longtext NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY endpoint_relationship (source_endpoint_id, target_endpoint_id, relationship_key),
+				KEY source_endpoint_id (source_endpoint_id),
+				KEY target_endpoint_id (target_endpoint_id),
+				KEY relationship_type (relationship_type),
+				KEY route_priority (route_priority),
+				KEY is_default_route (is_default_route),
+				KEY is_active (is_active)
 			) {$charset_collate};",
 			"CREATE TABLE {$fulfillment_allocations_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

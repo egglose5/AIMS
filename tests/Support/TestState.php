@@ -109,6 +109,56 @@ final class TestState {
 		return null;
 	}
 
+	public static function get_users( array $args = array() ): array {
+		$users = array_values( self::$state['users'] ?? array() );
+
+		if ( ! empty( $args['role'] ) ) {
+			$role = sanitize_key( (string) $args['role'] );
+			$users = array_values(
+				array_filter(
+					$users,
+					static function ( $user ) use ( $role ): bool {
+						$roles = isset( $user->roles ) && is_array( $user->roles ) ? array_map( 'sanitize_key', $user->roles ) : array();
+						return in_array( $role, $roles, true );
+					}
+				)
+			);
+		}
+
+		if ( ! empty( $args['role__in'] ) && is_array( $args['role__in'] ) ) {
+			$roles_filter = array_values( array_filter( array_map( 'sanitize_key', $args['role__in'] ) ) );
+			$users = array_values(
+				array_filter(
+					$users,
+					static function ( $user ) use ( $roles_filter ): bool {
+						$roles = isset( $user->roles ) && is_array( $user->roles ) ? array_map( 'sanitize_key', $user->roles ) : array();
+						return ! empty( array_intersect( $roles_filter, $roles ) );
+					}
+				)
+			);
+		}
+
+		if ( isset( $args['fields'] ) && 'ID' === $args['fields'] ) {
+			return array_map(
+				static function ( $user ): int {
+					return (int) ( $user->ID ?? 0 );
+				},
+				$users
+			);
+		}
+
+		if ( isset( $args['fields'] ) && is_array( $args['fields'] ) && array( 'ID' ) === array_values( $args['fields'] ) ) {
+			return array_map(
+				static function ( $user ) {
+					return (object) array( 'ID' => (int) ( $user->ID ?? 0 ) );
+				},
+				$users
+			);
+		}
+
+		return $users;
+	}
+
 	public static function set_user_meta( int $user_id, string $key, $value ): void {
 		if ( ! isset( self::$state['user_meta'][ $user_id ] ) ) {
 			self::$state['user_meta'][ $user_id ] = array();

@@ -37,12 +37,17 @@ class AIMS_Inventory_Transfer_Repository {
 			'initiated_by'         => (int) ( $data['initiated_by'] ?? get_current_user_id() ),
 			'reference_type'       => sanitize_key( $data['reference_type'] ?? '' ),
 			'reference_id'         => sanitize_text_field( $data['reference_id'] ?? '' ),
+			'override_route'       => sanitize_key( (string) ( $data['override_route'] ?? '' ) ),
+			'override_reason'      => sanitize_text_field( (string) ( $data['override_reason'] ?? '' ) ),
+			'override_note'        => isset( $data['override_note'] ) ? sanitize_textarea_field( (string) $data['override_note'] ) : null,
+			'override_actor_id'    => (int) ( $data['override_actor_id'] ?? 0 ),
+			'override_at'          => $this->normalize_datetime( $data['override_at'] ?? null ),
 			'notes'                => isset( $data['notes'] ) ? sanitize_textarea_field( $data['notes'] ) : null,
 			'created_at'           => current_time( 'mysql' ),
 			'updated_at'           => current_time( 'mysql' ),
 		);
 
-		$format = array( '%s', '%s', '%s', '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s' );
+		$format = array( '%s', '%s', '%s', '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s' );
 
 		$wpdb->insert( $this->get_table_name(), $record, $format );
 
@@ -89,6 +94,14 @@ class AIMS_Inventory_Transfer_Repository {
 			'transfer_status' => sanitize_key( $status ),
 			'updated_at'      => current_time( 'mysql' ),
 		);
+
+		if ( isset( $extra_data['transfer_type'] ) && '' !== sanitize_key( (string) $extra_data['transfer_type'] ) ) {
+			$record['transfer_type'] = sanitize_key( (string) $extra_data['transfer_type'] );
+		}
+
+		if ( isset( $extra_data['notes'] ) ) {
+			$record['notes'] = sanitize_textarea_field( (string) $extra_data['notes'] );
+		}
 
 		// Add timestamp fields for status transitions
 		if ( 'dispatched' === $status ) {

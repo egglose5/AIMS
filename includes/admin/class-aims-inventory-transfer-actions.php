@@ -16,9 +16,11 @@ class AIMS_Inventory_Transfer_Actions {
 	private const NONCE_CONFIRM_RECEIPT = '_aims_inventory_transfer_confirm_receipt_nonce';
 
 	private $service;
+	private $authorization;
 
-	public function __construct( AIMS_Inventory_Transfer_Service $service = null ) {
-		$this->service = $service ?: new AIMS_Inventory_Transfer_Service();
+	public function __construct( AIMS_Inventory_Transfer_Service $service = null, AIMS_Inventory_Transfer_Authorization_Service $authorization = null ) {
+		$this->authorization = $authorization ?: new AIMS_Inventory_Transfer_Authorization_Service();
+		$this->service       = $service ?: new AIMS_Inventory_Transfer_Service( null, null, null, null, $this->authorization );
 	}
 
 	public function register(): void {
@@ -35,20 +37,25 @@ class AIMS_Inventory_Transfer_Actions {
 
 		check_admin_referer( self::ACTION_CREATE_DRAFT, self::NONCE_CREATE_DRAFT );
 
-		$source_node_id = (int) ( $_POST['source_node_id'] ?? ( $_POST['source_vendor_id'] ?? 0 ) );
-		$target_node_id = (int) ( $_POST['target_node_id'] ?? ( $_POST['target_vendor_id'] ?? 0 ) );
+		$source_selection = $this->parse_endpoint_selection( sanitize_text_field( $_POST['source_endpoint_selection'] ?? '' ) );
+		$target_selection = $this->parse_endpoint_selection( sanitize_text_field( $_POST['target_endpoint_selection'] ?? '' ) );
+		$source_node_id = (int) ( $source_selection['node_id'] ?? ( $_POST['source_node_id'] ?? ( $_POST['source_vendor_id'] ?? 0 ) ) );
+		$target_node_id = (int) ( $target_selection['node_id'] ?? ( $_POST['target_node_id'] ?? ( $_POST['target_vendor_id'] ?? 0 ) ) );
 
 		$result = $this->service->create_draft(
 			$source_node_id,
 			$target_node_id,
 			array(
-				'source_node_type' => sanitize_key( $_POST['source_node_type'] ?? 'vendor' ),
-				'target_node_type' => sanitize_key( $_POST['target_node_type'] ?? 'vendor' ),
-				'transfer_type'  => sanitize_text_field( $_POST['transfer_type'] ?? 'standard' ),
-				'initiated_by'   => get_current_user_id(),
-				'reference_type' => sanitize_key( $_POST['reference_type'] ?? '' ),
-				'reference_id'   => sanitize_text_field( $_POST['reference_id'] ?? '' ),
-				'notes'          => isset( $_POST['notes'] ) ? sanitize_textarea_field( $_POST['notes'] ) : null,
+				'source_node_type' => sanitize_key( (string) ( $source_selection['node_type'] ?? ( $_POST['source_node_type'] ?? 'vendor' ) ) ),
+				'target_node_type' => sanitize_key( (string) ( $target_selection['node_type'] ?? ( $_POST['target_node_type'] ?? 'vendor' ) ) ),
+				'transfer_type'    => sanitize_text_field( $_POST['transfer_type'] ?? 'standard' ),
+				'override_route'   => ! empty( $_POST['override_route'] ),
+				'override_reason'  => isset( $_POST['override_reason'] ) ? sanitize_textarea_field( $_POST['override_reason'] ) : null,
+				'route_guidance'   => isset( $_POST['route_guidance'] ) ? sanitize_text_field( $_POST['route_guidance'] ) : null,
+				'initiated_by'     => get_current_user_id(),
+				'reference_type'   => sanitize_key( $_POST['reference_type'] ?? '' ),
+				'reference_id'     => sanitize_text_field( $_POST['reference_id'] ?? '' ),
+				'notes'            => isset( $_POST['notes'] ) ? sanitize_textarea_field( $_POST['notes'] ) : null,
 			)
 		);
 
@@ -100,8 +107,11 @@ class AIMS_Inventory_Transfer_Actions {
 		$result = $this->service->dispatch_transfer(
 			$transfer_id,
 			array(
-				'user_id' => get_current_user_id(),
-				'notes'   => isset( $_POST['notes'] ) ? sanitize_textarea_field( $_POST['notes'] ) : null,
+				'user_id'        => get_current_user_id(),
+				'notes'          => isset( $_POST['notes'] ) ? sanitize_textarea_field( $_POST['notes'] ) : null,
+				'audit_reason'   => isset( $_POST['audit_reason'] ) ? sanitize_textarea_field( $_POST['audit_reason'] ) : null,
+				'route_guidance' => isset( $_POST['route_guidance'] ) ? sanitize_text_field( $_POST['route_guidance'] ) : null,
+				'override_route' => ! empty( $_POST['override_route'] ),
 			)
 		);
 
@@ -134,8 +144,11 @@ class AIMS_Inventory_Transfer_Actions {
 			$transfer_id,
 			$item_receipts,
 			array(
-				'user_id' => get_current_user_id(),
-				'notes'   => isset( $_POST['notes'] ) ? sanitize_textarea_field( $_POST['notes'] ) : null,
+				'user_id'        => get_current_user_id(),
+				'notes'          => isset( $_POST['notes'] ) ? sanitize_textarea_field( $_POST['notes'] ) : null,
+				'audit_reason'   => isset( $_POST['audit_reason'] ) ? sanitize_textarea_field( $_POST['audit_reason'] ) : null,
+				'route_guidance' => isset( $_POST['route_guidance'] ) ? sanitize_text_field( $_POST['route_guidance'] ) : null,
+				'override_route' => ! empty( $_POST['override_route'] ),
 			)
 		);
 
@@ -145,7 +158,7 @@ class AIMS_Inventory_Transfer_Actions {
 	}
 
 	private function can_manage_inventory(): bool {
-		return current_user_can( AIMS_Capabilities::CAP_MANAGE_INVENTORY );
+		return $this->authorization->can_manage_inventory_transfers( get_current_user_id() );
 	}
 
 	private function redirect_with_status( array $result, string $page, array $query_args = array() ): void {
@@ -165,5 +178,19 @@ class AIMS_Inventory_Transfer_Actions {
 		$redirect_url = add_query_arg( $redirect_args, admin_url( 'admin.php' ) );
 		wp_safe_redirect( $redirect_url );
 		exit;
+	}
+
+	private function parse_endpoint_selection( string $selection ): array {
+		$selection = trim( $selection );
+		if ( '' === $selection || false === strpos( $selection, ':' ) ) {
+			return array();
+		}
+
+		list( $node_type, $node_id ) = array_pad( explode( ':', $selection, 2 ), 2, '' );
+
+		return array(
+			'node_type' => sanitize_key( $node_type ),
+			'node_id'   => max( 0, (int) $node_id ),
+		);
 	}
 }

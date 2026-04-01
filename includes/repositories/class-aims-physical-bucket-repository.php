@@ -147,6 +147,30 @@ class AIMS_Physical_Bucket_Repository {
 		);
 	}
 
+	public function get_for_endpoint( string $endpoint_key, array $args = array() ): array {
+		$endpoint_key = sanitize_key( $endpoint_key );
+
+		if ( '' === $endpoint_key ) {
+			return $this->get_all_with_context( $args );
+		}
+
+		$endpoint_args = $this->build_endpoint_query_args( $endpoint_key, 'source', $args );
+
+		return $this->get_all_with_context( $endpoint_args );
+	}
+
+	public function get_source_for_endpoint( string $endpoint_key, array $args = array() ): array {
+		$endpoint_args = $this->build_endpoint_query_args( $endpoint_key, 'source', $args );
+
+		return $this->get_all_with_context( $endpoint_args );
+	}
+
+	public function get_target_for_endpoint( string $endpoint_key, array $args = array() ): array {
+		$endpoint_args = $this->build_endpoint_query_args( $endpoint_key, 'target', $args );
+
+		return $this->get_all_with_context( $endpoint_args );
+	}
+
 	public function update_current_location( int $bucket_id, int $location_id ): bool {
 		global $wpdb;
 
@@ -195,7 +219,7 @@ class AIMS_Physical_Bucket_Repository {
 		$sql = 'SELECT b.*, current_loc.id AS current_location_id, current_loc.location_code AS current_location_code, current_loc.location_name AS current_location_name, current_loc.location_type AS current_location_type, current_loc.parent_location_id AS current_location_parent_id, current_loc.sort_order AS current_location_sort_order, current_loc.is_pickable AS current_location_is_pickable, current_loc.is_staging AS current_location_is_staging, current_loc.status AS current_location_status, current_loc.barcode_value AS current_location_barcode, home_loc.id AS home_location_id, home_loc.location_code AS home_location_code, home_loc.location_name AS home_location_name, home_loc.location_type AS home_location_type, home_loc.parent_location_id AS home_location_parent_id, home_loc.sort_order AS home_location_sort_order, home_loc.is_pickable AS home_location_is_pickable, home_loc.is_staging AS home_location_is_staging, home_loc.status AS home_location_status, home_loc.barcode_value AS home_location_barcode FROM ' . $bucket_table . ' b LEFT JOIN ' . $location_table . ' current_loc ON current_loc.id = b.current_storage_location_id LEFT JOIN ' . $location_table . ' home_loc ON home_loc.id = b.home_storage_location_id WHERE 1=1';
 		$params = array();
 
-		if ( isset( $args['status'] ) && '' !== (string) $args['status'] ) {
+		if ( isset( $args['status'] ) ) {
 			$status = $args['status'];
 
 			if ( is_array( $status ) ) {
@@ -214,7 +238,7 @@ class AIMS_Physical_Bucket_Repository {
 					$sql .= ' AND b.status IN (' . implode( ', ', array_fill( 0, count( $status ), '%s' ) ) . ')';
 					$params = array_merge( $params, $status );
 				}
-			} else {
+			} elseif ( '' !== trim( (string) $status ) ) {
 				$sql      .= ' AND b.status = %s';
 				$params[] = sanitize_key( (string) $status );
 			}
@@ -269,6 +293,72 @@ class AIMS_Physical_Bucket_Repository {
 				$sql .= ' AND b.id IN (' . implode( ', ', array_fill( 0, count( $bucket_ids ), '%d' ) ) . ')';
 				$params = array_merge( $params, $bucket_ids );
 			}
+		}
+
+		if ( ! empty( $args['current_location_type'] ) ) {
+			$sql      .= ' AND current_loc.location_type = %s';
+			$params[] = sanitize_key( (string) $args['current_location_type'] );
+		}
+
+		if ( ! empty( $args['current_location_types'] ) && is_array( $args['current_location_types'] ) ) {
+			$current_location_types = array_values(
+				array_filter(
+					array_map(
+						static function ( $value ): string {
+							return sanitize_key( (string) $value );
+						},
+						$args['current_location_types']
+					)
+				)
+			);
+
+			if ( ! empty( $current_location_types ) ) {
+				$sql .= ' AND current_loc.location_type IN (' . implode( ', ', array_fill( 0, count( $current_location_types ), '%s' ) ) . ')';
+				$params = array_merge( $params, $current_location_types );
+			}
+		}
+
+		if ( ! empty( $args['home_location_type'] ) ) {
+			$sql      .= ' AND home_loc.location_type = %s';
+			$params[] = sanitize_key( (string) $args['home_location_type'] );
+		}
+
+		if ( ! empty( $args['home_location_types'] ) && is_array( $args['home_location_types'] ) ) {
+			$home_location_types = array_values(
+				array_filter(
+					array_map(
+						static function ( $value ): string {
+							return sanitize_key( (string) $value );
+						},
+						$args['home_location_types']
+					)
+				)
+			);
+
+			if ( ! empty( $home_location_types ) ) {
+				$sql .= ' AND home_loc.location_type IN (' . implode( ', ', array_fill( 0, count( $home_location_types ), '%s' ) ) . ')';
+				$params = array_merge( $params, $home_location_types );
+			}
+		}
+
+		if ( array_key_exists( 'current_location_is_pickable', $args ) ) {
+			$sql      .= ' AND current_loc.is_pickable = %d';
+			$params[] = ! empty( $args['current_location_is_pickable'] ) ? 1 : 0;
+		}
+
+		if ( array_key_exists( 'current_location_is_staging', $args ) ) {
+			$sql      .= ' AND current_loc.is_staging = %d';
+			$params[] = ! empty( $args['current_location_is_staging'] ) ? 1 : 0;
+		}
+
+		if ( ! empty( $args['current_location_status'] ) ) {
+			$sql      .= ' AND current_loc.status = %s';
+			$params[] = sanitize_key( (string) $args['current_location_status'] );
+		}
+
+		if ( ! empty( $args['home_location_status'] ) ) {
+			$sql      .= ' AND home_loc.status = %s';
+			$params[] = sanitize_key( (string) $args['home_location_status'] );
 		}
 
 		if ( ! empty( $args['search'] ) ) {
@@ -389,5 +479,50 @@ class AIMS_Physical_Bucket_Repository {
 		$allowed = AIMS_Physical_Bucket_Types::allowed_statuses_for_type( $bucket_type );
 		return ! empty( $allowed[0] ) ? $allowed[0] : 'available';
 	}
-}
 
+	private function build_endpoint_query_args( string $endpoint_key, string $direction, array $args ): array {
+		$endpoint_key = sanitize_key( $endpoint_key );
+		$direction    = 'target' === sanitize_key( $direction ) ? 'target' : 'source';
+
+		$endpoint_args = $args;
+
+		switch ( $endpoint_key ) {
+			case 'warehouse':
+				$endpoint_args = array_merge(
+					array(
+						'status'                 => array( 'available', 'staged', 'in_transit' ),
+						'current_location_types' => array( 'warehouse', 'staging' ),
+					),
+					$endpoint_args
+				);
+				break;
+
+			case 'supervisor':
+				$endpoint_args = array_merge(
+					array(
+						'status'                 => array( 'available', 'staged' ),
+						'current_location_types' => array( 'vendor', 'warehouse', 'staging' ),
+					),
+					$endpoint_args
+				);
+				break;
+
+			case 'vendor':
+			default:
+				$endpoint_args = array_merge(
+					array(
+						'status'                 => array( 'available', 'staged' ),
+						'current_location_types' => array( 'vendor', 'staging' ),
+					),
+					$endpoint_args
+				);
+				break;
+		}
+
+		if ( 'target' === $direction && ! empty( $endpoint_args['status'] ) && is_array( $endpoint_args['status'] ) ) {
+			$endpoint_args['status'] = array_values( array_diff( array_map( 'sanitize_key', $endpoint_args['status'] ), array( 'in_transit' ) ) );
+		}
+
+		return $endpoint_args;
+	}
+}
