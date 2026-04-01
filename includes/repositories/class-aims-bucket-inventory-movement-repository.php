@@ -62,6 +62,7 @@ class AIMS_Bucket_Inventory_Movement_Repository {
 
 		$record = array(
 			'movement_uuid'              => sanitize_text_field( $data['movement_uuid'] ?? wp_generate_uuid4() ),
+			'movement_batch_id'          => (int) ( $data['movement_batch_id'] ?? 0 ),
 			'reference_type'             => sanitize_key( $data['reference_type'] ?? '' ),
 			'reference_id'               => sanitize_text_field( $data['reference_id'] ?? '' ),
 			'bucket_id'                  => (int) ( $identity['bucket_id'] ?? 0 ),
@@ -75,9 +76,12 @@ class AIMS_Bucket_Inventory_Movement_Repository {
 			'target_storage_location_id' => (int) ( $data['target_storage_location_id'] ?? 0 ),
 			'movement_type'              => sanitize_key( $data['movement_type'] ?? '' ),
 			'quantity_delta'             => number_format( (float) ( $data['quantity_delta'] ?? 0 ), 4, '.', '' ),
+			'movement_lifecycle'         => sanitize_key( (string) ( $data['movement_lifecycle'] ?? 'hot' ) ),
+			'archive_manifest_id'        => (int) ( $data['archive_manifest_id'] ?? 0 ),
 			'applied_by'                 => (int) ( $data['applied_by'] ?? get_current_user_id() ),
 			'note'                       => isset( $data['note'] ) ? sanitize_textarea_field( $data['note'] ) : '',
 			'metadata_json'              => isset( $data['metadata_json'] ) ? wp_json_encode( $data['metadata_json'] ) : null,
+			'line_meta_json'             => isset( $data['line_meta_json'] ) ? wp_json_encode( $data['line_meta_json'] ) : null,
 			'created_at'                 => current_time( 'mysql' ),
 		);
 

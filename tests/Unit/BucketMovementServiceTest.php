@@ -8,6 +8,7 @@ use AIMS_Bucket_Inventory_Movement_Repository;
 use AIMS_Bucket_Inventory_Position_Repository;
 use AIMS_Bucket_Movement_Service;
 use AIMS_Bucket_Position_Service;
+use AIMS_Movement_Lifecycle_Service;
 
 final class BucketMovementServiceTest extends \AIMS\Tests\TestCase {
 	public function testRecordMovementUsesMovementBalanceAsSourceOfTruth(): void {
@@ -37,7 +38,24 @@ final class BucketMovementServiceTest extends \AIMS\Tests\TestCase {
 			}
 		};
 
-		$service = new AIMS_Bucket_Movement_Service( $movementRepo, $positionRepo );
+		$lifecycle = new class() extends AIMS_Movement_Lifecycle_Service {
+			public array $ensure_calls = array();
+			public array $capture_calls = array();
+
+			public function __construct() {}
+
+			public function ensure_hot_batch( array $data ): array {
+				$this->ensure_calls[] = $data;
+				return array( 'id' => 333 );
+			}
+
+			public function capture_hot_line( int $batch_id, int $movement_id, array $data ): bool {
+				$this->capture_calls[] = compact( 'batch_id', 'movement_id', 'data' );
+				return true;
+			}
+		};
+
+		$service = new AIMS_Bucket_Movement_Service( $movementRepo, $positionRepo, null, null, $lifecycle );
 
 		$result = $service->record_stock_in(
 			array(
@@ -52,11 +70,16 @@ final class BucketMovementServiceTest extends \AIMS\Tests\TestCase {
 		);
 
 		$this->assertSame( 101, $result['movement_id'] );
+		$this->assertSame( 333, $result['movement_batch_id'] );
 		$this->assertSame( 12.75, $result['current_quantity'] );
 		$this->assertCount( 1, $positionRepo->synchronized );
+		$this->assertCount( 1, $lifecycle->ensure_calls );
+		$this->assertCount( 1, $lifecycle->capture_calls );
 		$this->assertSame( 11, $positionRepo->synchronized[0]['bucket_id'] );
 		$this->assertSame( 7, $positionRepo->synchronized[0]['vendor_id'] );
 		$this->assertSame( 99, $positionRepo->synchronized[0]['product_id'] );
+		$this->assertSame( 333, $movementRepo->created[0]['movement_batch_id'] );
+		$this->assertSame( 'hot', $movementRepo->created[0]['movement_lifecycle'] );
 	}
 
 	public function testBucketPositionServiceRecaclulateUsesMovementSourceOfTruth(): void {

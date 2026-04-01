@@ -14,7 +14,7 @@ The repository currently provides:
 - capability and admin menu shells
 - custom AIMS role editor with template-based role creation and capability assignment
 - vendor, event, Square sync, and reporting module bootstraps
-- ledger-first inventory movement backbone
+- ledger-first inventory movement backbone with hot-line lifecycle scaffolding
 - physical bucket, storage, and event-bucket assignment architecture
 - Event Demand Intake v1 with account-linked request history
 - curated public event projection layer with public catalog/detail shortcodes
@@ -40,6 +40,7 @@ The repository currently provides:
 - Treat Square as payment and sales truth.
 - Write imported Square sales into AIMS tables first.
 - Avoid any design that can double-apply stock changes.
+- Design for an expected lifecycle of at least 100,000 physical movement writes on the local WordPress server.
 - Public event pages must never read directly from internal financial or operational tables.
 - Public event output must come from the curated projection layer.
 - Event Demand Intake v1 is a core product feature.
@@ -146,7 +147,9 @@ The repository currently provides:
 
 AIMS now uses a ledger-first inventory design:
 
-- `aims_inventory_movements` is the immutable stock movement ledger.
+- `aims_inventory_movements` and `aims_bucket_inventory_movements` remain the hot movement-line ledgers used for active balance math.
+- `aims_movement_batches` groups hot lines into movement batches with inline line metadata so one physical action can later be exported and reread as a single historical unit.
+- `aims_movement_archive_manifests` stores archive/export metadata so historical movement batches can be compressed, exported, and rehydrated locally.
 - `aims_inventory_buckets` is the current aggregate view per vendor/product/bucket.
 - stock changes should be applied through movement services (`AIMS_Inventory_Service` and execution flows that delegate to `AIMS_Bucket_Movement_Service`).
 - apply-once protection is enforced by the unique movement reference key.
@@ -163,3 +166,11 @@ AIMS now uses a ledger-first inventory design:
 - `aims_inventory_movements` should not be used to represent planning intent.
 - `vendor_event_checkin` is the execution movement that marks stock arriving at the event.
 - return movement records are the execution point for stock moving back from the event.
+
+## Movement lifecycle model
+
+- AIMS should treat a movement as a physical action batch, not just an unbounded list of hot line rows.
+- Hot movement-line rows still exist for fast current-balance calculations.
+- Each hot line belongs to a movement batch with inline line metadata that can be exported or archived as one historical object.
+- Historical movement access should prefer batch reread/export paths instead of keeping every line in the hottest runtime query path forever.
+- Archive manifests should remain local-server friendly so older history can be compressed and reread without losing operational auditability.

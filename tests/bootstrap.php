@@ -154,6 +154,14 @@ if ( ! function_exists( 'current_time' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+	function wp_generate_uuid4(): string {
+		static $counter = 1;
+
+		return sprintf( '00000000-0000-4000-8000-%012d', $counter++ );
+	}
+}
+
 if ( ! function_exists( 'get_current_user_id' ) ) {
 	function get_current_user_id(): int {
 		return \AIMS\Tests\Support\TestState::current_user_id();

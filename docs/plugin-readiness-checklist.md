@@ -86,16 +86,16 @@ This checklist maps release tasks to concrete code areas in this repository.
 
 ## Next Milestone - Capability-First Role Model
 
-- [ ] Treat built-in AIMS roles as templates only rather than required production identities.
-- [ ] Allow custom site roles to fully replace shipped AIMS roles across portal, planning, inventory, stitching, and reporting workflows.
-- [ ] Refactor remaining AIMS responsibilities into first-class capabilities so they can be granted by the AIMS role editor or third-party role builders.
-- [ ] Remove remaining runtime checks that depend on exact shipped AIMS role slugs when equivalent custom roles carry the same template metadata and capabilities.
+- [x] Treat built-in AIMS roles as templates only rather than required production identities.
+- [x] Allow custom site roles to fully replace shipped AIMS roles across portal, planning, inventory, stitching, and reporting workflows.
+- [x] Refactor remaining AIMS responsibilities into first-class capabilities so they can be granted by the AIMS role editor or third-party role builders.
+- [x] Remove remaining runtime checks that depend on exact shipped AIMS role slugs when equivalent custom roles carry the same template metadata and capabilities.
 - [ ] Keep assignment tables only for scoped access narrowing:
   - event scope
   - vendor scope
   - custody scope
   - subordinate-tree scope
-- [ ] Audit person-subtype resolution, endpoint resolution, and menu gating so template-backed custom roles preserve vendor, stitch, warehouse, supervisor, and manager behavior.
+- [x] Audit person-subtype resolution, endpoint resolution, and menu gating so template-backed custom roles preserve vendor, stitch, warehouse, supervisor, and manager behavior.
 
 ## Next Milestone - Transfer Endpoint Hardening
 
@@ -112,4 +112,12 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [ ] Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
 - [ ] Expand Square replay and fulfillment wiring after planning/commitment workflow stability under team usage is confirmed.
 - [ ] Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+
+## Next Milestone - Movement Lifecycle and Archival
+
+- [x] Add movement batch and archive-manifest schema so hot line writes can be grouped into archival units.
+- [x] Bind hot bucket movement writes to movement batches with inline line metadata.
+- [ ] Add export/archive jobs that write compressed local-server payloads for older movement batches.
+- [ ] Add reread/rehydration queries for archived movement history.
+- [ ] Define retention thresholds for hot lines versus archived movement batches.
 

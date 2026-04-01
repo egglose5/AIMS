@@ -11,6 +11,17 @@ class AIMS_Loader {
 	}
 
 	private static function autoload( string $class_name ): void {
+		if ( 0 === strpos( $class_name, 'AmesCore\\' ) ) {
+			$relative = str_replace( '\\', DIRECTORY_SEPARATOR, substr( $class_name, strlen( 'AmesCore\\' ) ) );
+			$path     = AIMS_PLUGIN_PATH . 'ames-core' . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . $relative . '.php';
+
+			if ( file_exists( $path ) ) {
+				require_once $path;
+			}
+
+			return;
+		}
+
 		if ( strpos( $class_name, 'AIMS_' ) !== 0 ) {
 			return;
 		}

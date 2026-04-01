@@ -5,7 +5,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Source_Of_Truth {
-	public const WOO = 'woo';
+	public const WP_WOO = 'wp_woo';
+	public const WOO = 'wp_woo';
+	public const LEGACY_WOO = 'woo';
 	public const AIMS = 'aims';
 	public const SQUARE = 'square';
 
@@ -13,19 +15,13 @@ class AIMS_Source_Of_Truth {
 	 * Returns a list of all canonical source names.
 	 */
 	public static function all(): array {
-		return array(
-			self::WOO,
-			self::AIMS,
-			self::SQUARE,
-		);
+		return \AmesCore\Policy\TruthHierarchy::all();
 	}
 
 	/**
 	 * Validates and normalizes known source values.
 	 */
 	public static function normalize( string $source ): string {
-		$source = sanitize_key( trim( $source ) );
-
-		return in_array( $source, self::all(), true ) ? $source : self::AIMS;
+		return \AmesCore\Policy\TruthHierarchy::normalize( $source );
 	}
 }

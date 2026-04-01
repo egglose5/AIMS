@@ -7,6 +7,8 @@ Stock changes in AIMS must only occur for physical-world inventory movement.
 - Planning-only actions must not mutate stock.
 - Financial-only actions must not mutate stock.
 - Inventory movement writes must use one of the allowed movement events below.
+- Movement storage must support at least 100,000 lifetime physical movement writes without requiring every historical line to remain in the hottest runtime query path.
+- A movement should be treated as a batch of inline line metadata that can later be exported, archived, compressed, and reread locally.
 
 ## Allowed Movement Events
 
@@ -35,6 +37,8 @@ Stock changes in AIMS must only occur for physical-world inventory movement.
 - Movement event and reference type pairings are enforced by a policy matrix in `AIMS_Inventory_Movement_Events`.
 - `AIMS_Inventory_Service::apply_movement()` rejects non-allowed movement types.
 - `AIMS_Bucket_Movement_Service::record_movement()` rejects non-allowed movement types.
+- Hot line writes should belong to a movement batch and carry inline line metadata for archive/export lifecycle support.
+- Historical access should prefer movement-batch and archive-manifest reads once lines age out of the hottest operational path.
 
 ## Reference-Type Matrix
 
