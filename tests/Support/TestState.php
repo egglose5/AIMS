@@ -12,6 +12,7 @@ final class TestState {
 			'current_user_id' => 0,
 			'current_user'    => null,
 			'users'           => array(),
+			'roles'           => array(),
 			'user_meta'       => array(),
 			'products'        => array(),
 			'user_caps'       => array(),
@@ -92,6 +93,59 @@ final class TestState {
 
 	public static function set_user( int $user_id, $user ): void {
 		self::$state['users'][ $user_id ] = is_object( $user ) ? $user : (object) $user;
+	}
+
+	public static function add_role( string $role_slug, string $display_name, array $caps = array() ) {
+		$role_slug = sanitize_key( $role_slug );
+		if ( '' === $role_slug ) {
+			return null;
+		}
+
+		self::$state['roles'][ $role_slug ] = array(
+			'name'         => $display_name,
+			'capabilities' => self::normalize_caps( $caps ),
+		);
+
+		return new \WP_Role( $role_slug, self::$state['roles'][ $role_slug ]['capabilities'] );
+	}
+
+	public static function get_role( string $role_slug ) {
+		$role_slug = sanitize_key( $role_slug );
+		if ( '' === $role_slug || empty( self::$state['roles'][ $role_slug ] ) ) {
+			return null;
+		}
+
+		return new \WP_Role( $role_slug, self::$state['roles'][ $role_slug ]['capabilities'] );
+	}
+
+	public static function remove_role( string $role_slug ): void {
+		$role_slug = sanitize_key( $role_slug );
+		if ( '' !== $role_slug ) {
+			unset( self::$state['roles'][ $role_slug ] );
+		}
+	}
+
+	public static function set_role_capability( string $role_slug, string $cap, bool $enabled ): void {
+		$role_slug = sanitize_key( $role_slug );
+		$cap       = sanitize_key( $cap );
+
+		if ( '' === $role_slug || '' === $cap ) {
+			return;
+		}
+
+		if ( empty( self::$state['roles'][ $role_slug ] ) ) {
+			self::$state['roles'][ $role_slug ] = array(
+				'name'         => $role_slug,
+				'capabilities' => array(),
+			);
+		}
+
+		if ( $enabled ) {
+			self::$state['roles'][ $role_slug ]['capabilities'][ $cap ] = true;
+			return;
+		}
+
+		unset( self::$state['roles'][ $role_slug ]['capabilities'][ $cap ] );
 	}
 
 	public static function get_user_by( string $field, $value ) {
@@ -188,6 +242,15 @@ final class TestState {
 					}
 				}
 			}
+
+			if ( isset( $user->roles ) && is_array( $user->roles ) ) {
+				foreach ( array_map( 'sanitize_key', $user->roles ) as $role_slug ) {
+					$role_caps = self::$state['roles'][ $role_slug ]['capabilities'] ?? array();
+					if ( ! empty( $role_caps[ $cap ] ) ) {
+						return true;
+					}
+				}
+			}
 		}
 
 		return ! empty( self::$state['user_caps'][ $user_id ][ $cap ] );
@@ -226,5 +289,20 @@ final class TestState {
 
 	public static function get_product( int $product_id ) {
 		return self::$state['products'][ $product_id ] ?? null;
+	}
+
+	private static function normalize_caps( array $caps ): array {
+		$normalized = array();
+
+		foreach ( $caps as $cap => $enabled ) {
+			$cap = sanitize_key( is_string( $cap ) ? $cap : (string) $cap );
+			if ( '' === $cap || ! $enabled ) {
+				continue;
+			}
+
+			$normalized[ $cap ] = true;
+		}
+
+		return $normalized;
 	}
 }

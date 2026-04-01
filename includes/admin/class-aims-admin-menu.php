@@ -166,6 +166,17 @@ class AIMS_Admin_Menu {
 			);
 		}
 
+		if ( $this->user_can_manage_rbac() ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				'Role Editor',
+				'Role Editor',
+				AIMS_Capabilities::CAP_MANAGE_RBAC,
+				AIMS_Role_Editor_Page::PAGE_SLUG,
+				array( $this, 'render_role_editor' )
+			);
+		}
+
 		add_submenu_page(
 			self::MENU_SLUG,
 			'Needs Shipping',
@@ -284,6 +295,11 @@ class AIMS_Admin_Menu {
 		$this->square_sync_module->render_shell();
 	}
 
+	public function render_role_editor(): void {
+		$page = new AIMS_Role_Editor_Page( new AIMS_Role_Editor_Data_Provider() );
+		$page->render();
+	}
+
 	public function render_needs_shipping_queue(): void {
 		$page = new AIMS_Shipping_Queue_Page( new AIMS_Shipping_Queue_Data_Provider() );
 		$page->render();
@@ -347,5 +363,10 @@ class AIMS_Admin_Menu {
 
 	private function user_can_view_reports(): bool {
 		return $this->responsibility_auth !== null && $this->responsibility_auth->can_view_reports( get_current_user_id() );
+	}
+
+	private function user_can_manage_rbac(): bool {
+		return current_user_can( AIMS_Capabilities::CAP_MANAGE_RBAC )
+			|| current_user_can( AIMS_Capabilities::CAP_MANAGE );
 	}
 }

@@ -41,20 +41,8 @@ class AIMS_Person_Identity_Service {
 		$roles = $this->extract_roles( $user );
 		$subtypes = array();
 
-		if ( in_array( AIMS_Capabilities::ROLE_VENDOR_USER, $roles, true ) ) {
-			$subtypes[] = self::SUBTYPE_VENDOR;
-		}
-
-		if ( in_array( AIMS_Capabilities::ROLE_STITCH_USER, $roles, true ) ) {
-			$subtypes[] = self::SUBTYPE_STITCH;
-		}
-
-		if ( in_array( AIMS_Capabilities::ROLE_WAREHOUSE_USER, $roles, true ) ) {
-			$subtypes[] = self::SUBTYPE_WAREHOUSE;
-		}
-
-		if ( in_array( AIMS_Capabilities::ROLE_MANAGER_USER, $roles, true ) ) {
-			$subtypes[] = self::SUBTYPE_MANAGER;
+		foreach ( $roles as $role_slug ) {
+			$subtypes = array_merge( $subtypes, AIMS_Capabilities::get_person_subtypes_for_role( $role_slug ) );
 		}
 
 		return array_values( array_unique( $subtypes ) );

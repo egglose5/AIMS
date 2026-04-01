@@ -45,6 +45,12 @@ Use this procedure for safe rollout and rollback.
 - Verify vendor create/edit/archive flow still works.
 - Run event sales report filter/export flow.
 
+4. Inventory Transfers (Distributed Custody)
+- Open Inventory workspace and verify outgoing/incoming transfer panels render.
+- Create a transfer draft, add line items, dispatch, and confirm receipt.
+- Confirm transfer records persist with node endpoint fields and status transitions.
+- Confirm dispatch and receipt create custody movement ledger rows.
+
 ## Rollback Procedure
 
 1. Deactivate the upgraded plugin.
@@ -54,9 +60,5 @@ Use this procedure for safe rollout and rollback.
 
 ## Testing Notes For This Phase
 
-- Touched-area unit tests for Event Planning authorization and Square Sync safety/telemetry pass.
-- Full-suite run currently reports existing baseline failures in movement-related tests unrelated to this phase:
-  - `BucketMovementServiceTest::testRecordMovementUsesMovementBalanceAsSourceOfTruth`
-  - `BucketMovementServiceTest::testBucketPositionServiceRecaclulateUsesMovementSourceOfTruth`
-  - `EventExecutionV1Test::testVendorEventCheckinWritesPhysicalMovementLedger`
-  - `EventExecutionV1Test::testEventReturnWritesPhysicalReturnLedger`
+- Touched-area unit tests for planning, sync safety/telemetry, and inventory transfers pass.
+- Full-suite PHPUnit baseline currently passes in this repository state.

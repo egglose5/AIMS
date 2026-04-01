@@ -100,16 +100,22 @@ The repository currently provides:
 - Abby is responsible for what goes to and comes back from her subordinates; those stock flows do not need to route back through the main warehouse after every event.
 - Replenishment should be delivered into the appropriate downstream custody pool instead of forcing all inventory to return to the main warehouse between events.
 
-## Next implementation phase
+## Inventory Transfers v1 status
 
-1. Build `Inventory Transfers v1` around a distributed custody model instead of a single warehouse-out / warehouse-back loop.
-2. Represent supervisor roles such as Abby as real downstream custody nodes that can hold stock, redistribute it to subordinates, and remain responsible for their local inventory pool.
-3. Support warehouse-to-supervisor, warehouse-to-direct-vendor, and supervisor-to-subordinate transfer flows with explicit receive and return actions.
-4. Preserve movement-only inventory authority: transfers and receipts are the physical events that write ledger changes.
-5. Keep future mobile/API execution in view so these custody transfers can later be driven by a fulfillment app without changing the core model.
-6. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention after the custody transfer workflow is stable.
-7. Expand Square replay and fulfillment wiring only after planning and distributed custody workflows remain stable under team usage.
-8. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+1. Transfer workflow foundation is implemented with draft -> dispatched -> received lifecycle.
+2. Transfer persistence now stores source and target as node endpoints while keeping vendor IDs as a compatibility bridge for existing inventory movement authorization paths.
+3. Dispatch and receipt remain movement-authority boundaries and write custody transfer ledger events.
+4. Inventory admin workspace now supports outgoing and incoming transfer operations in one place.
+
+## Next transfer implementation gaps
+
+1. Add a custody endpoint resolver so logged-in users and responsibility assignments resolve to an operational transfer endpoint consistently.
+2. Build a real endpoint directory for transfer targets instead of placeholder or implied node lists.
+3. Split source and target bucket queries by endpoint context so each side of a transfer resolves bucket options from its own custody scope.
+4. Keep future mobile/API execution in view so these custody transfers can later be driven by a fulfillment app without changing the core model.
+5. Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention after the custody transfer workflow is stable.
+6. Expand Square replay and fulfillment wiring only after planning and distributed custody workflows remain stable under team usage.
+7. Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
 ## Upgrade path
 

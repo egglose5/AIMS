@@ -142,4 +142,38 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 		$this->assertNotEmpty( $reports_calls, 'Reports submenu should register for users with reports_view responsibility' );
 		$this->assertSame( 'read', $reports_calls[0]['args'][3], 'Responsibility-gated items should use read capability' );
 	}
+
+	public function testRoleEditorSubmenuAppearsForUserWithRbacCapability(): void {
+		TestState::set_current_user_id( 12 );
+		TestState::set_user_capabilities( 12, array( \AIMS_Capabilities::CAP_MANAGE_RBAC ) );
+		TestState::set_user(
+			12,
+			(object) array(
+				'ID'    => 12,
+				'roles' => array( 'administrator' ),
+			)
+		);
+
+		$repo = new class() extends \AIMS_Responsibility_Assignment_Repository {
+			public function has_active_assignments_for_user( int $user_id ): bool { return false; }
+			public function user_has_responsibility( int $user_id, string $responsibility_key, string $scope_type = self::SCOPE_GLOBAL, int $scope_ref_id = 0 ): bool { return false; }
+			public function get_scope_ref_ids_for_user( int $user_id, string $responsibility_key, string $scope_type ): array { return array(); }
+		};
+
+		$auth = new \AIMS_Responsibility_Authorization_Service( $repo );
+		$menu = new \AIMS_Admin_Menu( null, null, null, $auth );
+		$menu->register();
+
+		$role_editor_calls = array_values(
+			array_filter(
+				TestState::get_hook_calls( 'add_submenu_page' ),
+				static function ( array $call ): bool {
+					return \AIMS_Role_Editor_Page::PAGE_SLUG === (string) ( $call['args'][4] ?? '' );
+				}
+			)
+		);
+
+		$this->assertNotEmpty( $role_editor_calls );
+		$this->assertSame( \AIMS_Capabilities::CAP_MANAGE_RBAC, $role_editor_calls[0]['args'][3] );
+	}
 }

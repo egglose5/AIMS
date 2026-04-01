@@ -171,4 +171,39 @@ final class ResponsibilityAuthorizationServiceTest extends \AIMS\Tests\TestCase 
 		$this->assertTrue( $service->can_manage_vendor_inventory_for_vendor( 71, 201 ) );
 		$this->assertFalse( $service->can_manage_vendor_inventory_for_vendor( 71, 202 ) );
 	}
+
+	public function testCapabilityMappedResponsibilitiesAuthorizeWithoutAssignments(): void {
+		TestState::set_user(
+			88,
+			(object) array(
+				'ID'    => 88,
+				'roles' => array( 'aims_custom_reports_manager' ),
+			)
+		);
+
+		\AIMS_Capabilities::create_or_update_custom_role(
+			'aims_custom_reports_manager',
+			'Reports Manager',
+			\AIMS_Capabilities::ROLE_MANAGER_USER,
+			array(
+				\AIMS_Capabilities::CAP_RESP_REPORTS_VIEW => true,
+				\AIMS_Capabilities::CAP_RESP_VENDOR_MANAGEMENT => true,
+			)
+		);
+
+		$repo = new class() extends AIMS_Responsibility_Assignment_Repository {
+			public function has_active_assignments_for_user( int $user_id ): bool {
+				return false;
+			}
+
+			public function user_has_responsibility( int $user_id, string $responsibility_key, string $scope_type = self::SCOPE_GLOBAL, int $scope_ref_id = 0 ): bool {
+				return false;
+			}
+		};
+
+		$service = new AIMS_Responsibility_Authorization_Service( $repo );
+
+		$this->assertTrue( $service->can_view_reports( 88 ) );
+		$this->assertTrue( $service->can_manage_vendors( 88 ) );
+	}
 }
