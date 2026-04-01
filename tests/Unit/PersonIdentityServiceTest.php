@@ -139,4 +139,28 @@ final class PersonIdentityServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertTrue( $service->is_aims_person( 106 ) );
 		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE, $service->get_person_subtypes( 106 ) );
 	}
+
+	public function testCapabilityOnlyExternalRoleResolvesVendorSubtypeWithoutRegistryEntry(): void {
+		\AIMS\Tests\Support\TestState::add_role(
+			'site_vendor_partner',
+			'Site Vendor Partner',
+			array(
+				\AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL => true,
+				\AIMS_Capabilities::CAP_RESP_VENDOR_SUBMIT_CHECKIN => true,
+			)
+		);
+
+		TestState::set_user(
+			107,
+			(object) array(
+				'ID'    => 107,
+				'roles' => array( 'site_vendor_partner' ),
+			)
+		);
+
+		$service = new \AIMS_Person_Identity_Service();
+
+		$this->assertTrue( $service->is_aims_person( 107 ) );
+		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_VENDOR, $service->get_person_subtypes( 107 ) );
+	}
 }

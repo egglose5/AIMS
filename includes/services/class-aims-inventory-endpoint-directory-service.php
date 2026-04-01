@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Inventory_Endpoint_Directory_Service {
 	public const OPTION_DIRECTORY = 'aims_inventory_endpoint_directory';
+	public const ENDPOINT_STITCHER = 'stitcher';
 	public const ENDPOINT_VENDOR = 'vendor';
 	public const ENDPOINT_SUPERVISOR = 'supervisor';
 	public const ENDPOINT_WAREHOUSE = 'warehouse';
@@ -98,6 +99,12 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			$choices[ $self_supervisor['endpoint_key'] ] = $self_supervisor;
 		}
 
+		$self_stitcher = $this->maybe_build_user_endpoint( $user_id, self::ENDPOINT_STITCHER, $templates );
+		if ( ! empty( $self_stitcher ) ) {
+			$choices['stitcher'] = array_merge( $self_stitcher, array( 'endpoint_key' => 'stitcher', 'is_alias' => true ) );
+			$choices[ $self_stitcher['endpoint_key'] ] = $self_stitcher;
+		}
+
 		$self_vendor = $this->maybe_build_user_endpoint( $user_id, self::ENDPOINT_VENDOR, $templates );
 		if ( ! empty( $self_vendor ) ) {
 			$choices['vendor'] = array_merge( $self_vendor, array( 'endpoint_key' => 'vendor', 'is_alias' => true ) );
@@ -107,6 +114,13 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 		if ( $this->can_directory_enumerate_transfer_targets( $user_id ) ) {
 			foreach ( $this->get_runtime_users_for_subtype( AIMS_Person_Identity_Service::SUBTYPE_MANAGER ) as $supervisor ) {
 				$endpoint = $this->build_user_endpoint_from_user( $supervisor, self::ENDPOINT_SUPERVISOR, $templates );
+				if ( ! empty( $endpoint ) ) {
+					$choices[ $endpoint['endpoint_key'] ] = $endpoint;
+				}
+			}
+
+			foreach ( $this->get_runtime_users_for_subtype( AIMS_Person_Identity_Service::SUBTYPE_STITCH ) as $stitch_user ) {
+				$endpoint = $this->build_user_endpoint_from_user( $stitch_user, self::ENDPOINT_STITCHER, $templates );
 				if ( ! empty( $endpoint ) ) {
 					$choices[ $endpoint['endpoint_key'] ] = $endpoint;
 				}
@@ -152,7 +166,7 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			}
 		}
 
-		foreach ( array( 'warehouse_main', 'supervisor_' . $user_id, 'vendor_' . $user_id, self::ENDPOINT_WAREHOUSE, self::ENDPOINT_SUPERVISOR, self::ENDPOINT_VENDOR ) as $endpoint_key ) {
+		foreach ( array( 'warehouse_main', 'supervisor_' . $user_id, 'stitcher_' . $user_id, 'vendor_' . $user_id, self::ENDPOINT_WAREHOUSE, self::ENDPOINT_SUPERVISOR, self::ENDPOINT_STITCHER, self::ENDPOINT_VENDOR ) as $endpoint_key ) {
 			if ( isset( $directory[ $endpoint_key ] ) ) {
 				return $directory[ $endpoint_key ];
 			}
@@ -191,7 +205,7 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			return $endpoint;
 		}
 
-		if ( '' !== $node_type && in_array( $node_type, array( self::ENDPOINT_VENDOR, self::ENDPOINT_SUPERVISOR, self::ENDPOINT_WAREHOUSE ), true ) ) {
+		if ( '' !== $node_type && in_array( $node_type, array( self::ENDPOINT_VENDOR, self::ENDPOINT_SUPERVISOR, self::ENDPOINT_STITCHER, self::ENDPOINT_WAREHOUSE ), true ) ) {
 			$endpoint = $this->get_endpoint( $node_type );
 			if ( is_array( $endpoint ) ) {
 				return array_merge( $endpoint, array( 'node_id' => $node_id > 0 ? $node_id : (int) ( $endpoint['node_id'] ?? 0 ) ) );
@@ -389,6 +403,17 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 					'suggested_targets'  => array( self::ENDPOINT_WAREHOUSE, self::ENDPOINT_SUPERVISOR ),
 				)
 			),
+			self::ENDPOINT_STITCHER => $this->normalize_endpoint(
+				array(
+					'endpoint_key'       => self::ENDPOINT_STITCHER,
+					'endpoint_label'     => 'Stitcher',
+					'node_type'          => 'stitcher',
+					'priority'           => 25,
+					'bucket_statuses'    => array( 'available', 'in_transit' ),
+					'current_location_types' => array( 'stitcher', 'vendor' ),
+					'suggested_targets'  => array( self::ENDPOINT_WAREHOUSE ),
+				)
+			),
 			self::ENDPOINT_SUPERVISOR => $this->normalize_endpoint(
 				array(
 					'endpoint_key'       => self::ENDPOINT_SUPERVISOR,
@@ -433,10 +458,12 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_SUPERVISOR_PORTAL )
 					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_EVENT_PLANNING );
 
+			case self::ENDPOINT_STITCHER:
+				return $this->user_has_stitch_authority( $user_id );
+
 			case self::ENDPOINT_VENDOR:
 			default:
 				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL )
-					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL )
 					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS );
 		}
 	}
@@ -486,6 +513,8 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			$node_ref_type = 'warehouse';
 		} elseif ( $this->user_has_supervisor_authority( $user_id ) ) {
 			$node_ref_type = 'supervisor';
+		} elseif ( $this->user_has_stitch_authority( $user_id ) ) {
+			$node_ref_type = 'stitcher';
 		} elseif ( $this->user_has_vendor_authority( $user_id ) ) {
 			$node_ref_type = 'vendor';
 		}
@@ -625,6 +654,9 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			case self::ENDPOINT_SUPERVISOR:
 				return $name . ' Supervisor Pool';
 
+			case self::ENDPOINT_STITCHER:
+				return $name . ' Stitcher Pool';
+
 			case self::ENDPOINT_VENDOR:
 			default:
 				return $name . ' Vendor Pool';
@@ -713,6 +745,9 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 			case self::ENDPOINT_SUPERVISOR:
 				return $this->user_has_supervisor_authority( $user_id );
 
+			case self::ENDPOINT_STITCHER:
+				return $this->user_has_stitch_authority( $user_id );
+
 			case self::ENDPOINT_VENDOR:
 				return $this->user_has_vendor_authority( $user_id );
 
@@ -742,11 +777,17 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 
 	private function user_has_vendor_authority( int $user_id ): bool {
 		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_VENDOR_PORTAL )
-			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL )
 			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_VENDOR_ACCESS )
 			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_RESP_VENDOR_MANAGEMENT )
 			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_RESP_VENDOR_SUBMIT_CHECKIN )
 			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_RESP_VENDOR_MANAGE_INVENTORY );
+	}
+
+	private function user_has_stitch_authority( int $user_id ): bool {
+		return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STITCH )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STITCH_ORDERS )
+			|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_RESP_STITCH_ORDER_MANAGEMENT );
 	}
 
 	private function user_matches_subtype_capability( int $user_id, string $subtype ): bool {
@@ -761,9 +802,7 @@ class AIMS_Inventory_Endpoint_Directory_Service {
 				return $this->user_has_warehouse_authority( $user_id );
 
 			case AIMS_Person_Identity_Service::SUBTYPE_STITCH:
-				return $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STITCH )
-					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_MANAGE_STITCH_ORDERS )
-					|| $this->user_has_cap( $user_id, AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL );
+				return $this->user_has_stitch_authority( $user_id );
 
 			default:
 				return false;

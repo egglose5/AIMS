@@ -80,6 +80,7 @@ class AIMS_Capabilities {
 			}
 		}
 
+		self::migrate_template_role_users_to_runtime_roles();
 		self::remove_template_roles_from_runtime();
 
 		foreach ( self::get_runtime_role_definitions() as $definition ) {
@@ -195,6 +196,35 @@ class AIMS_Capabilities {
 			'square_sync_undo'          => self::CAP_RESP_SQUARE_SYNC_UNDO,
 			'reports_view'              => self::CAP_RESP_REPORTS_VIEW,
 			'stitch_order_management'   => self::CAP_RESP_STITCH_ORDER_MANAGEMENT,
+		);
+	}
+
+	public static function get_person_subtype_capability_map(): array {
+		return array(
+			AIMS_Person_Identity_Service::SUBTYPE_VENDOR    => array(
+				self::CAP_VIEW_VENDOR_PORTAL,
+				self::CAP_RESP_VENDOR_SUBMIT_CHECKIN,
+			),
+			AIMS_Person_Identity_Service::SUBTYPE_STITCH    => array(
+				self::CAP_VIEW_STITCH_PORTAL,
+				self::CAP_RESP_STITCH_ORDER_MANAGEMENT,
+				self::CAP_MANAGE_STITCH,
+				self::CAP_MANAGE_STITCH_ORDERS,
+			),
+			AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE => array(
+				self::CAP_MANAGE_INVENTORY,
+				self::CAP_MANAGE_STORAGE_LOCATIONS,
+				self::CAP_MANAGE_PHYSICAL_BUCKETS,
+				self::CAP_MANAGE_EVENT_BUCKETS,
+				self::CAP_BYPASS_INVENTORY_TRANSFER_PROTOCOL,
+			),
+			AIMS_Person_Identity_Service::SUBTYPE_MANAGER   => array(
+				self::CAP_VIEW_SUPERVISOR_PORTAL,
+				self::CAP_MANAGE_EVENT_PLANNING,
+				self::CAP_RESP_EVENT_PLANNING_ACCESS,
+				self::CAP_RESP_EVENT_PLANNING_MUTATE,
+				self::CAP_RESP_EVENT_PLANNING_ALL,
+			),
 		);
 	}
 
@@ -578,6 +608,85 @@ class AIMS_Capabilities {
 				remove_role( $role_slug );
 			}
 		}
+	}
+
+	private static function migrate_template_role_users_to_runtime_roles(): void {
+		if ( ! function_exists( 'get_users' ) ) {
+			return;
+		}
+
+		foreach ( self::get_role_templates() as $template_slug => $template ) {
+			$users = get_users(
+				array(
+					'role__in' => array( $template_slug ),
+					'fields'   => array( 'ID' ),
+				)
+			);
+
+			if ( ! is_array( $users ) || empty( $users ) ) {
+				continue;
+			}
+
+			$runtime_slug = self::get_migrated_runtime_role_slug( (string) $template_slug );
+			if ( ! isset( self::get_custom_role_registry()[ $runtime_slug ] ) ) {
+				self::create_or_update_custom_role(
+					$runtime_slug,
+					(string) ( $template['role_name'] ?? $runtime_slug ) . ' (Migrated)',
+					(string) $template_slug,
+					(array) ( $template['caps'] ?? array() ),
+					(array) ( $template['person_subtypes'] ?? array() )
+				);
+			}
+
+			foreach ( $users as $user_row ) {
+				$user_id = is_object( $user_row ) ? (int) ( $user_row->ID ?? 0 ) : (int) $user_row;
+				if ( $user_id <= 0 ) {
+					continue;
+				}
+
+				self::replace_user_role( $user_id, (string) $template_slug, $runtime_slug );
+			}
+		}
+	}
+
+	private static function get_migrated_runtime_role_slug( string $template_slug ): string {
+		$suffix = preg_replace( '/^aims_/', '', sanitize_key( $template_slug ) );
+
+		return 'aims_migrated_' . $suffix;
+	}
+
+	private static function replace_user_role( int $user_id, string $old_role_slug, string $new_role_slug ): void {
+		if ( $user_id <= 0 || '' === $old_role_slug || '' === $new_role_slug ) {
+			return;
+		}
+
+		if ( class_exists( 'WP_User' ) ) {
+			$user = new WP_User( $user_id );
+			if ( method_exists( $user, 'add_role' ) ) {
+				$user->add_role( $new_role_slug );
+			}
+			if ( method_exists( $user, 'remove_role' ) ) {
+				$user->remove_role( $old_role_slug );
+			}
+			return;
+		}
+
+		if ( ! function_exists( 'get_user_by' ) ) {
+			return;
+		}
+
+		$user = get_user_by( 'id', $user_id );
+		if ( ! is_object( $user ) ) {
+			return;
+		}
+
+		$roles = isset( $user->roles ) && is_array( $user->roles ) ? array_values( array_map( 'sanitize_key', $user->roles ) ) : array();
+		$roles = array_values( array_diff( $roles, array( sanitize_key( $old_role_slug ) ) ) );
+		if ( ! in_array( sanitize_key( $new_role_slug ), $roles, true ) ) {
+			$roles[] = sanitize_key( $new_role_slug );
+		}
+
+		$user->roles = $roles;
 	}
 
 	private static function sync_role_definition( array $definition ): void {

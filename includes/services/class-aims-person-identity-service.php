@@ -11,31 +11,24 @@ class AIMS_Person_Identity_Service {
 	public const SUBTYPE_MANAGER = 'manager';
 
 	public function is_aims_person( int $user_id ): bool {
-		if ( $user_id <= 0 ) {
-			return false;
-		}
-
-		$user = function_exists( 'get_user_by' ) ? get_user_by( 'id', $user_id ) : null;
-		if ( ! is_object( $user ) ) {
-			return false;
-		}
-
-		$roles = $this->extract_roles( $user );
-		if ( empty( $roles ) ) {
-			return false;
-		}
-
-		foreach ( $roles as $role_slug ) {
-			if ( is_array( AIMS_Capabilities::get_runtime_role_definitions()[ $role_slug ] ?? null ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return ! empty( $this->resolve_person_subtypes( $user_id ) );
 	}
 
 	public function get_person_subtypes( int $user_id ): array {
-		if ( ! $this->is_aims_person( $user_id ) ) {
+		return $this->resolve_person_subtypes( $user_id );
+	}
+
+	public function has_person_subtype( int $user_id, string $subtype ): bool {
+		$subtype = sanitize_key( $subtype );
+		if ( '' === $subtype ) {
+			return false;
+		}
+
+		return in_array( $subtype, $this->get_person_subtypes( $user_id ), true );
+	}
+
+	private function resolve_person_subtypes( int $user_id ): array {
+		if ( $user_id <= 0 ) {
 			return array();
 		}
 
@@ -51,16 +44,16 @@ class AIMS_Person_Identity_Service {
 			$subtypes = array_merge( $subtypes, AIMS_Capabilities::get_person_subtypes_for_role( $role_slug ) );
 		}
 
-		return array_values( array_unique( $subtypes ) );
-	}
-
-	public function has_person_subtype( int $user_id, string $subtype ): bool {
-		$subtype = sanitize_key( $subtype );
-		if ( '' === $subtype ) {
-			return false;
+		foreach ( AIMS_Capabilities::get_person_subtype_capability_map() as $subtype => $caps ) {
+			foreach ( (array) $caps as $cap ) {
+				if ( function_exists( 'user_can' ) && user_can( $user_id, (string) $cap ) ) {
+					$subtypes[] = sanitize_key( (string) $subtype );
+					break;
+				}
+			}
 		}
 
-		return in_array( $subtype, $this->get_person_subtypes( $user_id ), true );
+		return array_values( array_unique( $subtypes ) );
 	}
 
 	private function extract_roles( $user ): array {

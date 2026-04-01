@@ -262,4 +262,32 @@ final class InventoryEndpointDirectoryServiceTest extends \AIMS\Tests\TestCase {
 
 		$this->assertArrayHasKey( 'warehouse_main', $endpoints );
 	}
+
+	public function testStitchPortalCapabilitySurfacesStitcherEndpointInsteadOfVendorEndpoint(): void {
+		TestState::set_current_user_id( 68 );
+		TestState::set_user_capabilities(
+			68,
+			array(
+				\AIMS_Capabilities::CAP_VIEW_STITCH_PORTAL,
+			)
+		);
+		TestState::set_user(
+			68,
+			(object) array(
+				'ID'           => 68,
+				'display_name' => 'Stitch Operator',
+				'roles'        => array(),
+			)
+		);
+
+		$service   = new \AIMS_Inventory_Endpoint_Directory_Service();
+		$endpoints = $service->get_runtime_endpoints( 68 );
+		$resolved  = $service->resolve_runtime_endpoint( 68 );
+
+		$this->assertArrayHasKey( 'stitcher', $endpoints );
+		$this->assertArrayHasKey( 'stitcher_68', $endpoints );
+		$this->assertArrayNotHasKey( 'vendor', $endpoints );
+		$this->assertSame( 'stitcher_68', $resolved['endpoint_key'] );
+		$this->assertSame( 'stitcher', $resolved['node_type'] );
+	}
 }
