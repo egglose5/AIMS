@@ -15,6 +15,7 @@ class AIMS_Role_Editor_Service {
 			'custom_roles'      => AIMS_Capabilities::get_custom_role_registry(),
 			'editing_role'      => is_array( $editing_role ) ? $editing_role : null,
 			'editing_role_slug' => $editing_role_slug,
+			'supported_surfaces' => AIMS_Capabilities::get_supported_surfaces(),
 			'capability_groups' => $this->build_capability_groups( $selected_caps ),
 		);
 	}

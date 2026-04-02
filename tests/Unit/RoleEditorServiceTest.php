@@ -67,6 +67,8 @@ final class RoleEditorServiceTest extends \AIMS\Tests\TestCase {
 
 		$this->assertArrayHasKey( \AIMS_Capabilities::ROLE_WAREHOUSE_USER, $model['templates'] );
 		$this->assertArrayHasKey( 'aims_custom_ops_lead', $model['custom_roles'] );
+		$this->assertArrayHasKey( \AIMS_Capabilities::SURFACE_WP_ADMIN, $model['supported_surfaces'] );
+		$this->assertArrayHasKey( \AIMS_Capabilities::SURFACE_MOBILE_APP, $model['supported_surfaces'] );
 		$this->assertSame( 'aims_custom_ops_lead', $model['editing_role']['role_slug'] );
 		$this->assertSame( \AIMS_Capabilities::ROLE_WAREHOUSE_USER, $model['editing_role']['template_key'] );
 		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE, $model['editing_role']['person_subtypes'] );
@@ -92,5 +94,13 @@ final class RoleEditorServiceTest extends \AIMS\Tests\TestCase {
 
 		$this->assertTrue( $service->delete_role( 'aims_custom_temp_role' ) );
 		$this->assertArrayNotHasKey( 'aims_custom_temp_role', \AIMS_Capabilities::get_custom_role_registry() );
+	}
+
+	public function testSupportedSurfacesExposeWpAdminAndMobileApp(): void {
+		$service = new \AIMS_Role_Editor_Service();
+		$model   = $service->get_page_model();
+
+		$this->assertSame( 'WordPress Dashboard', $model['supported_surfaces'][ \AIMS_Capabilities::SURFACE_WP_ADMIN ] );
+		$this->assertSame( 'Mobile App', $model['supported_surfaces'][ \AIMS_Capabilities::SURFACE_MOBILE_APP ] );
 	}
 }

@@ -42,6 +42,42 @@ class AIMS_Headless_Api_Client {
 		) );
 	}
 
+	public function get_buckets( array $query = array() ): array {
+		return $this->request( 'GET', '/buckets', array(
+			'query' => $query,
+		) );
+	}
+
+	public function register_bucket( array $payload ): array {
+		return $this->request( 'POST', '/buckets', array(
+			'body' => $payload,
+		) );
+	}
+
+	public function receive_fifo( array $payload ): array {
+		return $this->request( 'POST', '/fifo/receive', array(
+			'body' => $payload,
+		) );
+	}
+
+	public function move_custody( array $payload ): array {
+		return $this->request( 'POST', '/custody/move', array(
+			'body' => $payload,
+		) );
+	}
+
+	public function get_fifo_availability( array $query = array() ): array {
+		return $this->request( 'GET', '/fifo/availability', array(
+			'query' => $query,
+		) );
+	}
+
+	public function pick_fifo( array $payload ): array {
+		return $this->request( 'POST', '/fifo/pick', array(
+			'body' => $payload,
+		) );
+	}
+
 	public function push_manifest( array $payload ): array {
 		return $this->request( 'POST', '/manifest/push', array(
 			'body' => $payload,

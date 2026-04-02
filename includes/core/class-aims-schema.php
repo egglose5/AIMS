@@ -12,6 +12,7 @@ class AIMS_Schema {
 			$wpdb->prefix . 'aims_responsibility_templates',
 			$wpdb->prefix . 'aims_template_responsibilities',
 			$wpdb->prefix . 'aims_user_responsibilities',
+			$wpdb->prefix . 'aims_user_surface_capabilities',
 			$wpdb->prefix . 'aims_customers',
 			$wpdb->prefix . 'aims_customer_addresses',
 			$wpdb->prefix . 'aims_events',
@@ -65,6 +66,7 @@ class AIMS_Schema {
 		$responsibility_templates_table = $wpdb->prefix . 'aims_responsibility_templates';
 		$template_responsibilities_table = $wpdb->prefix . 'aims_template_responsibilities';
 		$user_responsibilities_table = $wpdb->prefix . 'aims_user_responsibilities';
+		$user_surface_capabilities_table = $wpdb->prefix . 'aims_user_surface_capabilities';
 		$customers_table         = $wpdb->prefix . 'aims_customers';
 		$customer_addresses_table = $wpdb->prefix . 'aims_customer_addresses';
 		$events_table            = $wpdb->prefix . 'aims_events';
@@ -161,6 +163,27 @@ class AIMS_Schema {
 				KEY template_key (template_key),
 				KEY granted_by (granted_by),
 				KEY revoked_by (revoked_by)
+			) {$charset_collate};",
+			"CREATE TABLE {$user_surface_capabilities_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				user_id bigint(20) unsigned NOT NULL,
+				capability_key varchar(100) NOT NULL,
+				surface varchar(32) NOT NULL DEFAULT 'wp_admin',
+				scope_type varchar(32) NOT NULL DEFAULT 'global',
+				scope_ref_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				access_mode varchar(16) NOT NULL DEFAULT 'deny',
+				is_active tinyint(1) NOT NULL DEFAULT 1,
+				note text NULL,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY user_capability_surface_scope (user_id, capability_key, surface, scope_type, scope_ref_id),
+				KEY user_id (user_id),
+				KEY capability_key (capability_key),
+				KEY surface (surface),
+				KEY scope_lookup (scope_type, scope_ref_id),
+				KEY access_mode (access_mode),
+				KEY is_active (is_active)
 			) {$charset_collate};",
 			"CREATE TABLE {$customers_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

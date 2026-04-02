@@ -9,6 +9,11 @@ class AIMS_Admin_Menu {
 	const SETTINGS_PAGE_SLUG  = 'aims-settings';
 	const SETTINGS_GROUP      = 'aims_headless_settings';
 	const NOTICE_QUERY_ARG    = 'aims_notice';
+	private $surface_authorization;
+
+	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null ) {
+		$this->surface_authorization = $surface_authorization ?: new AIMS_Surface_Authorization_Service();
+	}
 
 	public function register(): void {
 		add_menu_page(
@@ -41,6 +46,10 @@ class AIMS_Admin_Menu {
 
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_post_aims_submit_remote_move', array( $this, 'handle_submit_remote_move' ) );
+		add_action( 'admin_post_aims_register_remote_bucket', array( $this, 'handle_register_remote_bucket' ) );
+		add_action( 'admin_post_aims_receive_remote_fifo', array( $this, 'handle_receive_remote_fifo' ) );
+		add_action( 'admin_post_aims_move_remote_custody', array( $this, 'handle_move_remote_custody' ) );
+		add_action( 'admin_post_aims_pick_remote_fifo', array( $this, 'handle_pick_remote_fifo' ) );
 		add_action( 'admin_post_aims_sync_remote_manifest', array( $this, 'handle_sync_remote_manifest' ) );
 		add_action( 'admin_post_aims_trigger_remote_archive', array( $this, 'handle_trigger_remote_archive' ) );
 	}
@@ -95,7 +104,17 @@ class AIMS_Admin_Menu {
 	public function render_dashboard(): void {
 		$client        = AIMS_Headless_Api_Client::from_plugin_options();
 		$manifest      = $client->get_manifest();
+		$buckets       = $client->get_buckets();
+		$availability  = array(
+			'success' => false,
+			'json'    => array(),
+		);
+		$availability_query = $this->get_fifo_availability_query();
 		$notice        = $this->get_notice();
+
+		if ( $client->is_configured() && '' !== (string) ( $availability_query['sku'] ?? '' ) ) {
+			$availability = $client->get_fifo_availability( $availability_query );
+		}
 
 		echo '<div class="wrap aims-headless-dashboard">';
 		echo '<h1>AIMS Control</h1>';
@@ -117,6 +136,36 @@ class AIMS_Admin_Menu {
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Record a Movement</h2>';
 		$this->render_remote_move_form();
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>Bucket Registry</h2>';
+		$this->render_remote_bucket_form();
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>Current Buckets</h2>';
+		$this->render_remote_bucket_list( $buckets );
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>Receive Inventory</h2>';
+		$this->render_remote_fifo_receive_form();
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>Custody Move</h2>';
+		$this->render_remote_custody_form();
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>FIFO Availability</h2>';
+		$this->render_remote_fifo_availability( $availability, $availability_query );
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>FIFO Pick</h2>';
+		$this->render_remote_fifo_pick_form();
 		echo '</div>';
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
@@ -181,6 +230,91 @@ class AIMS_Admin_Menu {
 		) );
 	}
 
+	public function handle_register_remote_bucket(): void {
+		$this->require_capability();
+		check_admin_referer( 'aims_register_remote_bucket' );
+
+		$payload = array(
+			'bucket_code'      => $this->sanitize_request_string( $_POST['bucket_code'] ?? '' ),
+			'bucket_label'     => $this->sanitize_request_string( $_POST['bucket_label'] ?? '' ),
+			'bucket_type'      => $this->sanitize_request_string( $_POST['bucket_type'] ?? 'physical' ),
+			'status'           => $this->sanitize_request_string( $_POST['status'] ?? 'active' ),
+			'show_id'          => $this->sanitize_request_string( $_POST['show_id'] ?? '' ),
+			'current_location' => $this->sanitize_request_string( $_POST['current_location'] ?? '' ),
+			'current_custody'  => $this->sanitize_request_string( $_POST['current_custody'] ?? '' ),
+		);
+
+		$response = AIMS_Headless_Api_Client::from_plugin_options()->register_bucket( $payload );
+		$this->redirect_back( array(
+			self::NOTICE_QUERY_ARG => $response['success'] ? 'bucket_saved' : 'bucket_failed',
+		) );
+	}
+
+	public function handle_receive_remote_fifo(): void {
+		$this->require_capability();
+		check_admin_referer( 'aims_receive_remote_fifo' );
+
+		$payload = array(
+			'bucket_code'       => $this->sanitize_request_string( $_POST['bucket_code'] ?? '' ),
+			'sku'               => $this->sanitize_request_string( $_POST['sku'] ?? '' ),
+			'show_id'           => $this->sanitize_request_string( $_POST['show_id'] ?? '' ),
+			'current_location'  => $this->sanitize_request_string( $_POST['current_location'] ?? '' ),
+			'current_custody'   => $this->sanitize_request_string( $_POST['current_custody'] ?? '' ),
+			'receipt_reference' => $this->sanitize_request_string( $_POST['receipt_reference'] ?? '' ),
+			'source_reference'  => $this->sanitize_request_string( $_POST['source_reference'] ?? '' ),
+			'quantity'          => $this->sanitize_request_float( $_POST['quantity'] ?? 0 ),
+			'unit_cost'         => $this->sanitize_request_float( $_POST['unit_cost'] ?? 0 ),
+		);
+
+		$response = AIMS_Headless_Api_Client::from_plugin_options()->receive_fifo( $payload );
+		$this->redirect_back( array(
+			self::NOTICE_QUERY_ARG => $response['success'] ? 'receipt_sent' : 'receipt_failed',
+		) );
+	}
+
+	public function handle_move_remote_custody(): void {
+		$this->require_capability();
+		check_admin_referer( 'aims_move_remote_custody' );
+
+		$payload = array(
+			'bucket_code'    => $this->sanitize_request_string( $_POST['bucket_code'] ?? '' ),
+			'from_location'  => $this->sanitize_request_string( $_POST['from_location'] ?? '' ),
+			'to_location'    => $this->sanitize_request_string( $_POST['to_location'] ?? '' ),
+			'from_custody'   => $this->sanitize_request_string( $_POST['from_custody'] ?? '' ),
+			'to_custody'     => $this->sanitize_request_string( $_POST['to_custody'] ?? '' ),
+			'reference_type' => $this->sanitize_request_string( $_POST['reference_type'] ?? '' ),
+			'reference_id'   => $this->sanitize_request_string( $_POST['reference_id'] ?? '' ),
+			'movement_type'  => $this->sanitize_request_string( $_POST['movement_type'] ?? 'custody_transfer' ),
+			'note'           => $this->sanitize_request_string( $_POST['note'] ?? '' ),
+		);
+
+		$response = AIMS_Headless_Api_Client::from_plugin_options()->move_custody( $payload );
+		$this->redirect_back( array(
+			self::NOTICE_QUERY_ARG => $response['success'] ? 'custody_moved' : 'custody_failed',
+		) );
+	}
+
+	public function handle_pick_remote_fifo(): void {
+		$this->require_capability();
+		check_admin_referer( 'aims_pick_remote_fifo' );
+
+		$payload = array(
+			'sku'               => $this->sanitize_request_string( $_POST['sku'] ?? '' ),
+			'show_id'           => $this->sanitize_request_string( $_POST['show_id'] ?? '' ),
+			'request_reference' => $this->sanitize_request_string( $_POST['request_reference'] ?? '' ),
+			'quantity'          => $this->sanitize_request_float( $_POST['quantity'] ?? 0 ),
+			'amount_paid'       => $this->sanitize_request_float( $_POST['amount_paid'] ?? 0 ),
+			'tax_amount'        => $this->sanitize_request_float( $_POST['tax_amount'] ?? 0 ),
+		);
+
+		$response = AIMS_Headless_Api_Client::from_plugin_options()->pick_fifo( $payload );
+		$this->redirect_back( array(
+			self::NOTICE_QUERY_ARG => $response['success'] ? 'fifo_picked' : 'fifo_pick_failed',
+			'aims_fifo_sku'        => $payload['sku'],
+			'aims_fifo_show_id'    => $payload['show_id'],
+		) );
+	}
+
 	public function handle_trigger_remote_archive(): void {
 		$this->require_capability();
 		check_admin_referer( 'aims_trigger_remote_archive' );
@@ -227,6 +361,154 @@ class AIMS_Admin_Menu {
 		echo '</form>';
 	}
 
+	private function render_remote_bucket_form(): void {
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="aims_register_remote_bucket" />';
+		wp_nonce_field( 'aims_register_remote_bucket' );
+
+		echo '<table class="form-table"><tbody>';
+		echo '<tr><th scope="row"><label for="aims-bucket-code">Bucket Code</label></th><td><input id="aims-bucket-code" type="text" class="regular-text" name="bucket_code" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-bucket-label">Bucket Label</label></th><td><input id="aims-bucket-label" type="text" class="regular-text" name="bucket_label" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-bucket-type">Bucket Type</label></th><td><input id="aims-bucket-type" type="text" class="regular-text" name="bucket_type" value="physical" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-bucket-status">Status</label></th><td><input id="aims-bucket-status" type="text" class="regular-text" name="status" value="active" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-bucket-show-id">Show ID</label></th><td><input id="aims-bucket-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-bucket-current-location">Current Location</label></th><td><input id="aims-bucket-current-location" type="text" class="regular-text" name="current_location" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-bucket-current-custody">Current Custody</label></th><td><input id="aims-bucket-current-custody" type="text" class="regular-text" name="current_custody" /></td></tr>';
+		echo '</tbody></table>';
+
+		submit_button( 'Register Bucket', 'secondary' );
+		echo '</form>';
+	}
+
+	private function render_remote_bucket_list( array $buckets ): void {
+		if ( empty( $buckets['success'] ) ) {
+			echo '<p><strong>Connection error:</strong> ' . esc_html( (string) ( $buckets['message'] ?? 'Unable to load buckets from AIMS Core.' ) ) . '</p>';
+			return;
+		}
+
+		$rows = is_array( $buckets['json']['buckets'] ?? null ) ? $buckets['json']['buckets'] : array();
+		if ( empty( $rows ) ) {
+			echo '<p>No buckets returned by AIMS Core yet.</p>';
+			return;
+		}
+
+		echo '<table class="widefat striped"><thead><tr><th>Bucket</th><th>Type</th><th>Show</th><th>Location</th><th>Custody</th><th>On Hand</th><th>Status</th></tr></thead><tbody>';
+		foreach ( $rows as $row ) {
+			echo '<tr>';
+			echo '<td>' . esc_html( (string) ( $row['bucket_code'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['bucket_type'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['show_id'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['current_location'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['current_custody'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['on_hand_quantity'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['status'] ?? '' ) ) . '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	private function render_remote_fifo_receive_form(): void {
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="aims_receive_remote_fifo" />';
+		wp_nonce_field( 'aims_receive_remote_fifo' );
+
+		echo '<table class="form-table"><tbody>';
+		echo '<tr><th scope="row"><label for="aims-receive-bucket-code">Bucket Code</label></th><td><input id="aims-receive-bucket-code" type="text" class="regular-text" name="bucket_code" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-sku">SKU</label></th><td><input id="aims-receive-sku" type="text" class="regular-text" name="sku" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-show-id">Show ID</label></th><td><input id="aims-receive-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-location">Current Location</label></th><td><input id="aims-receive-location" type="text" class="regular-text" name="current_location" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-custody">Current Custody</label></th><td><input id="aims-receive-custody" type="text" class="regular-text" name="current_custody" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-reference">Receipt Reference</label></th><td><input id="aims-receive-reference" type="text" class="regular-text" name="receipt_reference" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-source-reference">Source Reference</label></th><td><input id="aims-receive-source-reference" type="text" class="regular-text" name="source_reference" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-quantity">Quantity</label></th><td><input id="aims-receive-quantity" type="number" min="0.0001" step="0.0001" name="quantity" value="1" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-unit-cost">Unit Cost</label></th><td><input id="aims-receive-unit-cost" type="number" min="0" step="0.01" name="unit_cost" value="0.00" required /></td></tr>';
+		echo '</tbody></table>';
+
+		submit_button( 'Receive Inventory', 'secondary' );
+		echo '</form>';
+	}
+
+	private function render_remote_custody_form(): void {
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="aims_move_remote_custody" />';
+		wp_nonce_field( 'aims_move_remote_custody' );
+
+		echo '<table class="form-table"><tbody>';
+		echo '<tr><th scope="row"><label for="aims-custody-bucket-code">Bucket Code</label></th><td><input id="aims-custody-bucket-code" type="text" class="regular-text" name="bucket_code" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-from-location">From Location</label></th><td><input id="aims-custody-from-location" type="text" class="regular-text" name="from_location" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-to-location">To Location</label></th><td><input id="aims-custody-to-location" type="text" class="regular-text" name="to_location" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-from-custody">From Custody</label></th><td><input id="aims-custody-from-custody" type="text" class="regular-text" name="from_custody" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-to-custody">To Custody</label></th><td><input id="aims-custody-to-custody" type="text" class="regular-text" name="to_custody" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-reference-type">Reference Type</label></th><td><input id="aims-custody-reference-type" type="text" class="regular-text" name="reference_type" value="custody_transfer" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-reference-id">Reference ID</label></th><td><input id="aims-custody-reference-id" type="text" class="regular-text" name="reference_id" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-movement-type">Movement Type</label></th><td><input id="aims-custody-movement-type" type="text" class="regular-text" name="movement_type" value="custody_transfer" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-note">Note</label></th><td><input id="aims-custody-note" type="text" class="regular-text" name="note" /></td></tr>';
+		echo '</tbody></table>';
+
+		submit_button( 'Move Custody', 'secondary' );
+		echo '</form>';
+	}
+
+	private function render_remote_fifo_availability( array $availability, array $query ): void {
+		echo '<form method="get" action="' . esc_url( admin_url( 'admin.php' ) ) . '">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::MENU_SLUG ) . '" />';
+		echo '<table class="form-table"><tbody>';
+		echo '<tr><th scope="row"><label for="aims-fifo-sku">SKU</label></th><td><input id="aims-fifo-sku" type="text" class="regular-text" name="aims_fifo_sku" value="' . esc_attr( (string) ( $query['sku'] ?? '' ) ) . '" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-fifo-show-id">Show ID</label></th><td><input id="aims-fifo-show-id" type="text" class="regular-text" name="aims_fifo_show_id" value="' . esc_attr( (string) ( $query['show_id'] ?? '' ) ) . '" /></td></tr>';
+		echo '</tbody></table>';
+		submit_button( 'Lookup FIFO Availability', 'secondary', '', false );
+		echo '</form>';
+
+		if ( '' === (string) ( $query['sku'] ?? '' ) ) {
+			echo '<p>Enter a SKU to query FIFO availability from AIMS Core.</p>';
+			return;
+		}
+
+		if ( empty( $availability['success'] ) ) {
+			echo '<p><strong>Lookup error:</strong> ' . esc_html( (string) ( $availability['message'] ?? 'Unable to load FIFO availability.' ) ) . '</p>';
+			return;
+		}
+
+		$rows = is_array( $availability['json']['availability'] ?? null ) ? $availability['json']['availability'] : array();
+		if ( empty( $rows ) ) {
+			echo '<p>No eligible FIFO lots are available for this SKU.</p>';
+			return;
+		}
+
+		echo '<table class="widefat striped"><thead><tr><th>Lot</th><th>Bucket</th><th>Show</th><th>Remaining</th><th>Unit Cost</th><th>Received</th><th>Location</th><th>Custody</th></tr></thead><tbody>';
+		foreach ( $rows as $row ) {
+			echo '<tr>';
+			echo '<td>' . esc_html( (string) ( $row['lot_uuid'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['bucket_code'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['show_id'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['remaining_quantity'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['unit_cost'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['received_at'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['current_location'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['current_custody'] ?? '' ) ) . '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	private function render_remote_fifo_pick_form(): void {
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="aims_pick_remote_fifo" />';
+		wp_nonce_field( 'aims_pick_remote_fifo' );
+
+		echo '<table class="form-table"><tbody>';
+		echo '<tr><th scope="row"><label for="aims-pick-sku">SKU</label></th><td><input id="aims-pick-sku" type="text" class="regular-text" name="sku" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-pick-show-id">Show ID</label></th><td><input id="aims-pick-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-pick-request-reference">Request Reference</label></th><td><input id="aims-pick-request-reference" type="text" class="regular-text" name="request_reference" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-pick-quantity">Quantity</label></th><td><input id="aims-pick-quantity" type="number" min="0.0001" step="0.0001" name="quantity" value="1" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-pick-amount-paid">Amount Paid</label></th><td><input id="aims-pick-amount-paid" type="number" min="0" step="0.01" name="amount_paid" value="0.00" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-pick-tax-amount">Tax Amount</label></th><td><input id="aims-pick-tax-amount" type="number" min="0" step="0.01" name="tax_amount" value="0.00" /></td></tr>';
+		echo '</tbody></table>';
+
+		submit_button( 'Run FIFO Pick', 'primary' );
+		echo '</form>';
+	}
+
 	private function render_remote_archive_form(): void {
 		echo '<p>Trigger the PHP-only archive flow in the headless core.</p>';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
@@ -263,6 +545,14 @@ class AIMS_Admin_Menu {
 		$message_map = array(
 			'movement_sent'  => array( 'success', 'Movement request sent to the AIMS core.' ),
 			'movement_failed'=> array( 'error', 'Movement request failed.' ),
+			'bucket_saved'   => array( 'success', 'Bucket saved in AIMS Core.' ),
+			'bucket_failed'  => array( 'error', 'Bucket save failed.' ),
+			'receipt_sent'   => array( 'success', 'Inbound receipt sent to AIMS Core.' ),
+			'receipt_failed' => array( 'error', 'Inbound receipt failed.' ),
+			'custody_moved'  => array( 'success', 'Custody move sent to AIMS Core.' ),
+			'custody_failed' => array( 'error', 'Custody move failed.' ),
+			'fifo_picked'    => array( 'success', 'FIFO pick completed in AIMS Core.' ),
+			'fifo_pick_failed' => array( 'error', 'FIFO pick failed.' ),
 			'manifest_synced'=> array( 'success', 'Manifest sync completed.' ),
 			'manifest_sync_failed' => array( 'error', 'Manifest sync failed.' ),
 			'archive_started'=> array( 'success', 'Archive request sent.' ),
@@ -304,8 +594,19 @@ class AIMS_Admin_Menu {
 		return sanitize_text_field( (string) wp_unslash( $value ) );
 	}
 
+	private function sanitize_request_float( $value ): float {
+		return round( (float) wp_unslash( $value ), 4 );
+	}
+
+	private function get_fifo_availability_query(): array {
+		return array(
+			'sku'     => isset( $_GET['aims_fifo_sku'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_sku'] ) : '',
+			'show_id' => isset( $_GET['aims_fifo_show_id'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_show_id'] ) : '',
+		);
+	}
+
 	private function require_capability(): void {
-		if ( ! current_user_can( $this->get_menu_capability() ) ) {
+		if ( ! $this->surface_authorization->current_user_can_for_surface( $this->get_menu_capability(), AIMS_Capabilities::SURFACE_WP_ADMIN ) ) {
 			wp_die( esc_html__( 'You do not have permission to access the AIMS dashboard.', 'ai-man-sys' ) );
 		}
 	}

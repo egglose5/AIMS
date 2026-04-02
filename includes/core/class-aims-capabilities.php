@@ -13,6 +13,10 @@ class AIMS_Capabilities {
 
 	public const OPTION_CUSTOM_ROLE_REGISTRY = 'aims_custom_role_registry';
 
+	public const SURFACE_WP_ADMIN   = 'wp_admin';
+	public const SURFACE_MOBILE_APP = 'mobile_app';
+	public const SURFACE_API_DIRECT = 'api_direct';
+
 	public const CAP_MANAGE                         = 'manage_aims';
 	public const CAP_MANAGE_VENDORS                 = 'manage_aims_vendors';
 	public const CAP_MANAGE_EVENTS                  = 'manage_aims_events';
@@ -311,6 +315,14 @@ class AIMS_Capabilities {
 					self::CAP_VIEW_SUPERVISOR_PORTAL,
 				),
 			),
+		);
+	}
+
+	public static function get_supported_surfaces(): array {
+		return array(
+			self::SURFACE_WP_ADMIN   => 'WordPress Dashboard',
+			self::SURFACE_MOBILE_APP => 'Mobile App',
+			self::SURFACE_API_DIRECT => 'Direct API',
 		);
 	}
 

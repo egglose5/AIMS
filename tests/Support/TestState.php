@@ -18,9 +18,44 @@ final class TestState {
 			'user_caps'       => array(),
 			'hook_calls'      => array(),
 			'options'         => array(),
+			'remote_requests' => array(),
+			'remote_response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+				'headers' => array(),
+				'body'    => '',
+			),
 			'throw_on_redirect' => false,
 			'current_time'    => '2026-01-01 00:00:00',
 		);
+	}
+
+	public static function set_remote_response( array $response ): void {
+		self::$state['remote_response'] = array_merge(
+			array(
+				'code'    => 200,
+				'message' => 'OK',
+				'headers' => array(),
+				'body'    => '',
+			),
+			$response
+		);
+	}
+
+	public static function remote_response(): array {
+		return (array) ( self::$state['remote_response'] ?? array() );
+	}
+
+	public static function record_remote_request( string $method, string $url, array $args = array() ): void {
+		self::$state['remote_requests'][] = array(
+			'method' => strtoupper( $method ),
+			'url'    => $url,
+			'args'   => $args,
+		);
+	}
+
+	public static function get_remote_requests(): array {
+		return array_values( self::$state['remote_requests'] ?? array() );
 	}
 
 	public static function get_option( string $option, $default = false ) {

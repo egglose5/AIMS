@@ -45,6 +45,10 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 
 		$this->assertNotEmpty( TestState::get_hook_calls( 'admin_init' ) );
 		$this->assertNotEmpty( TestState::get_hook_calls( 'admin_post_aims_submit_remote_move' ) );
+		$this->assertNotEmpty( TestState::get_hook_calls( 'admin_post_aims_register_remote_bucket' ) );
+		$this->assertNotEmpty( TestState::get_hook_calls( 'admin_post_aims_receive_remote_fifo' ) );
+		$this->assertNotEmpty( TestState::get_hook_calls( 'admin_post_aims_move_remote_custody' ) );
+		$this->assertNotEmpty( TestState::get_hook_calls( 'admin_post_aims_pick_remote_fifo' ) );
 		$this->assertNotEmpty( TestState::get_hook_calls( 'admin_post_aims_sync_remote_manifest' ) );
 		$this->assertNotEmpty( TestState::get_hook_calls( 'admin_post_aims_trigger_remote_archive' ) );
 	}
