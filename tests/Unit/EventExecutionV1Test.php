@@ -175,6 +175,104 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$this->assertSame( 654, $positions->updated[0]['last_bucket_movement_id'] );
 	}
 
+	public function testVendorEventCheckinUpdatesBucketSealProjectionAndWritesSealCheckpoint(): void {
+		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public array $transitions = array();
+
+			public function __construct() {}
+
+			public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
+				$this->transitions[] = compact( 'assignment_id', 'status', 'data' );
+				return true;
+			}
+		};
+
+		$assignment_repository = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 10,
+					'physical_bucket_id' => 200,
+					'assignment_status'  => 'in_transit',
+					'is_active'          => 1,
+				);
+			}
+		};
+
+		$bucket_positions = new class() extends \AIMS_Bucket_Inventory_Position_Repository {
+			public function get_for_bucket( int $bucket_id ): array {
+				return array(
+					array(
+						'product_id' => 901,
+						'vendor_id'  => 5,
+						'quantity'   => 2.0,
+					),
+				);
+			}
+		};
+
+		$bucket_movement_service = new class() extends \AIMS_Bucket_Movement_Service {
+			public array $calls = array();
+
+			public function __construct() {}
+
+			public function record_event_load_out( array $data ) {
+				$this->calls[] = $data;
+
+				return array(
+					'movement_id'      => 900,
+					'current_quantity' => 2.0,
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function get_primary_for_event( int $event_id ): ?array {
+				return array( 'vendor_id' => 5 );
+			}
+		};
+
+		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public array $updates = array();
+
+			public function find( int $bucket_id ): ?array {
+				return array(
+					'id'        => $bucket_id,
+					'vendor_id' => 5,
+				);
+			}
+
+			public function update_sealed_state( int $bucket_id, bool $is_sealed ): bool {
+				$this->updates[] = compact( 'bucket_id', 'is_sealed' );
+				return true;
+			}
+		};
+
+		$execution = new \AIMS_Event_Execution_Service(
+			$assignment_service,
+			$assignment_repository,
+			$bucket_positions,
+			$bucket_movement_service,
+			$vendor_event_assignments,
+			$physical_buckets
+		);
+
+		$result = $execution->vendor_event_checkin(
+			array(
+				'assignment_id' => 400,
+				'reference_id'  => 'CHK-400',
+				'sealed_state'  => false,
+			)
+		);
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 0, $result['sealed_state'] );
+		$this->assertCount( 1, $bucket_movement_service->calls );
+		$this->assertSame( 0, $bucket_movement_service->calls[0]['sealed_state'] );
+		$this->assertCount( 1, $physical_buckets->updates );
+		$this->assertFalse( $physical_buckets->updates[0]['is_sealed'] );
+	}
+
 	public function testVendorEventCheckinTriggersLedgerOnlyForPrimaryVendor(): void {
 		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
 			public array $transitions = array();

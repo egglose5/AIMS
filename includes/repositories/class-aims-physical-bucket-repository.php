@@ -48,6 +48,7 @@ class AIMS_Physical_Bucket_Repository {
 			'bucket_label'               => sanitize_text_field( $data['bucket_label'] ?? '' ),
 			'bucket_type'                => $bucket_type,
 			'status'                     => $status,
+			'is_sealed'                  => ! empty( $data['is_sealed'] ) ? 1 : 0,
 			'current_storage_location_id' => (int) ( $data['current_storage_location_id'] ?? 0 ),
 			'home_storage_location_id'   => (int) ( $data['home_storage_location_id'] ?? 0 ),
 			'vendor_id'                  => (int) ( $data['vendor_id'] ?? 0 ),
@@ -206,6 +207,21 @@ class AIMS_Physical_Bucket_Repository {
 			),
 			array( 'id' => $bucket_id ),
 			array( '%s', '%s' ),
+			array( '%d' )
+		);
+	}
+
+	public function update_sealed_state( int $bucket_id, bool $is_sealed ): bool {
+		global $wpdb;
+
+		return false !== $wpdb->update(
+			$this->get_table_name(),
+			array(
+				'is_sealed'  => $is_sealed ? 1 : 0,
+				'updated_at' => current_time( 'mysql' ),
+			),
+			array( 'id' => $bucket_id ),
+			array( '%d', '%s' ),
 			array( '%d' )
 		);
 	}

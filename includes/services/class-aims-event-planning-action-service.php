@@ -184,11 +184,55 @@ class AIMS_Event_Planning_Action_Service {
 	}
 
 	public function mark_in_transit( array $request ): array {
-		return $this->transition_assignment_status_from_request(
-			$request,
+		$assignment = $this->load_assignment_from_request( $request );
+		if ( ! is_array( $assignment ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A valid assignment is required to update event execution status.',
+				'event_id' => (int) ( $request['event_id'] ?? 0 ),
+			);
+		}
+
+		$event_id = (int) ( $assignment['event_id'] ?? 0 );
+		if ( ! $this->can_current_user_mutate_event( $event_id ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'You are not authorized to mark this event as in transit.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$sealed_state = $this->require_sealed_state( $request );
+		if ( null === $sealed_state ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A specific sealed check is required before temporary release.',
+				'event_id' => $event_id,
+			);
+		}
+
+		if ( ! $this->transition_assignment_status(
+			(int) ( $assignment['id'] ?? 0 ),
 			AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT,
-			'Bucket marked in transit.',
-			'You are not authorized to mark this event as in transit.'
+			array(
+				'event_id' => $event_id,
+			)
+		) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'Event execution status could not be updated.',
+				'event_id' => $event_id,
+			);
+		}
+
+		$this->update_bucket_sealed_projection( (int) ( $assignment['physical_bucket_id'] ?? 0 ), $sealed_state );
+
+		return array(
+			'success'       => true,
+			'message'       => $sealed_state ? 'Temporary release recorded with seal intact.' : 'Temporary release recorded as unsealed.',
+			'event_id'      => $event_id,
+			'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
+			'sealed_state'  => $sealed_state ? 1 : 0,
 		);
 	}
 
@@ -207,6 +251,14 @@ class AIMS_Event_Planning_Action_Service {
 			return array(
 				'success'  => false,
 				'message'  => 'You are not authorized to check in this event.',
+				'event_id' => $event_id,
+			);
+		}
+
+		if ( null === $this->require_sealed_state( $request ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A specific sealed check is required before dock check-in.',
 				'event_id' => $event_id,
 			);
 		}
@@ -248,6 +300,14 @@ class AIMS_Event_Planning_Action_Service {
 			return array(
 				'success'  => false,
 				'message'  => 'You are not authorized to mark this event returned.',
+				'event_id' => $event_id,
+			);
+		}
+
+		if ( null === $this->require_sealed_state( $request ) ) {
+			return array(
+				'success'  => false,
+				'message'  => 'A specific sealed check is required before return intake.',
 				'event_id' => $event_id,
 			);
 		}
@@ -594,6 +654,7 @@ class AIMS_Event_Planning_Action_Service {
 				'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
 				'reference_id'  => isset( $request['reference_id'] ) ? sanitize_text_field( (string) $request['reference_id'] ) : '',
 				'applied_by'    => get_current_user_id(),
+				'sealed_state'  => $this->require_sealed_state( $request ),
 				'note'          => isset( $request['note'] ) ? sanitize_textarea_field( (string) $request['note'] ) : ( isset( $request['notes'] ) ? sanitize_textarea_field( (string) $request['notes'] ) : '' ),
 			)
 		);
@@ -609,8 +670,34 @@ class AIMS_Event_Planning_Action_Service {
 				'assignment_id' => (int) ( $assignment['id'] ?? 0 ),
 				'reference_id'  => isset( $request['reference_id'] ) ? sanitize_text_field( (string) $request['reference_id'] ) : '',
 				'applied_by'    => get_current_user_id(),
+				'sealed_state'  => $this->require_sealed_state( $request ),
 				'note'          => isset( $request['note'] ) ? sanitize_textarea_field( (string) $request['note'] ) : ( isset( $request['notes'] ) ? sanitize_textarea_field( (string) $request['notes'] ) : '' ),
 			)
 		);
+	}
+
+	private function require_sealed_state( array $request ): ?bool {
+		if ( ! array_key_exists( 'sealed_state', $request ) ) {
+			return null;
+		}
+
+		$value = sanitize_key( (string) $request['sealed_state'] );
+		if ( in_array( $value, array( '1', 'true', 'sealed', 'yes' ), true ) ) {
+			return true;
+		}
+
+		if ( in_array( $value, array( '0', 'false', 'unsealed', 'no' ), true ) ) {
+			return false;
+		}
+
+		return null;
+	}
+
+	private function update_bucket_sealed_projection( int $bucket_id, bool $sealed_state ): void {
+		if ( $bucket_id <= 0 || ! is_object( $this->execution_service ) || ! method_exists( $this->execution_service, 'update_bucket_sealed_state' ) ) {
+			return;
+		}
+
+		$this->execution_service->update_bucket_sealed_state( $bucket_id, $sealed_state );
 	}
 }

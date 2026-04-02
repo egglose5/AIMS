@@ -25,9 +25,46 @@ final class TestState {
 				'headers' => array(),
 				'body'    => '',
 			),
+			'upload_dir'      => array(
+				'basedir' => sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-test-uploads',
+				'baseurl' => 'http://example.test/wp-content/uploads',
+			),
+			'filters'         => array(),
 			'throw_on_redirect' => false,
 			'current_time'    => '2026-01-01 00:00:00',
 		);
+	}
+
+	public static function set_upload_dir( array $upload_dir ): void {
+		self::$state['upload_dir'] = array_merge(
+			array(
+				'basedir' => sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-test-uploads',
+				'baseurl' => 'http://example.test/wp-content/uploads',
+			),
+			$upload_dir
+		);
+	}
+
+	public static function upload_dir(): array {
+		return (array) ( self::$state['upload_dir'] ?? array() );
+	}
+
+	public static function add_filter( string $hook, callable $callback ): void {
+		if ( ! isset( self::$state['filters'][ $hook ] ) ) {
+			self::$state['filters'][ $hook ] = array();
+		}
+
+		self::$state['filters'][ $hook ][] = $callback;
+	}
+
+	public static function apply_filters( string $hook, $value, ...$args ) {
+		$callbacks = self::$state['filters'][ $hook ] ?? array();
+
+		foreach ( $callbacks as $callback ) {
+			$value = $callback( $value, ...$args );
+		}
+
+		return $value;
 	}
 
 	public static function set_remote_response( array $response ): void {

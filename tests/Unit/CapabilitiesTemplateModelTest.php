@@ -64,4 +64,31 @@ final class CapabilitiesTemplateModelTest extends \AIMS\Tests\TestCase {
 		$this->assertTrue( ( new \AIMS_Person_Identity_Service() )->is_aims_person( 201 ) );
 		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_VENDOR, ( new \AIMS_Person_Identity_Service() )->get_person_subtypes( 201 ) );
 	}
+
+	public function testCapabilityGroupsAcceptCustomStackCapabilitiesThroughFilters(): void {
+		add_filter(
+			'aims_capability_groups',
+			static function ( array $groups ): array {
+				$groups['spread_em'] = array(
+					'label'       => "Spread'em",
+					'description' => 'Parallel dispatch and workload spreading permissions.',
+					'stack_level' => 'execution',
+					'caps'  => array(
+						'spread_em_dispatch_jobs',
+					),
+				);
+
+				return $groups;
+			}
+		);
+
+		$groups = \AIMS_Capabilities::get_capability_groups();
+		$caps   = \AIMS_Capabilities::get_caps();
+
+		$this->assertArrayHasKey( 'spread_em', $groups );
+		$this->assertSame( "Spread'em", $groups['spread_em']['label'] );
+		$this->assertSame( 'Parallel dispatch and workload spreading permissions.', $groups['spread_em']['description'] );
+		$this->assertSame( 'execution', $groups['spread_em']['stack_level'] );
+		$this->assertContains( 'spread_em_dispatch_jobs', $caps );
+	}
 }

@@ -182,6 +182,10 @@ class AIMS_Capabilities {
 			$caps = array_merge( $caps, array_keys( (array) ( $definition['caps'] ?? array() ) ) );
 		}
 
+		foreach ( self::get_capability_groups() as $group ) {
+			$caps = array_merge( $caps, array_keys( (array) ( $group['external_caps'] ?? array() ) ), (array) ( $group['caps'] ?? array() ) );
+		}
+
 		return array_values( array_unique( array_map( 'sanitize_key', $caps ) ) );
 	}
 
@@ -233,9 +237,11 @@ class AIMS_Capabilities {
 	}
 
 	public static function get_capability_groups(): array {
-		return array(
+		$groups = array(
 			'core' => array(
-				'label' => 'Core AIMS',
+				'label'       => 'Governance',
+				'description' => 'Owner-level and system governance permissions for the AIMS stack.',
+				'stack_level' => 'governance',
 				'caps'  => array(
 					self::CAP_MANAGE,
 					self::CAP_MANAGE_RBAC,
@@ -243,7 +249,9 @@ class AIMS_Capabilities {
 				),
 			),
 			'events' => array(
-				'label' => 'Events',
+				'label'       => 'Planning',
+				'description' => 'Planning, event setup, and assignment-facing permissions.',
+				'stack_level' => 'planning',
 				'caps'  => array(
 					self::CAP_MANAGE_EVENTS,
 					self::CAP_MANAGE_EVENT_PUBLICATION,
@@ -253,7 +261,9 @@ class AIMS_Capabilities {
 				),
 			),
 			'inventory' => array(
-				'label' => 'Inventory',
+				'label'       => 'Operations',
+				'description' => 'Physical inventory, custody, warehouse, and reconciliation permissions.',
+				'stack_level' => 'operations',
 				'caps'  => array(
 					self::CAP_VIEW_INVENTORY_SHELL,
 					self::CAP_MANAGE_INVENTORY,
@@ -267,7 +277,9 @@ class AIMS_Capabilities {
 				),
 			),
 			'vendors' => array(
-				'label' => 'Vendors',
+				'label'       => 'Relationships',
+				'description' => 'Vendor-facing access and people/partner workflow permissions.',
+				'stack_level' => 'relationships',
 				'caps'  => array(
 					self::CAP_MANAGE_VENDORS,
 					self::CAP_MANAGE_VENDOR_ACCESS,
@@ -275,7 +287,9 @@ class AIMS_Capabilities {
 				),
 			),
 			'production' => array(
-				'label' => 'Production',
+				'label'       => 'Execution',
+				'description' => 'Production, stitch, and task-execution permissions.',
+				'stack_level' => 'execution',
 				'caps'  => array(
 					self::CAP_MANAGE_STITCH,
 					self::CAP_MANAGE_STITCH_ORDERS,
@@ -285,7 +299,9 @@ class AIMS_Capabilities {
 				),
 			),
 			'square' => array(
-				'label' => 'Square',
+				'label'       => 'Commerce Sync',
+				'description' => 'Money-adjacent sync, replay, review, and commerce integration permissions.',
+				'stack_level' => 'commerce_sync',
 				'caps'  => array(
 					self::CAP_MANAGE_SQUARE_SYNC,
 					self::CAP_RUN_SYNC,
@@ -296,7 +312,9 @@ class AIMS_Capabilities {
 				),
 			),
 			'reports' => array(
-				'label' => 'Reports',
+				'label'       => 'Visibility',
+				'description' => 'Reporting, readout, and payout visibility permissions.',
+				'stack_level' => 'visibility',
 				'caps'  => array(
 					self::CAP_VIEW_REPORTS,
 					self::CAP_MANAGE_REPORTS,
@@ -304,11 +322,15 @@ class AIMS_Capabilities {
 				),
 			),
 			'responsibilities' => array(
-				'label' => 'AIMS Responsibilities',
+				'label'       => 'Workflow Responsibilities',
+				'description' => 'Hat-based responsibility capabilities that narrow who can act in which workflow.',
+				'stack_level' => 'workflow',
 				'caps'  => array_values( self::get_responsibility_cap_map() ),
 			),
 			'portals' => array(
-				'label' => 'Portal Access',
+				'label'       => 'Surface Access',
+				'description' => 'Permissions tied to user-facing surfaces and workflow entry points.',
+				'stack_level' => 'surfaces',
 				'caps'  => array(
 					self::CAP_VIEW_VENDOR_PORTAL,
 					self::CAP_VIEW_STITCH_PORTAL,
@@ -316,6 +338,33 @@ class AIMS_Capabilities {
 				),
 			),
 		);
+
+		if ( function_exists( 'apply_filters' ) ) {
+			$groups = apply_filters( 'aims_capability_groups', $groups );
+		}
+
+		return self::normalize_capability_groups( is_array( $groups ) ? $groups : array() );
+	}
+
+	private static function normalize_capability_groups( array $groups ): array {
+		$normalized = array();
+
+		foreach ( $groups as $group_key => $group ) {
+			$key = sanitize_key( (string) $group_key );
+			if ( '' === $key || ! is_array( $group ) ) {
+				continue;
+			}
+
+			$normalized[ $key ] = array(
+				'label'        => (string) ( $group['label'] ?? ucfirst( str_replace( '_', ' ', $key ) ) ),
+				'description'  => (string) ( $group['description'] ?? '' ),
+				'stack_level'  => sanitize_key( (string) ( $group['stack_level'] ?? $key ) ),
+				'caps'         => array_values( array_filter( array_map( 'sanitize_key', (array) ( $group['caps'] ?? array() ) ) ) ),
+				'external_caps'=> (array) ( $group['external_caps'] ?? array() ),
+			);
+		}
+
+		return $normalized;
 	}
 
 	public static function get_supported_surfaces(): array {

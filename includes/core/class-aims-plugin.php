@@ -9,7 +9,7 @@ class AIMS_Plugin {
 	const OPTION_INSTALLED_AT   = 'aims_installed_at';
 	const OPTION_API_URL        = 'aims_api_url';
 	const OPTION_API_TOKEN      = 'aims_api_token';
-	const SCHEMA_VERSION        = '0.13.0';
+	const SCHEMA_VERSION        = '0.14.0';
 
 	private static $instance = null;
 

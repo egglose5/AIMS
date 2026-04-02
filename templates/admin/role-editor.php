@@ -22,6 +22,7 @@ if ( '' !== $notice_status && '' !== $notice_message ) {
 echo '<div class="postbox" style="padding:16px; margin:16px 0;">';
 echo '<h2 style="margin-top:0;">Built-in Role Templates</h2>';
 echo '<p>These ship with AIMS and act as templates only. Use them to create custom roles on a customer site, then edit the custom copy instead of the built-in role.</p>';
+echo '<p>AIMS is also meant to sit inside a wider product stack, so this editor should feel normal when sibling tools register their own capabilities here.</p>';
 if ( empty( $templates ) ) {
 	echo '<p>No templates are available.</p>';
 } else {
@@ -56,10 +57,13 @@ echo '</select><p class="description">Templates contribute their default capabil
 echo '</table>';
 
 echo '<h3>Capabilities</h3>';
-echo '<p>Responsibilities are now first-class capabilities, so anything checked here can be granted by the custom role editor and by other capability-based role plugins.</p>';
+echo '<p>Responsibilities are now first-class capabilities, so anything checked here can be granted by the custom role editor and by other capability-based role plugins. Custom stack permissions are expected here too when adjacent tools register them into the AIMS capability groups.</p>';
 foreach ( $capability_groups as $group ) {
 	echo '<fieldset style="margin:16px 0; padding:12px 16px; border:1px solid #dcdcde;">';
 	echo '<legend style="padding:0 6px;"><strong>' . esc_html( (string) ( $group['label'] ?? 'Capabilities' ) ) . '</strong></legend>';
+	if ( ! empty( $group['description'] ) ) {
+		echo '<p class="description" style="margin-top:0;">' . esc_html( (string) $group['description'] ) . '</p>';
+	}
 	foreach ( (array) ( $group['caps'] ?? array() ) as $cap_row ) {
 		$checked = ! empty( $cap_row['checked'] ) ? ' checked="checked"' : '';
 		echo '<label style="display:block; margin:8px 0;">';

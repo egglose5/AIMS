@@ -106,6 +106,14 @@ class AIMS_Event_Execution_Service {
 		);
 	}
 
+	public function update_bucket_sealed_state( int $bucket_id, bool $is_sealed ): bool {
+		if ( $bucket_id <= 0 || ! is_object( $this->physical_buckets ) || ! method_exists( $this->physical_buckets, 'update_sealed_state' ) ) {
+			return false;
+		}
+
+		return (bool) $this->physical_buckets->update_sealed_state( $bucket_id, $is_sealed );
+	}
+
 	private function apply_event_execution_movement( array $data, array $config ): array {
 		$assignment_id = (int) ( $data['assignment_id'] ?? 0 );
 		$assignment    = $this->get_assignment( $assignment_id );
@@ -134,6 +142,7 @@ class AIMS_Event_Execution_Service {
 		);
 		$applied_by = (int) ( $data['applied_by'] ?? get_current_user_id() );
 		$note       = isset( $data['note'] ) ? sanitize_textarea_field( $data['note'] ) : '';
+		$sealed_state = $this->resolve_sealed_state( $data );
 
 		$movement_triggered = true;
 		$movement_message   = (string) $config['message'];
@@ -166,6 +175,7 @@ class AIMS_Event_Execution_Service {
 					'bucket_id'      => $bucket_id,
 					'movement_type'  => $config['movement_type'],
 					'quantity_delta' => abs( $quantity ) * (float) $config['quantity_delta'],
+					'sealed_state'   => null !== $sealed_state ? ( $sealed_state ? 1 : 0 ) : 0,
 					'applied_by'     => $applied_by,
 					'note'           => $note,
 				)
@@ -218,6 +228,10 @@ class AIMS_Event_Execution_Service {
 			return $this->failure_response( 'The assignment status could not be updated.', $assignment_id, $event_id );
 		}
 
+		if ( null !== $sealed_state ) {
+			$this->update_bucket_sealed_state( $bucket_id, $sealed_state );
+		}
+
 		return array(
 			'success'            => true,
 			'message'            => $movement_message,
@@ -226,6 +240,7 @@ class AIMS_Event_Execution_Service {
 			'physical_bucket_id' => $bucket_id,
 			'status'             => $config['status'],
 			'movement_triggered' => $movement_triggered,
+			'sealed_state'       => null !== $sealed_state ? ( $sealed_state ? 1 : 0 ) : null,
 			'movements'          => $movements,
 			'movements_applied'  => count(
 				array_filter(
@@ -307,6 +322,28 @@ class AIMS_Event_Execution_Service {
 		}
 
 		return new WP_Error( 'aims_invalid_bucket_movement_service', 'Bucket movement service cannot record execution movements.' );
+	}
+
+	private function resolve_sealed_state( array $data ): ?bool {
+		if ( ! array_key_exists( 'sealed_state', $data ) ) {
+			return null;
+		}
+
+		$value = $data['sealed_state'];
+		if ( is_bool( $value ) ) {
+			return $value;
+		}
+
+		$normalized = sanitize_key( (string) $value );
+		if ( in_array( $normalized, array( '1', 'true', 'sealed', 'yes' ), true ) ) {
+			return true;
+		}
+
+		if ( in_array( $normalized, array( '0', 'false', 'unsealed', 'no' ), true ) ) {
+			return false;
+		}
+
+		return null;
 	}
 
 	private function get_assignment( int $assignment_id ): array {

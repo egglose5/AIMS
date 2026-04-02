@@ -6,13 +6,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Admin_Menu {
 	const MENU_SLUG           = 'aims';
+	const ACTIVITY_PAGE_SLUG  = 'aims-activity-log';
 	const SETTINGS_PAGE_SLUG  = 'aims-settings';
 	const SETTINGS_GROUP      = 'aims_headless_settings';
 	const NOTICE_QUERY_ARG    = 'aims_notice';
 	private $surface_authorization;
+	private $audit_log_service;
 
-	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null ) {
+	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null, AIMS_Audit_Log_Service $audit_log_service = null ) {
 		$this->surface_authorization = $surface_authorization ?: new AIMS_Surface_Authorization_Service();
+		$this->audit_log_service     = $audit_log_service ?: new AIMS_Audit_Log_Service();
 	}
 
 	public function register(): void {
@@ -42,6 +45,15 @@ class AIMS_Admin_Menu {
 			$this->get_menu_capability(),
 			self::SETTINGS_PAGE_SLUG,
 			array( $this, 'render_settings' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'Activity Log',
+			'Activity Log',
+			$this->get_menu_capability(),
+			self::ACTIVITY_PAGE_SLUG,
+			array( $this, 'render_activity_log' )
 		);
 
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
@@ -197,6 +209,14 @@ class AIMS_Admin_Menu {
 		echo '</div>';
 	}
 
+	public function render_activity_log(): void {
+		$page = new AIMS_Audit_Log_Page(
+			new AIMS_Audit_Log_Data_Provider( $this->audit_log_service )
+		);
+
+		$page->render();
+	}
+
 	public function render_api_url_field(): void {
 		printf(
 			'<input type="url" class="regular-text" name="%1$s" value="%2$s" placeholder="https://aims-core.example.com" />',
@@ -225,6 +245,7 @@ class AIMS_Admin_Menu {
 		);
 
 		$response = AIMS_Headless_Api_Client::from_plugin_options()->post_move( $payload );
+		$this->record_audit_event( 'movement_send', (string) $payload['sku'], ! empty( $response['success'] ) );
 		$this->redirect_back( array(
 			self::NOTICE_QUERY_ARG => $response['success'] ? 'movement_sent' : 'movement_failed',
 		) );
@@ -245,6 +266,7 @@ class AIMS_Admin_Menu {
 		);
 
 		$response = AIMS_Headless_Api_Client::from_plugin_options()->register_bucket( $payload );
+		$this->record_audit_event( 'bucket_register', (string) $payload['bucket_code'], ! empty( $response['success'] ) );
 		$this->redirect_back( array(
 			self::NOTICE_QUERY_ARG => $response['success'] ? 'bucket_saved' : 'bucket_failed',
 		) );
@@ -267,6 +289,11 @@ class AIMS_Admin_Menu {
 		);
 
 		$response = AIMS_Headless_Api_Client::from_plugin_options()->receive_fifo( $payload );
+		$this->record_audit_event(
+			'inbound_receive',
+			'' !== (string) $payload['receipt_reference'] ? (string) $payload['receipt_reference'] : (string) $payload['sku'],
+			! empty( $response['success'] )
+		);
 		$this->redirect_back( array(
 			self::NOTICE_QUERY_ARG => $response['success'] ? 'receipt_sent' : 'receipt_failed',
 		) );
@@ -289,6 +316,7 @@ class AIMS_Admin_Menu {
 		);
 
 		$response = AIMS_Headless_Api_Client::from_plugin_options()->move_custody( $payload );
+		$this->record_audit_event( 'custody_move', (string) $payload['bucket_code'], ! empty( $response['success'] ) );
 		$this->redirect_back( array(
 			self::NOTICE_QUERY_ARG => $response['success'] ? 'custody_moved' : 'custody_failed',
 		) );
@@ -308,6 +336,11 @@ class AIMS_Admin_Menu {
 		);
 
 		$response = AIMS_Headless_Api_Client::from_plugin_options()->pick_fifo( $payload );
+		$this->record_audit_event(
+			'fifo_pick',
+			'' !== (string) $payload['request_reference'] ? (string) $payload['request_reference'] : (string) $payload['sku'],
+			! empty( $response['success'] )
+		);
 		$this->redirect_back( array(
 			self::NOTICE_QUERY_ARG => $response['success'] ? 'fifo_picked' : 'fifo_pick_failed',
 			'aims_fifo_sku'        => $payload['sku'],
@@ -320,6 +353,7 @@ class AIMS_Admin_Menu {
 		check_admin_referer( 'aims_trigger_remote_archive' );
 
 		$response = AIMS_Headless_Api_Client::from_plugin_options()->trigger_archive();
+		$this->record_audit_event( 'archive_trigger', 'archive', ! empty( $response['success'] ) );
 		$this->redirect_back( array(
 			self::NOTICE_QUERY_ARG => $response['success'] ? 'archive_started' : 'archive_failed',
 			'aims_archive_result'   => $response['success'] ? 'Archive request completed.' : 'Archive request failed.',
@@ -339,6 +373,12 @@ class AIMS_Admin_Menu {
 		if ( ! empty( $manifest['success'] ) && is_array( $manifest['json'] ?? null ) ) {
 			$response = $client->push_manifest( $manifest['json'] );
 		}
+
+		$this->record_audit_event(
+			'manifest_sync',
+			is_array( $manifest['json'] ?? null ) ? (string) ( $manifest['json']['manifest_uuid'] ?? 'manifest' ) : 'manifest',
+			! empty( $response['success'] )
+		);
 
 		$this->redirect_back( array(
 			self::NOTICE_QUERY_ARG => $response['success'] ? 'manifest_synced' : 'manifest_sync_failed',
@@ -602,6 +642,18 @@ class AIMS_Admin_Menu {
 		return array(
 			'sku'     => isset( $_GET['aims_fifo_sku'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_sku'] ) : '',
 			'show_id' => isset( $_GET['aims_fifo_show_id'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_show_id'] ) : '',
+		);
+	}
+
+	private function record_audit_event( string $action_key, string $reference_id, bool $success ): void {
+		$this->audit_log_service->record_action(
+			$this->get_menu_capability(),
+			$action_key,
+			$reference_id,
+			array(
+				'status'  => $success ? 'success' : 'failed',
+				'surface' => AIMS_Capabilities::SURFACE_WP_ADMIN,
+			)
 		);
 	}
 

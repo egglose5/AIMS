@@ -76,6 +76,7 @@ class AIMS_Bucket_Inventory_Movement_Repository {
 			'target_storage_location_id' => (int) ( $data['target_storage_location_id'] ?? 0 ),
 			'movement_type'              => sanitize_key( $data['movement_type'] ?? '' ),
 			'quantity_delta'             => number_format( (float) ( $data['quantity_delta'] ?? 0 ), 4, '.', '' ),
+			'sealed_state'               => ! empty( $data['sealed_state'] ) ? 1 : 0,
 			'movement_lifecycle'         => sanitize_key( (string) ( $data['movement_lifecycle'] ?? 'hot' ) ),
 			'archive_manifest_id'        => (int) ( $data['archive_manifest_id'] ?? 0 ),
 			'applied_by'                 => (int) ( $data['applied_by'] ?? get_current_user_id() ),

@@ -552,6 +552,7 @@ class AIMS_Event_Planning_Workspace_Service {
 			'bucket_label'               => sanitize_text_field( (string) ( $bucket['bucket_label'] ?? '' ) ),
 			'bucket_type'                => sanitize_key( (string) ( $bucket['bucket_type'] ?? '' ) ),
 			'status'                     => sanitize_key( (string) ( $bucket['status'] ?? '' ) ),
+			'is_sealed'                  => ! empty( $bucket['is_sealed'] ),
 			'vendor_id'                  => (int) ( $bucket['vendor_id'] ?? 0 ),
 			'barcode_value'              => sanitize_text_field( (string) ( $bucket['barcode_value'] ?? '' ) ),
 			'current_storage_location_id' => (int) ( $bucket['current_storage_location_id'] ?? 0 ),

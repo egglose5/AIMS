@@ -69,6 +69,9 @@ final class RoleEditorServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertArrayHasKey( 'aims_custom_ops_lead', $model['custom_roles'] );
 		$this->assertArrayHasKey( \AIMS_Capabilities::SURFACE_WP_ADMIN, $model['supported_surfaces'] );
 		$this->assertArrayHasKey( \AIMS_Capabilities::SURFACE_MOBILE_APP, $model['supported_surfaces'] );
+		$this->assertSame( 'governance', $model['capability_groups']['core']['stack_level'] );
+		$this->assertSame( 'operations', $model['capability_groups']['inventory']['stack_level'] );
+		$this->assertNotSame( '', $model['capability_groups']['inventory']['description'] );
 		$this->assertSame( 'aims_custom_ops_lead', $model['editing_role']['role_slug'] );
 		$this->assertSame( \AIMS_Capabilities::ROLE_WAREHOUSE_USER, $model['editing_role']['template_key'] );
 		$this->assertContains( \AIMS_Person_Identity_Service::SUBTYPE_WAREHOUSE, $model['editing_role']['person_subtypes'] );

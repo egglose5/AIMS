@@ -228,6 +228,187 @@ final class EventPlanningActionServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 0, $execution_service->calls );
 	}
 
+	public function testMarkInTransitRequiresExplicitSealCheck(): void {
+		TestState::set_current_user_id( 77 );
+
+		$assignment_repository = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 10,
+					'physical_bucket_id' => 300,
+					'assignment_status'  => 'staged',
+					'is_active'          => 1,
+				);
+			}
+		};
+
+		$responsibility_auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function can_manage_event_planning( int $user_id = 0 ): bool {
+				return 77 === $user_id;
+			}
+
+			public function can_mutate_event( int $user_id, int $event_id ): bool {
+				return 77 === $user_id && 10 === $event_id;
+			}
+		};
+
+		$service = new \AIMS_Event_Planning_Action_Service(
+			new class() extends \AIMS_Event_Bucket_Assignment_Service {
+				public function __construct() {}
+			},
+			null,
+			$assignment_repository,
+			null,
+			$responsibility_auth
+		);
+
+		$result = $service->mark_in_transit(
+			array(
+				'event_id'      => 10,
+				'assignment_id' => 400,
+			)
+		);
+
+		$this->assertFalse( $result['success'] );
+		$this->assertSame( 'A specific sealed check is required before temporary release.', $result['message'] );
+	}
+
+	public function testMarkInTransitUpdatesSealProjectionAndStatus(): void {
+		TestState::set_current_user_id( 77 );
+
+		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public array $transitions = array();
+
+			public function __construct() {}
+
+			public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
+				$this->transitions[] = compact( 'assignment_id', 'status', 'data' );
+				return true;
+			}
+		};
+
+		$assignment_repository = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 10,
+					'physical_bucket_id' => 300,
+					'assignment_status'  => 'staged',
+					'is_active'          => 1,
+				);
+			}
+		};
+
+		$execution_service = new class() extends \AIMS_Event_Execution_Service {
+			public array $seal_updates = array();
+
+			public function __construct() {}
+
+			public function update_bucket_sealed_state( int $bucket_id, bool $is_sealed ): bool {
+				$this->seal_updates[] = compact( 'bucket_id', 'is_sealed' );
+				return true;
+			}
+		};
+
+		$responsibility_auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function can_manage_event_planning( int $user_id = 0 ): bool {
+				return 77 === $user_id;
+			}
+
+			public function can_mutate_event( int $user_id, int $event_id ): bool {
+				return 77 === $user_id && 10 === $event_id;
+			}
+		};
+
+		$service = new \AIMS_Event_Planning_Action_Service(
+			$assignment_service,
+			null,
+			$assignment_repository,
+			$execution_service,
+			$responsibility_auth
+		);
+
+		$result = $service->mark_in_transit(
+			array(
+				'event_id'      => 10,
+				'assignment_id' => 400,
+				'sealed_state'  => '1',
+			)
+		);
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 1, $result['sealed_state'] );
+		$this->assertCount( 1, $assignment_service->transitions );
+		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_IN_TRANSIT, $assignment_service->transitions[0]['status'] );
+		$this->assertCount( 1, $execution_service->seal_updates );
+		$this->assertSame( 300, $execution_service->seal_updates[0]['bucket_id'] );
+		$this->assertTrue( $execution_service->seal_updates[0]['is_sealed'] );
+	}
+
+	public function testVendorEventCheckInForwardsExplicitSealState(): void {
+		TestState::set_current_user_id( 77 );
+
+		$assignment_repository = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 10,
+					'physical_bucket_id' => 300,
+					'assignment_status'  => 'in_transit',
+					'is_active'          => 1,
+				);
+			}
+		};
+
+		$execution_service = new class() extends \AIMS_Event_Execution_Service {
+			public array $calls = array();
+
+			public function __construct() {}
+
+			public function vendor_event_checkin( array $data ): array {
+				$this->calls[] = $data;
+				return array( 'success' => true, 'message' => 'ok' );
+			}
+		};
+
+		$responsibility_auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function can_manage_event_planning( int $user_id = 0 ): bool {
+				return 77 === $user_id;
+			}
+
+			public function can_mutate_event( int $user_id, int $event_id ): bool {
+				return 77 === $user_id && 10 === $event_id;
+			}
+		};
+
+		$service = new \AIMS_Event_Planning_Action_Service(
+			new class() extends \AIMS_Event_Bucket_Assignment_Service { public function __construct() {} },
+			null,
+			$assignment_repository,
+			$execution_service,
+			$responsibility_auth
+		);
+
+		$result = $service->vendor_event_check_in(
+			array(
+				'event_id'      => 10,
+				'assignment_id' => 400,
+				'sealed_state'  => '0',
+			)
+		);
+
+		$this->assertTrue( $result['success'] );
+		$this->assertCount( 1, $execution_service->calls );
+		$this->assertFalse( $execution_service->calls[0]['sealed_state'] );
+	}
+
 	public function testHandlerAuthorizationGateUsesPlanningCapabilityCheck(): void {
 		TestState::set_current_user_id( 77 );
 		TestState::set_user_capabilities( 77, array( \AIMS_Capabilities::CAP_VIEW_DASHBOARD ) );

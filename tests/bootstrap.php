@@ -158,6 +158,12 @@ if ( ! function_exists( 'untrailingslashit' ) ) {
 	}
 }
 
+if ( ! function_exists( 'trailingslashit' ) ) {
+	function trailingslashit( string $value ): string {
+		return rtrim( $value, "\\/" ) . '/';
+	}
+}
+
 if ( ! function_exists( 'sanitize_email' ) ) {
 	function sanitize_email( $email ): string {
 		return trim( strtolower( (string) $email ) );
@@ -167,6 +173,12 @@ if ( ! function_exists( 'sanitize_email' ) ) {
 if ( ! function_exists( 'sanitize_key' ) ) {
 	function sanitize_key( $key ): string {
 		return strtolower( preg_replace( '/[^a-z0-9_\-]/i', '', (string) $key ) );
+	}
+}
+
+if ( ! function_exists( 'absint' ) ) {
+	function absint( $value ): int {
+		return abs( (int) $value );
 	}
 }
 
@@ -340,6 +352,12 @@ if ( ! function_exists( 'get_option' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_upload_dir' ) ) {
+	function wp_upload_dir(): array {
+		return \AIMS\Tests\Support\TestState::upload_dir();
+	}
+}
+
 if ( ! function_exists( 'update_option' ) ) {
 	function update_option( string $option, $value, bool $autoload = false ): bool {
 		return \AIMS\Tests\Support\TestState::update_option( $option, $value );
@@ -410,7 +428,15 @@ if ( ! function_exists( 'apply_filters' ) ) {
 			)
 		);
 
-		return $value;
+		return \AIMS\Tests\Support\TestState::apply_filters( $hook, $value, ...$args );
+	}
+}
+
+if ( ! function_exists( 'add_filter' ) ) {
+	function add_filter( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): bool {
+		unset( $priority, $accepted_args );
+		\AIMS\Tests\Support\TestState::add_filter( $hook, $callback );
+		return true;
 	}
 }
 
@@ -510,6 +536,13 @@ if ( ! function_exists( 'wp_nonce_field' ) ) {
 		}
 
 		return $field;
+	}
+}
+
+if ( ! function_exists( 'submit_button' ) ) {
+	function submit_button( string $text = 'Save Changes', string $type = 'primary', string $name = 'submit', bool $wrap = true ): void {
+		$button = '<button type="submit" class="button button-' . htmlspecialchars( $type, ENT_QUOTES, 'UTF-8' ) . '" name="' . htmlspecialchars( $name, ENT_QUOTES, 'UTF-8' ) . '">' . htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' ) . '</button>';
+		echo $wrap ? '<p class="submit">' . $button . '</p>' : $button;
 	}
 }
 

@@ -27,7 +27,7 @@ class AIMS_Event_Planning_Workspace_Page {
 
 		echo '<div class="wrap aims-event-planning-workspace">';
 		echo '<h1>Events &rsaquo; Planning</h1>';
-		echo '<p>Manual bucket planning for managers and supervisors. Demand is the signal, bucket assignment is the commitment, and planning does not move inventory. Planning assignments are marked <strong>Staged</strong>, and physical movement/ledger updates are triggered when the primary vendor checks in at the event.</p>';
+		echo '<p>Manual bucket planning for managers and supervisors. Demand is the signal, bucket assignment is the commitment, and planning does not move inventory. Planning assignments are marked <strong>Staged</strong>, temporary release records dock-safe handoff confidence, and physical movement/ledger updates are triggered when the primary vendor checks in at the event. On the dock, verify containers. Inside, verify contents.</p>';
 		$this->render_status_notice();
 
 		$this->render_event_selector( $events, $selected_event_id, $filter_state, $team_context );
@@ -333,6 +333,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<th>Bucket</th>';
 		echo '<th>Planning State</th>';
 		echo '<th>Execution State</th>';
+		echo '<th>Seal</th>';
 		echo '<th>Contents</th>';
 		echo '<th>Assigned</th>';
 		echo '<th>Assigned By</th>';
@@ -348,6 +349,7 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td>' . esc_html( $this->build_bucket_label( $row ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assignment_label'] ?? $row['assignment_status'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_execution_state_label( $assignment_status ) ) . '</td>';
+			echo '<td>' . esc_html( $this->build_sealed_label( ! empty( $row['is_sealed'] ) ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_content_summary_label( (array) ( $row['content_summary'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_at'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_by_label'] ?? '' ) ) . '</td>';
@@ -400,6 +402,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<th style="width:30px;"><input type="checkbox" onclick="jQuery(this).closest(\'table\').find(\'tbody .aims-bulk-assign\').prop(\'checked\', this.checked);"></th>';
 		echo '<th>Bucket</th>';
 		echo '<th>Status</th>';
+		echo '<th>Seal</th>';
 		echo '<th>Contents</th>';
 		echo '<th>Storage</th>';
 		echo '<th>Action</th>';
@@ -412,6 +415,7 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td><input class="aims-bulk-assign" type="checkbox" name="physical_bucket_ids[]" value="' . esc_attr( (string) $bucket_id ) . '"></td>';
 			echo '<td>' . esc_html( $this->build_bucket_label( $row ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['status'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( $this->build_sealed_label( ! empty( $row['is_sealed'] ) ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_content_summary_label( (array) ( $row['content_summary'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_storage_label( (array) ( $row['storage'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . $this->render_assign_form( $event_id, $bucket_id ) . '</td>';
@@ -459,10 +463,23 @@ class AIMS_Event_Planning_Workspace_Page {
 		$bucket_id = (int) ( $row['physical_bucket_id'] ?? 0 );
 		$status = sanitize_key( (string) ( $row['assignment_status'] ?? '' ) );
 
-		if ( in_array( $status, array( 'assigned', 'staged', 'in_transit' ), true ) ) {
-			$actions[] = $this->render_execution_action_form(
+		if ( in_array( $status, array( 'assigned', 'staged' ), true ) ) {
+			$actions[] = $this->render_sealed_checkpoint_form(
+				'aims_event_planning_mark_in_transit',
+				'Temporary Release',
+				'Dock release seal check',
+				$event_id,
+				$assignment_id,
+				$bucket_id,
+				'aims_event_planning_mark_in_transit',
+				'_aims_event_planning_mark_in_transit_nonce'
+			);
+			$actions[] = $this->render_release_form( $event_id, $assignment_id );
+		} elseif ( 'in_transit' === $status ) {
+			$actions[] = $this->render_sealed_checkpoint_form(
 				'aims_event_planning_vendor_event_check_in',
 				'Check In',
+				'Arrival seal check',
 				$event_id,
 				$assignment_id,
 				$bucket_id,
@@ -471,9 +488,10 @@ class AIMS_Event_Planning_Workspace_Page {
 			);
 			$actions[] = $this->render_release_form( $event_id, $assignment_id );
 		} elseif ( 'at_event' === $status ) {
-			$actions[] = $this->render_execution_action_form(
+			$actions[] = $this->render_sealed_checkpoint_form(
 				'aims_event_planning_mark_returned',
 				'Mark Returned',
+				'Return seal check',
 				$event_id,
 				$assignment_id,
 				$bucket_id,
@@ -481,7 +499,7 @@ class AIMS_Event_Planning_Workspace_Page {
 				'_aims_event_planning_mark_returned_nonce'
 			);
 		} elseif ( 'returned' === $status ) {
-			$actions[] = $this->render_execution_action_form(
+			$actions[] = $this->render_action_form(
 				'aims_event_planning_release_after_return',
 				'Release',
 				$event_id,
@@ -499,7 +517,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		}, array_filter( $actions ) ) );
 	}
 
-	private function render_execution_action_form( string $action, string $label, int $event_id, int $assignment_id, int $bucket_id, string $nonce_action, string $nonce_name ): string {
+	private function render_action_form( string $action, string $label, int $event_id, int $assignment_id, int $bucket_id, string $nonce_action, string $nonce_name ): string {
 		ob_start();
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -509,6 +527,30 @@ class AIMS_Event_Planning_Workspace_Page {
 			<input type="hidden" name="physical_bucket_id" value="<?php echo esc_attr( (string) $bucket_id ); ?>">
 			<input type="hidden" name="return_url" value="<?php echo esc_attr( $this->build_return_url( $event_id ) ); ?>">
 			<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( $nonce_action, $nonce_name ); } ?>
+			<button type="submit" class="button button-secondary"><?php echo esc_html( $label ); ?></button>
+		</form>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	private function render_sealed_checkpoint_form( string $action, string $label, string $checkpoint_label, int $event_id, int $assignment_id, int $bucket_id, string $nonce_action, string $nonce_name ): string {
+		ob_start();
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="<?php echo esc_attr( $action ); ?>">
+			<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $event_id ); ?>">
+			<input type="hidden" name="assignment_id" value="<?php echo esc_attr( (string) $assignment_id ); ?>">
+			<input type="hidden" name="physical_bucket_id" value="<?php echo esc_attr( (string) $bucket_id ); ?>">
+			<input type="hidden" name="return_url" value="<?php echo esc_attr( $this->build_return_url( $event_id ) ); ?>">
+			<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( $nonce_action, $nonce_name ); } ?>
+			<label style="display:block;margin-bottom:6px;">
+				<span style="display:block;font-size:11px;color:#50575e;"><?php echo esc_html( $checkpoint_label ); ?></span>
+				<select name="sealed_state" required>
+					<option value="">Select...</option>
+					<option value="1">Sealed</option>
+					<option value="0">Unsealed</option>
+				</select>
+			</label>
 			<button type="submit" class="button button-secondary"><?php echo esc_html( $label ); ?></button>
 		</form>
 		<?php
@@ -649,6 +691,10 @@ class AIMS_Event_Planning_Workspace_Page {
 			default:
 				return '' !== $status ? ucfirst( str_replace( '_', ' ', $status ) ) : 'Not started';
 		}
+	}
+
+	private function build_sealed_label( bool $is_sealed ): string {
+		return $is_sealed ? 'Sealed' : 'Unsealed';
 	}
 
 	private function format_quantity( float $quantity ): string {

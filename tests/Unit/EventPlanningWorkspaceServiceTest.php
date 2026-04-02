@@ -151,6 +151,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'bucket_label'              => 'Blue Bin',
 						'bucket_type'               => 'standard',
 						'status'                    => 'available',
+						'is_sealed'                 => 1,
 						'current_storage_location_id' => 12,
 						'home_storage_location_id'  => 11,
 						'vendor_id'                 => 5,
@@ -178,6 +179,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'bucket_label'              => 'Assigned Bin',
 						'bucket_type'               => 'standard',
 						'status'                    => 'available',
+						'is_sealed'                 => 0,
 						'current_storage_location_id' => 12,
 						'home_storage_location_id'  => 11,
 						'vendor_id'                 => 5,
@@ -309,6 +311,8 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 300, $model['workspace']['available_buckets'][0]['physical_bucket_id'] );
 		$this->assertSame( 'Blue Bin', $model['workspace']['available_buckets'][0]['bucket_label'] );
 		$this->assertSame( 'B-300', $model['workspace']['available_buckets'][0]['bucket_code'] );
+		$this->assertFalse( $model['workspace']['assigned_buckets'][0]['is_sealed'] );
+		$this->assertTrue( $model['workspace']['available_buckets'][0]['is_sealed'] );
 		$this->assertSame( 3.0, $model['workspace']['assigned_buckets'][0]['content_summary']['total_available_quantity'] );
 		$this->assertSame( 'Staging A', $model['workspace']['available_buckets'][0]['storage']['current']['label'] );
 		$this->assertSame( 1, $model['workspace']['summary']['assigned_bucket_count'] );

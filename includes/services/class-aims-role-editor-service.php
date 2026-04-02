@@ -66,8 +66,10 @@ class AIMS_Role_Editor_Service {
 			}
 
 			$groups[ $group_key ] = array(
-				'label' => (string) ( $group['label'] ?? ucfirst( $group_key ) ),
-				'caps'  => $cap_rows,
+				'label'       => (string) ( $group['label'] ?? ucfirst( $group_key ) ),
+				'description' => (string) ( $group['description'] ?? '' ),
+				'stack_level' => (string) ( $group['stack_level'] ?? $group_key ),
+				'caps'        => $cap_rows,
 			);
 		}
 
