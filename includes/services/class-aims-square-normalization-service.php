@@ -77,11 +77,13 @@ class AIMS_Square_Normalization_Service {
 			'discount_amount'      => $this->normalize_money_amount( $line_amounts['discount_amount'] ?? 0 ),
 			'discount_label'       => (string) ( $line_item['discount_name'] ?? $line_item['discount_label'] ?? $order_totals['discount_label'] ?? '' ),
 			'tip_amount'           => $this->normalize_money_amount( $order_totals['tip_amount'] ?? 0 ),
+			'tax_amount'           => $this->normalize_money_amount( $line_amounts['tax_amount'] ?? 0 ),
 			'fulfillment_status'   => $this->determine_fulfillment_status( $analysis ),
 			'quantity'             => $this->normalize_quantity( $line_amounts['quantity'] ?? 0 ),
 			'gross_amount'         => $this->normalize_money_amount( $line_amounts['gross_amount'] ?? 0 ),
 			'net_amount'           => $this->normalize_money_amount( $line_amounts['net_amount'] ?? 0 ),
-			'payload'              => $line_item,
+			'amount_paid'          => $this->normalize_money_amount( $line_amounts['net_amount'] ?? 0 ),
+			'payload'              => $this->build_operational_sale_payload( $payload, $line_item, $assignment_context, $line_amounts, $shipping_marker ),
 			'sold_at'              => $payload['created_at'] ?? null,
 		);
 	}
@@ -207,6 +209,7 @@ class AIMS_Square_Normalization_Service {
 			array(
 				'gross_amount',
 				'net_amount',
+				'tax_amount',
 				'discount_amount',
 				'quantity',
 			)
@@ -222,7 +225,13 @@ class AIMS_Square_Normalization_Service {
 
 		if ( 0.0 === $totals['discount_amount'] && ! empty( $line_item['applied_discounts'] ) && is_array( $line_item['applied_discounts'] ) ) {
 			foreach ( $line_item['applied_discounts'] as $discount ) {
-				$totals['discount_amount'] += $this->normalize_money_amount( $discount['applied_money']['amount'] ?? 0 );
+				$totals['discount_amount'] += $this->normalize_money_amount( $discount['applied_money']['amount'] ?? 0, true );
+			}
+		}
+
+		if ( 0.0 === $totals['tax_amount'] && ! empty( $line_item['applied_taxes'] ) && is_array( $line_item['applied_taxes'] ) ) {
+			foreach ( $line_item['applied_taxes'] as $tax ) {
+				$totals['tax_amount'] += $this->normalize_money_amount( $tax['applied_money']['amount'] ?? 0, true );
 			}
 		}
 
@@ -307,6 +316,24 @@ class AIMS_Square_Normalization_Service {
 		}
 
 		return round( (float) $value, 4 );
+	}
+
+	private function build_operational_sale_payload( array $payload, array $line_item, array $context, array $line_amounts, array $shipping_marker ): array {
+		return array(
+			'square_order_id'      => (string) ( $payload['id'] ?? '' ),
+			'square_line_item_uid' => (string) ( $line_item['uid'] ?? $line_item['id'] ?? '' ),
+			'square_location_id'   => (string) ( $context['square_location_id'] ?? $payload['location_id'] ?? '' ),
+			'event_id'             => (int) ( $context['event_id'] ?? 0 ),
+			'vendor_id'            => (int) ( $context['vendor_id'] ?? 0 ),
+			'woo_product_id'       => (int) ( $context['woo_product_id'] ?? 0 ),
+			'sku'                  => (string) ( $line_item['sku'] ?? '' ),
+			'quantity'             => $this->normalize_quantity( $line_amounts['quantity'] ?? 0 ),
+			'amount_paid'          => $this->normalize_money_amount( $line_amounts['net_amount'] ?? 0 ),
+			'gross_amount'         => $this->normalize_money_amount( $line_amounts['gross_amount'] ?? 0 ),
+			'discount_amount'      => $this->normalize_money_amount( $line_amounts['discount_amount'] ?? 0 ),
+			'tax_amount'           => $this->normalize_money_amount( $line_amounts['tax_amount'] ?? 0 ),
+			'delivery_method'      => ! empty( $shipping_marker['has_aims_shipping_marker'] ) ? 'ship' : 'pickup',
+		);
 	}
 
 	private function extract_money_fields( array $source, array $fields ): array {

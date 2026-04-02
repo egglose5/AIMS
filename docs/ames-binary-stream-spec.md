@@ -2,7 +2,9 @@
 
 ## Purpose
 
-This document defines the hot-path binary packet format for AIMS movement output. It is intended for small-business operations that need high throughput, low overhead, and zero-drift financial integrity.
+This document defines the hot-path binary packet format for AIMS sale and fulfillment output. It is intended for small-business operations that need high throughput, low overhead, and zero-drift financial integrity.
+
+AIMS reads Square transactional data at the time of sale, strips it down to the minimum hot-path operational facts, and keeps the ledger lean even as volume grows. This packet format is for sale-side truth only. Internal inventory movement through the company should remain price-free and should carry only the SKU, quantity, and location/custody references needed for physical control. When inventory leaves the company through a sale, the outbound record should capture the actual amount paid for that item at that moment. Full Square payloads, descriptive metadata, and other verbose fields belong in colder storage or archive layers if they are retained at all.
 
 The binary stream stores only the minimum facts needed for fast movement processing and reconciliation:
 
@@ -11,8 +13,11 @@ The binary stream stores only the minimum facts needed for fast movement process
 - tax snapshot in cents
 - timestamp
 - event ID
+- transaction reference for idempotency/reconciliation, stored in the adjacent ledger record or batch metadata rather than as verbose payload content
 
 Descriptions, category strings, image URLs, and other metadata do not belong in the binary stream.
+
+Inbound stock receipts are a separate concern: when inventory first enters the company, intake records should carry cost values for COGS and profitability. Those intake costs should not be copied onto ordinary internal movement rows afterward. Sale-side outbound records should capture the amount actually paid by the customer for that item.
 
 ## Product Rules
 
@@ -21,8 +26,11 @@ Descriptions, category strings, image URLs, and other metadata do not belong in 
 - SKUs must never be truncated in the binary stream.
 - Price and tax snapshots must be stored as unsigned integer cents.
 - `PRICE_CENT_SNAPSHOT` must record the actual realized sale price at the moment of sale, including event-specific pricing adjustments, and must not fall back to the catalog/base price.
+- Outbound sale records must preserve the actual amount paid for the item, not a later recalculation or catalog approximation.
+- Square transaction references should be preserved in the hot reconciliation path, but only as a compact idempotency key or adjacent metadata, not as a full payload dump.
 - Floating-point money values are not allowed on the hot path.
 - Integer cents are preferred because they save CPU cycles and eliminate drift from repeated float conversion.
+- Internal non-sale movement records should not inherit or duplicate these sale-side price fields.
 
 ## Packet Layout
 
@@ -46,6 +54,8 @@ Each packet is exactly `64 bytes` and is fixed-width for cache-friendly processi
 - Reject missing event IDs.
 - Reject timestamps that cannot be represented as integers.
 - Reject any payload that includes descriptions, category names, image URLs, or other metadata as part of the packet.
+- Reject any attempt to stuff a full Square order/payment payload into the hot packet.
+- Reject any record that cannot be tied back to a compact transaction reference for idempotency or reconciliation.
 
 ## Encoding Rules
 
@@ -54,6 +64,7 @@ Each packet is exactly `64 bytes` and is fixed-width for cache-friendly processi
 - Integer fields are packed as unsigned 64-bit big-endian values.
 - Price and tax are always written as integer cents.
 - `PRICE_CENT_SNAPSHOT` is taken from the actual completed sale transaction for that event, not from the product catalog.
+- The compact transaction reference must be handled outside the 64-byte packet if the implementation needs one for idempotency or replay.
 - The writer must not silently repair invalid business input.
 
 ## Streaming Strategy
@@ -80,6 +91,7 @@ Typical exception cases:
 - missing event ID
 - invalid or negative cents
 - attempted catalog/base-price fallback instead of actual realized sale price
+- attempted full Square payload retention in the hot packet
 - missing required movement data
 
 Exception records should preserve enough context for later correction and audit, but they must not be inserted into the binary packet stream.
@@ -97,9 +109,10 @@ Exception records should preserve enough context for later correction and audit,
 - Keep the hot binary stream separate from Parquet archives and from general configuration data.
 - Use a dedicated sink path for hot binary packets.
 - Store exception logs separately from the packet stream.
+- Push verbose Square metadata to colder storage so the hot ledger stays SKU-first and operationally lean.
 
 ## Operational Note
 
-This format is intentionally optimized for small-business operations. AIMS treats short SKUs and integer-cent money snapshots as product rules, not implementation accidents.
+This format is intentionally optimized for small-business operations. AIMS treats short SKUs and integer-cent money snapshots as product rules, not implementation accidents. Square data should be reduced to compact operational facts at sale time, then archived cold only if the verbose payload is still needed. Internal product movement should stay price-free; intake cost belongs on inbound records, and realized sale price belongs on sale-side records.
 
 Event-specific price changes are treated as normal industry-standard behavior. The binary stream must preserve the actual event sale price, not simply the catalog price.

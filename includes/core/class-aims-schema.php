@@ -1205,6 +1205,8 @@ class AIMS_Schema {
 				discount_amount decimal(20,2) NOT NULL DEFAULT 0.00,
 				discount_label varchar(191) NOT NULL DEFAULT '',
 				tip_amount decimal(20,2) NOT NULL DEFAULT 0.00,
+				tax_amount decimal(20,2) NOT NULL DEFAULT 0.00,
+				amount_paid decimal(20,2) NOT NULL DEFAULT 0.00,
 				fulfillment_status varchar(32) NOT NULL DEFAULT 'pending',
 				quantity decimal(20,4) NOT NULL DEFAULT 0.0000,
 				gross_amount decimal(20,2) NOT NULL DEFAULT 0.00,
@@ -1229,6 +1231,8 @@ class AIMS_Schema {
 				KEY shipping_amount (shipping_amount),
 				KEY discount_amount (discount_amount),
 				KEY tip_amount (tip_amount),
+				KEY tax_amount (tax_amount),
+				KEY amount_paid (amount_paid),
 				KEY fulfillment_status (fulfillment_status),
 				KEY sold_at (sold_at)
 			) {$charset_collate};",

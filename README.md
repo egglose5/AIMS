@@ -10,7 +10,7 @@ THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPL
 
 ## Binary Stream
 
-AIMS intentionally treats short SKUs as a product rule in its binary-stream design. The hot path uses a fixed 64-byte packet with `SKU` limited to 32 UTF-8 bytes and all financial snapshots stored as integer cents, not floats. `PRICE_CENT_SNAPSHOT` must record the actual realized sale price at the moment of sale, including event-specific price adjustments, rather than the catalog price. Invalid records are rejected into an exception lane rather than silently truncated.
+AIMS intentionally treats short SKUs as a product rule in its binary-stream design. The hot path uses a fixed 64-byte packet with `SKU` limited to 32 UTF-8 bytes and all financial snapshots stored as integer cents, not floats. AIMS reads Square transactional data at sale time, strips it down to SKU-first operational facts for the hot ledger, and keeps that ledger lean while pushing verbose Square metadata to colder storage. `PRICE_CENT_SNAPSHOT` must record the actual realized sale price at the moment of sale, including event-specific price adjustments, rather than the catalog price. Invalid records are rejected into an exception lane rather than silently truncated, and compact transaction references are retained as idempotency/reconciliation anchors so the lean model is not lossy.
 
 See `docs/ames-binary-stream-spec.md` for the packet layout, validation rules, and rollout guidance.
 
@@ -58,6 +58,10 @@ The repository currently provides:
 - No guest demand requests.
 - Event demand requests are planning-only, not reservation, payment, or order flows.
 - AIMS is SKU-first operationally.
+- Track only metadata that is operationally relevant to the current step.
+- Inventory entering the company should carry cost values for intake, COGS, and profitability work.
+- Inventory moving through the company internally should not carry sale-price data; internal movement truth is `SKU`, quantity, and location/custody reference.
+- Inventory leaving the company through a sale should capture the actual amount paid for that item at that moment.
 - BOPIS and reservations remain a separate future v2 add-on.
 - Inventory is assigned to events only by explicit manager or supervisor planning action. Never automatically.
 - Built-in AIMS roles are starter templates, not required runtime identities.
@@ -161,6 +165,8 @@ AIMS now uses a ledger-first inventory design:
 - `aims_movement_batches` groups hot lines into movement batches with inline line metadata so one physical action can later be exported and reread as a single historical unit.
 - `aims_movement_archive_manifests` stores archive/export metadata so historical movement batches can be compressed, exported, and rehydrated locally.
 - `aims_inventory_buckets` is the current aggregate view per vendor/product/bucket.
+- inbound inventory receipts should capture cost values at intake time.
+- internal warehouse, custody, and event movement rows should remain lean and should not duplicate sale-price metadata.
 - stock changes should be applied through movement services (`AIMS_Inventory_Service` and execution flows that delegate to `AIMS_Bucket_Movement_Service`).
 - apply-once protection is enforced by the unique movement reference key.
 - `aims_customers` and `aims_customer_addresses` store Square customer and address data.

@@ -5,7 +5,7 @@ This repository is a full rebuild of the operations stack.
 Older plugins are reference-only and are not treated as runtime-compatible upgrade targets.
 Use this procedure for safe rollout and rollback.
 
-For the binary-stream lane, AIMS intentionally limits SKUs to 32 UTF-8 bytes and stores hot-path prices and tax snapshots as integer cents. Records that do not fit that contract must be rejected into the exception lane rather than truncated. See `docs/ames-binary-stream-spec.md` for the packet contract and rollout details.
+For the binary-stream lane, AIMS intentionally limits SKUs to 32 UTF-8 bytes and stores sale-side prices and tax snapshots as integer cents. The ingest flow should read Square transactional data at sale time, strip it down to SKU-first operational facts for the hot ledger, and keep the ledger lean while pushing verbose Square metadata to colder storage. Keep only the minimal transaction reference needed for idempotency or reconciliation so the model stays lean without becoming lossy. Internal movement records should stay price-free, inbound intake records remain the place where cost values are captured, and outbound sale records should preserve the actual amount paid for the item. Records that do not fit that contract must be rejected into the exception lane rather than truncated. See `docs/ames-binary-stream-spec.md` for the packet contract and rollout details.
 
 ## Scope
 
@@ -57,7 +57,7 @@ For the binary-stream lane, AIMS intentionally limits SKUs to 32 UTF-8 bytes and
 5. Binary Stream Rollout
 - Review `docs/ames-binary-stream-spec.md` before enabling the binary hot path.
 - Run the binary stream in shadow mode beside the existing movement ledger first.
-- Verify that SKU validation, cent snapshots, and packet counts reconcile cleanly before promotion.
+- Verify that SKU validation, realized sale price snapshots, idempotency anchors, and packet counts reconcile cleanly before promotion.
 
 6. Capability-First Role Model
 - Open the AIMS Role Editor.

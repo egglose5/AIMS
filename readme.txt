@@ -16,9 +16,11 @@ AIMS provides production workflows for vendor management, event planning and exe
 
 This software is provided "as is", without warranty of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. Use of this software is at your own risk.
 
-AIMS intentionally uses short SKUs and integer-cent financial snapshots in its binary-stream hot path. The binary packet design limits SKU data to 32 UTF-8 bytes, stores the actual realized event sale price and tax as integer cents, and rejects invalid records into an exception lane instead of truncating them.
+AIMS intentionally uses short SKUs and integer-cent financial snapshots in its binary-stream hot path. AIMS reads Square transactional data at sale time, strips it down to SKU-first operational facts for the hot ledger, and keeps that ledger lean while pushing verbose Square metadata to colder storage. The binary packet design limits SKU data to 32 UTF-8 bytes, stores the actual realized event sale price and tax as integer cents, and rejects invalid records into an exception lane instead of truncating them. Compact transaction references stay available as idempotency/reconciliation anchors so the lean model is not lossy.
 
 See `docs/ames-binary-stream-spec.md` for the binary packet spec and rollout notes.
+
+Core AIMS rule: track only metadata that is relevant to the current operational step. Inventory entering the company should carry cost values for intake and profitability work. Inventory moving through the company internally should remain lean and should not carry sale-price data; internal movement truth is SKU, quantity, and location/custody reference. Inventory leaving the company through a sale should capture the actual amount paid for that item at that moment.
 
 == Installation ==
 

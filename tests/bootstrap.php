@@ -219,6 +219,16 @@ if ( ! function_exists( 'shortcode_atts' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_parse_args' ) ) {
+	function wp_parse_args( $args, array $defaults = array() ): array {
+		if ( is_array( $args ) ) {
+			return array_merge( $defaults, $args );
+		}
+
+		return $defaults;
+	}
+}
+
 if ( ! function_exists( 'esc_html' ) ) {
 	function esc_html( $text ): string {
 		return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );

@@ -8,12 +8,14 @@ use AmesCore\Core\Security\Cryptographer;
 use AmesCore\Core\Security\SecretStore;
 use AmesCore\Headless\CoreConfig;
 use AmesCore\Headless\Security\TokenAuthenticator;
+use AmesCore\Headless\Storage\SqliteBucketFifoStore;
 use AmesCore\Headless\Storage\FlowParquetArchiveWriter;
 use AmesCore\Headless\Storage\FlowParquetHistoryReader;
 use AmesCore\Headless\Storage\SqliteLedgerRepository;
 use AmesCore\Headless\Support\EnvLoader;
 use AmesCore\Headless\Support\FileLogger;
 use AmesCore\Headless\Sync\RemoteTruthService;
+use AmesCore\Inventory\BucketFifoService;
 
 $root = __DIR__;
 
@@ -56,6 +58,8 @@ $config->ensureDirectories();
 $logger       = new FileLogger( $config->logsPath() );
 $auth         = new TokenAuthenticator( $config->sharedSecret(), $config->archiveSecret() );
 $ledger       = new SqliteLedgerRepository( $config->sqlitePath() );
+$bucketStore  = new SqliteBucketFifoStore( $config->sqlitePath() );
+$bucketFifo   = new BucketFifoService( $bucketStore );
 $cryptographer = new Cryptographer( $config->encryptionKey() );
 $secretStore  = new SecretStore( $config->secretStorePath(), $cryptographer );
 $oauth        = new OAuthService( $secretStore );
@@ -84,18 +88,67 @@ try {
 					'flow_php_parquet'  => class_exists( '\Flow\Parquet\Writer' ) && class_exists( '\Flow\Parquet\Reader' ),
 					'openssl'           => function_exists( 'openssl_encrypt' ) && function_exists( 'openssl_decrypt' ),
 				),
-				'routes' => array( 'POST /move', 'GET /manifest', 'POST /manifest/push', 'GET /history', 'GET /internal/archive', 'POST /internal/secrets/{provider}', 'POST /oauth/{provider}/authorize', 'GET /oauth/{provider}/callback', 'GET /oauth/{provider}/status' ),
+				'routes' => array( 'POST /move', 'GET /manifest', 'POST /manifest/push', 'GET /history', 'GET /internal/archive', 'POST /internal/secrets/{provider}', 'POST /oauth/{provider}/authorize', 'GET /oauth/{provider}/callback', 'GET /oauth/{provider}/status', 'GET /buckets', 'POST /buckets', 'POST /fifo/receive', 'POST /custody/move', 'GET /fifo/availability', 'POST /fifo/pick' ),
 			)
 		);
 	}
 
 	$ledger->initialize();
+	$bucketFifo->initialize();
 
 	if ( 'POST' === $method && '/move' === $path ) {
 		$auth->assertAuthorized( $_SERVER, $query, false );
 		$result = $ledger->recordMove( json_request_body() );
 		$logger->info( 'movement.recorded', $result );
 		json_response( array( 'ok' => true, 'move' => $result, 'message' => 'Movement recorded in the AIMS sink.' ), 201 );
+	}
+
+	if ( 'GET' === $method && '/buckets' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		json_response(
+			array(
+				'ok'      => true,
+				'buckets' => $bucketFifo->buckets( $query ),
+			)
+		);
+	}
+
+	if ( 'POST' === $method && '/buckets' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$result = $bucketFifo->registerBucket( json_request_body() );
+		$logger->info( 'bucket.registered', $result );
+		json_response( array( 'ok' => true, 'bucket' => $result ), 201 );
+	}
+
+	if ( 'POST' === $method && '/fifo/receive' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$result = $bucketFifo->receive( json_request_body() );
+		$logger->info( 'fifo.received', $result );
+		json_response( array( 'ok' => true, 'receipt' => $result ), 201 );
+	}
+
+	if ( 'POST' === $method && '/custody/move' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$result = $bucketFifo->moveCustody( json_request_body() );
+		$logger->info( 'bucket.custody_moved', $result );
+		json_response( array( 'ok' => true, 'movement' => $result ) );
+	}
+
+	if ( 'GET' === $method && '/fifo/availability' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		json_response(
+			array(
+				'ok'           => true,
+				'availability' => $bucketFifo->availability( $query ),
+			)
+		);
+	}
+
+	if ( 'POST' === $method && '/fifo/pick' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$result = $bucketFifo->pick( json_request_body() );
+		$logger->info( 'fifo.picked', $result );
+		json_response( array( 'ok' => true, 'pick' => $result ) );
 	}
 
 	if ( 'GET' === $method && '/manifest' === $path ) {

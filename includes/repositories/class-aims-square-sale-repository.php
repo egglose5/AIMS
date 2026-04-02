@@ -57,6 +57,8 @@ class AIMS_Square_Sale_Repository {
 			'discount_amount'      => number_format( (float) ( $data['discount_amount'] ?? 0 ), 2, '.', '' ),
 			'discount_label'       => sanitize_text_field( $data['discount_label'] ?? '' ),
 			'tip_amount'           => number_format( (float) ( $data['tip_amount'] ?? 0 ), 2, '.', '' ),
+			'tax_amount'           => number_format( (float) ( $data['tax_amount'] ?? 0 ), 2, '.', '' ),
+			'amount_paid'          => number_format( (float) ( $data['amount_paid'] ?? $data['net_amount'] ?? 0 ), 2, '.', '' ),
 			'fulfillment_status'   => $this->normalize_fulfillment_status( (string) ( $data['fulfillment_status'] ?? self::STATUS_PENDING ) ),
 			'quantity'             => number_format( (float) ( $data['quantity'] ?? 0 ), 4, '.', '' ),
 			'gross_amount'         => number_format( (float) ( $data['gross_amount'] ?? 0 ), 2, '.', '' ),
@@ -73,7 +75,7 @@ class AIMS_Square_Sale_Repository {
 				$this->get_table_name(),
 				$record,
 				array( 'id' => $existing_id ),
-				array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%f', '%f', '%s', '%f', '%s', '%f', '%f', '%f', '%s', '%s', '%s' ),
+				array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%f', '%f', '%s', '%f', '%f', '%f', '%s', '%f', '%f', '%f', '%s', '%s', '%s' ),
 				array( '%d' )
 			);
 
@@ -85,7 +87,7 @@ class AIMS_Square_Sale_Repository {
 		$wpdb->insert(
 			$this->get_table_name(),
 			$record,
-			array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%f', '%f', '%s', '%f', '%s', '%f', '%f', '%f', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%f', '%f', '%s', '%f', '%f', '%f', '%s', '%f', '%f', '%f', '%s', '%s', '%s', '%s' )
 		);
 
 		return (int) $wpdb->insert_id;

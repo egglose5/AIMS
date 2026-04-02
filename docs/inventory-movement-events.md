@@ -2,7 +2,9 @@
 
 Stock changes in AIMS must only occur for physical-world inventory movement.
 
-Hot-path movement output may also be written to the fixed-width binary stream described in `docs/ames-binary-stream-spec.md`. That stream uses short SKUs and integer-cent financial snapshots by design, and it records the actual realized sale price for event-specific pricing rather than the catalog price.
+Hot-path movement output may also be written to the fixed-width binary stream described in `docs/ames-binary-stream-spec.md`. That stream uses short SKUs and integer-cent financial snapshots by design, records the actual realized sale price for event-specific pricing rather than the catalog price, and keeps only compact Square transaction references needed for idempotency or reconciliation. Verbose Square payloads do not belong in the hot ledger.
+
+Core rule: only track metadata that is relevant to the current operational step. Inventory entering the company may carry cost values for intake. Inventory moving internally through warehouse, custody, and event locations should remain lean and should not carry sale-price data. Inventory leaving the company through a sale should capture the actual amount paid for that item.
 
 ## Rule
 
@@ -11,6 +13,8 @@ Hot-path movement output may also be written to the fixed-width binary stream de
 - Inventory movement writes must use one of the allowed movement events below.
 - Movement storage must support at least 100,000 lifetime physical movement writes without requiring every historical line to remain in the hottest runtime query path.
 - A movement should be treated as a batch of inline line metadata that can later be exported, archived, compressed, and reread locally.
+- Internal movement records should prefer `SKU`, quantity, and location/custody references over duplicated pricing metadata.
+- Sale movement records should preserve the actual paid amount for the sold item.
 
 ## Allowed Movement Events
 

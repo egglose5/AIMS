@@ -56,7 +56,7 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 		$movementType = $this->stringValue( $input['movement_type'] ?? 'move' );
 		$occurredAt   = $this->stringValue( $input['occurred_at'] ?? gmdate( 'c' ) );
 
-		if ( '' === $sku || '' === $fromLocation && '' === $toLocation ) {
+		if ( '' === $sku || ( '' === $fromLocation && '' === $toLocation ) ) {
 			throw new \InvalidArgumentException( 'Movement requires sku and at least one location.' );
 		}
 
@@ -131,10 +131,7 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 	 * @return array<int, array<string, mixed>>
 	 */
 	public function inventorySummary( string $showId = '' ): array {
-		$pdo       = $this->connection();
-		$condition = '';
-
-		$statement = $pdo->prepare(
+		$statement = $this->connection()->prepare(
 			'SELECT "show_id", "sku", SUM("quantity") AS "quantity", MAX("updated_at") AS "updated_at", MAX("last_movement_uuid") AS "last_movement_uuid"
 			FROM "' . self::POSITION_TABLE . '"
 			' . ( '' !== $showId ? 'WHERE "show_id" = :show_id' : '' ) . '
@@ -183,10 +180,7 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 		$statement->bindValue( ':limit', $limit, PDO::PARAM_INT );
 		$statement->execute();
 
-		/** @var array<int, array<string, mixed>> $rows */
-		$rows = $statement->fetchAll( PDO::FETCH_ASSOC ) ?: array();
-
-		return $rows;
+		return $statement->fetchAll( PDO::FETCH_ASSOC ) ?: array();
 	}
 
 	/**
@@ -261,8 +255,6 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 		}
 
 		$statement->execute();
-
-		/** @var array<int, array<string, mixed>> $rows */
 		$rows = $statement->fetchAll( PDO::FETCH_ASSOC ) ?: array();
 
 		return array_map(
@@ -285,10 +277,7 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 		$statement->bindValue( ':show_id', $showId );
 		$statement->execute();
 
-		/** @var array<int, array<string, mixed>> $rows */
-		$rows = $statement->fetchAll( PDO::FETCH_ASSOC ) ?: array();
-
-		return $rows;
+		return $statement->fetchAll( PDO::FETCH_ASSOC ) ?: array();
 	}
 
 	public function truncateHotRows( string $showId ): void {
@@ -367,7 +356,6 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 		$statement->bindValue( ':sku', $sku );
 		$statement->execute();
 
-		/** @var array<int, array<string, mixed>> $rows */
 		$rows = $statement->fetchAll( PDO::FETCH_ASSOC ) ?: array();
 
 		return array_map(

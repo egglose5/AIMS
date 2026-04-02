@@ -66,6 +66,8 @@ final class BucketMovementServiceTest extends \AIMS\Tests\TestCase {
 				'reference_id'   => 'R-123',
 				'movement_type'  => 'origin_inbound',
 				'quantity_delta' => 12.75,
+				'unit_cost'      => 3.25,
+				'currency'       => 'USD',
 			)
 		);
 

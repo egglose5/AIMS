@@ -119,7 +119,10 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Bind hot bucket movement writes to movement batches with inline line metadata.
 - [ ] Add the fixed-width binary stream hot path for small-business throughput:
   - enforce `SKU <= 32 UTF-8 bytes` as an intentional product rule
-  - write price and tax snapshots as integer cents only
+  - ingest Square at the time of sale and reduce the payload to SKU-first operational facts for the hot ledger
+  - write the actual realized sale price and tax snapshots as integer cents only
+  - keep compact transaction references available as idempotency/reconciliation anchors
+  - push verbose Square metadata to colder storage so the hot ledger stays lean
   - reject invalid records into an exception lane instead of truncating them
   - follow `docs/ames-binary-stream-spec.md` for packet layout and rollout guidance
 - [ ] Add export/archive jobs that write compressed local-server payloads for older movement batches.

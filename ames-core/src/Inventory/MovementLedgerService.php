@@ -77,6 +77,8 @@ final class MovementLedgerService {
 			throw new MovementException( 'aims_duplicate_bucket_movement', 'This bucket movement has already been applied.' );
 		}
 
+		$data = $this->normalizeMovementFinancialMetadata( $data, $movementType );
+
 		$data['movement_uuid'] = $this->sanitizeText( $data['movement_uuid'] ?? '' );
 		if ( '' === $data['movement_uuid'] ) {
 			$data['movement_uuid'] = $this->uuidGenerator->generate();
@@ -92,10 +94,15 @@ final class MovementLedgerService {
 		$data['movement_lifecycle'] = $this->sanitizeKey( (string) ( $data['movement_lifecycle'] ?? 'hot' ) );
 		$data['line_meta_json']     = array(
 			'product_id'     => $productId,
+			'sku'            => $this->sanitizeText( $data['sku'] ?? '' ),
 			'bucket_id'      => $bucketId,
 			'bucket_code'    => $this->sanitizeText( $data['bucket_code'] ?? '' ),
 			'vendor_id'      => $vendorId,
 			'event_id'       => (int) ( $data['event_id'] ?? 0 ),
+			'source_bucket_id' => (int) ( $data['source_bucket_id'] ?? 0 ),
+			'target_bucket_id' => (int) ( $data['target_bucket_id'] ?? 0 ),
+			'source_storage_location_id' => (int) ( $data['source_storage_location_id'] ?? 0 ),
+			'target_storage_location_id' => (int) ( $data['target_storage_location_id'] ?? 0 ),
 			'quantity_delta' => number_format( $quantityDelta, 4, '.', '' ),
 			'movement_type'  => $movementType,
 			'recorded_at'    => $this->clock->now(),
@@ -130,6 +137,188 @@ final class MovementLedgerService {
 			'movement_batch_id' => (int) ( $data['movement_batch_id'] ?? 0 ),
 			'current_quantity'  => $currentQty,
 		);
+	}
+
+	private function normalizeMovementFinancialMetadata( array $data, string $movementType ): array {
+		$metadata = array();
+
+		if ( isset( $data['metadata_json'] ) ) {
+			$metadata = $this->normalizeMetadataMap( $data['metadata_json'] );
+		}
+
+		if ( $this->isInboundMovementType( $movementType ) ) {
+			$data['metadata_json'] = $this->filterInboundMetadata( $data, $metadata );
+			return $data;
+		}
+
+		if ( $this->isSaleMovementType( $movementType ) ) {
+			$data['metadata_json'] = $this->filterSaleMetadata( $data, $metadata );
+			return $data;
+		}
+
+		$data['metadata_json'] = $this->stripFinancialMetadata( $metadata );
+
+		return $data;
+	}
+
+	private function filterInboundMetadata( array $data, array $metadata ): array {
+		$normalized = array();
+		$numericKeys = array(
+			'unit_cost',
+			'unit_cost_cents',
+			'extended_cost',
+			'extended_cost_cents',
+		);
+		$textKeys = array(
+			'currency',
+			'cost_source',
+			'supplier_reference',
+			'receipt_reference',
+		);
+
+		foreach ( $numericKeys as $key ) {
+			$value = $data[ $key ] ?? $metadata[ $key ] ?? null;
+			if ( is_numeric( $value ) ) {
+				$normalized[ $key ] = false !== strpos( $key, '_cents' )
+					? (int) round( (float) $value )
+					: round( (float) $value, 4 );
+			}
+		}
+
+		if ( ! isset( $normalized['extended_cost'] ) && isset( $normalized['unit_cost'] ) && isset( $data['quantity_delta'] ) && is_numeric( $data['quantity_delta'] ) ) {
+			$normalized['extended_cost'] = round( abs( (float) $data['quantity_delta'] ) * (float) $normalized['unit_cost'], 4 );
+		}
+
+		if ( ! isset( $normalized['extended_cost_cents'] ) && isset( $normalized['extended_cost'] ) ) {
+			$normalized['extended_cost_cents'] = (int) round( (float) $normalized['extended_cost'] * 100 );
+		}
+
+		if ( ! isset( $normalized['unit_cost_cents'] ) && isset( $normalized['unit_cost'] ) ) {
+			$normalized['unit_cost_cents'] = (int) round( (float) $normalized['unit_cost'] * 100 );
+		}
+
+		foreach ( $textKeys as $key ) {
+			$value = $data[ $key ] ?? $metadata[ $key ] ?? null;
+			$value = $this->sanitizeText( $value );
+			if ( '' !== $value ) {
+				$normalized[ $key ] = $value;
+			}
+		}
+
+		if ( empty( $normalized['unit_cost'] ) && empty( $normalized['unit_cost_cents'] ) && empty( $normalized['extended_cost'] ) && empty( $normalized['extended_cost_cents'] ) ) {
+			throw new MovementException( 'aims_inbound_cost_required', 'Inbound inventory must include cost values.' );
+		}
+
+		return $normalized;
+	}
+
+	private function filterSaleMetadata( array $data, array $metadata ): array {
+		$normalized = array();
+		$amountPaid = $data['amount_paid'] ?? $metadata['amount_paid'] ?? $data['paid_amount'] ?? $metadata['paid_amount'] ?? $data['net_amount'] ?? $metadata['net_amount'] ?? $data['gross_amount'] ?? $metadata['gross_amount'] ?? null;
+		$amountPaidCents = $data['amount_paid_cents'] ?? $metadata['amount_paid_cents'] ?? $data['paid_amount_cents'] ?? $metadata['paid_amount_cents'] ?? null;
+		$taxAmount = $data['tax_amount'] ?? $metadata['tax_amount'] ?? null;
+		$taxAmountCents = $data['tax_amount_cents'] ?? $metadata['tax_amount_cents'] ?? null;
+
+		if ( is_numeric( $amountPaid ) ) {
+			$normalized['amount_paid'] = round( (float) $amountPaid, 2 );
+		}
+
+		if ( is_numeric( $amountPaidCents ) ) {
+			$normalized['amount_paid_cents'] = (int) round( (float) $amountPaidCents );
+		} elseif ( isset( $normalized['amount_paid'] ) ) {
+			$normalized['amount_paid_cents'] = (int) round( $normalized['amount_paid'] * 100 );
+		}
+
+		if ( is_numeric( $taxAmount ) ) {
+			$normalized['tax_amount'] = round( (float) $taxAmount, 2 );
+		}
+
+		if ( is_numeric( $taxAmountCents ) ) {
+			$normalized['tax_amount_cents'] = (int) round( (float) $taxAmountCents );
+		} elseif ( isset( $normalized['tax_amount'] ) ) {
+			$normalized['tax_amount_cents'] = (int) round( $normalized['tax_amount'] * 100 );
+		}
+
+		foreach ( array( 'currency', 'square_order_id', 'square_line_item_uid', 'square_payment_id' ) as $key ) {
+			$value = $this->sanitizeText( $data[ $key ] ?? $metadata[ $key ] ?? '' );
+			if ( '' !== $value ) {
+				$normalized[ $key ] = $value;
+			}
+		}
+
+		if ( empty( $normalized['amount_paid'] ) && empty( $normalized['amount_paid_cents'] ) ) {
+			throw new MovementException( 'aims_sale_amount_required', 'Sale-side outbound inventory must include the amount paid.' );
+		}
+
+		return $normalized;
+	}
+
+	private function stripFinancialMetadata( array $metadata ): array {
+		$financialKeys = array(
+			'amount_paid',
+			'amount_paid_cents',
+			'paid_amount',
+			'paid_amount_cents',
+			'gross_amount',
+			'gross_amount_cents',
+			'net_amount',
+			'net_amount_cents',
+			'tax_amount',
+			'tax_amount_cents',
+			'discount_amount',
+			'discount_amount_cents',
+			'tip_amount',
+			'tip_amount_cents',
+			'unit_cost',
+			'unit_cost_cents',
+			'extended_cost',
+			'extended_cost_cents',
+			'currency',
+			'square_sale_id',
+			'square_order_id',
+			'square_line_item_uid',
+			'square_payment_id',
+		);
+
+		foreach ( $financialKeys as $key ) {
+			unset( $metadata[ $key ] );
+		}
+
+		return $metadata;
+	}
+
+	private function normalizeMetadataMap( $metadata ): array {
+		if ( ! is_array( $metadata ) ) {
+			return array();
+		}
+
+		$normalized = array();
+
+		foreach ( $metadata as $key => $value ) {
+			$cleanKey = $this->sanitizeKey( (string) $key );
+			if ( '' === $cleanKey ) {
+				continue;
+			}
+
+			if ( is_scalar( $value ) || null === $value ) {
+				$normalized[ $cleanKey ] = is_string( $value ) ? $this->sanitizeText( $value ) : $value;
+				continue;
+			}
+
+			if ( is_array( $value ) ) {
+				$normalized[ $cleanKey ] = $this->normalizeMetadataMap( $value );
+			}
+		}
+
+		return $normalized;
+	}
+
+	private function isInboundMovementType( string $movementType ): bool {
+		return 'origin_inbound' === $movementType || 'stock_in' === $movementType;
+	}
+
+	private function isSaleMovementType( string $movementType ): bool {
+		return 'show_consumption' === $movementType || 'square_sale' === $movementType || 'stock_out_sale' === $movementType;
 	}
 
 	private function sanitizeKey( $value ): string {

@@ -157,6 +157,7 @@ class AIMS_Square_Replay_Service {
 					'discount_amount'   => (float) ( $normalized_sale['discount_amount'] ?? 0 ),
 					'gross_amount'      => (float) ( $normalized_sale['gross_amount'] ?? 0 ),
 					'net_amount'        => (float) ( $normalized_sale['net_amount'] ?? 0 ),
+					'tax_amount'        => (float) ( $normalized_sale['tax_amount'] ?? 0 ),
 					'quantity'          => (float) ( $normalized_sale['quantity'] ?? 0 ),
 					'sku'               => (string) ( $normalized_sale['sku'] ?? '' ),
 					'total_money'       => array( 'amount' => (float) ( $normalized_sale['net_amount'] ?? 0 ) ),
