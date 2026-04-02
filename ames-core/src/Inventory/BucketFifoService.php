@@ -172,6 +172,15 @@ final class BucketFifoService {
 			throw new \InvalidArgumentException( 'FIFO pick quantity must be greater than zero.' );
 		}
 
+		$amountPaid = is_numeric( $input['amount_paid'] ?? null ) ? round( (float) $input['amount_paid'], 2 ) : null;
+		$amountPaidCents = is_numeric( $input['amount_paid_cents'] ?? null )
+			? (int) round( (float) $input['amount_paid_cents'] )
+			: ( null !== $amountPaid ? (int) round( $amountPaid * 100 ) : null );
+		$taxAmount = is_numeric( $input['tax_amount'] ?? null ) ? round( (float) $input['tax_amount'], 2 ) : null;
+		$taxAmountCents = is_numeric( $input['tax_amount_cents'] ?? null )
+			? (int) round( (float) $input['tax_amount_cents'] )
+			: ( null !== $taxAmount ? (int) round( $taxAmount * 100 ) : null );
+
 		return $this->store->pickFifo(
 			array(
 				'sku'               => $sku,
@@ -179,10 +188,10 @@ final class BucketFifoService {
 				'quantity'          => $quantity,
 				'request_reference' => $this->stringValue( $input['request_reference'] ?? '' ),
 				'movement_type'     => $this->stringValue( $input['movement_type'] ?? 'fifo_pick' ),
-				'amount_paid'       => is_numeric( $input['amount_paid'] ?? null ) ? round( (float) $input['amount_paid'], 2 ) : null,
-				'amount_paid_cents' => is_numeric( $input['amount_paid_cents'] ?? null ) ? (int) round( (float) $input['amount_paid_cents'] ) : null,
-				'tax_amount'        => is_numeric( $input['tax_amount'] ?? null ) ? round( (float) $input['tax_amount'], 2 ) : null,
-				'tax_amount_cents'  => is_numeric( $input['tax_amount_cents'] ?? null ) ? (int) round( (float) $input['tax_amount_cents'] ) : null,
+				'amount_paid'       => $amountPaid,
+				'amount_paid_cents' => $amountPaidCents,
+				'tax_amount'        => $taxAmount,
+				'tax_amount_cents'  => $taxAmountCents,
 			)
 		);
 	}

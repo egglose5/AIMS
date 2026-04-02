@@ -16,5 +16,7 @@ final class AmesCoreBucketFifoSchemaTest extends \AIMS\Tests\TestCase {
 		$this->assertStringContainsString( BucketFifoSchema::ALLOCATION_TABLE, $sql );
 		$this->assertStringContainsString( 'unit_cost_cents', $sql );
 		$this->assertStringContainsString( 'remaining_quantity', $sql );
+		$this->assertStringContainsString( 'amount_paid_cents', $sql );
+		$this->assertStringContainsString( 'tax_amount_cents', $sql );
 	}
 }

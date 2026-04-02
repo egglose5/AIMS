@@ -14,6 +14,10 @@ AIMS intentionally treats short SKUs as a product rule in its binary-stream desi
 
 See `docs/ames-binary-stream-spec.md` for the packet layout, validation rules, and rollout guidance.
 
+## Deployment Profile
+
+The current standalone `ames-core` build should be treated as an `IONOS-style` or filesystem-capable shared-host deployment profile, not as a universally safe profile for every WordPress host. It currently assumes writable local directories, standalone PHP routing, and host support for the storage/runtime path used by the headless core. See `docs/headless-deployment-profiles.md` for the portability boundary and planned fork point.
+
 ## Current build status
 
 The repository currently provides:
@@ -156,6 +160,7 @@ The repository currently provides:
 ## Upgrade path
 
 - Follow the rollout and rollback procedure in `docs/upgrade-path.md`.
+- Follow `docs/headless-deployment-profiles.md` before describing the current headless build as host-agnostic.
 
 ## Operational backbone
 

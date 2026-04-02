@@ -78,11 +78,13 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 			$args[ $column ] = $value;
 		}
 
-		$sql = 'SELECT * FROM "' . BucketFifoSchema::BUCKET_TABLE . '"';
+		$sql = 'SELECT b.*, COALESCE(SUM(l."remaining_quantity"), 0) AS "on_hand_quantity"
+			FROM "' . BucketFifoSchema::BUCKET_TABLE . '" b
+			LEFT JOIN "' . BucketFifoSchema::LOT_TABLE . '" l ON l."bucket_code" = b."bucket_code"';
 		if ( ! empty( $where ) ) {
 			$sql .= ' WHERE ' . implode( ' AND ', $where );
 		}
-		$sql .= ' ORDER BY "bucket_code" ASC';
+		$sql .= ' GROUP BY b."bucket_code" ORDER BY b."bucket_code" ASC';
 
 		$statement = $this->connection()->prepare( $sql );
 		foreach ( $args as $column => $value ) {
@@ -270,6 +272,10 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 		$sku = $this->stringValue( $request['sku'] ?? '' );
 		$showId = $this->stringValue( $request['show_id'] ?? '' );
 		$requestedQuantity = $this->floatValue( $request['quantity'] ?? 0 );
+		$amountPaid = $this->floatValue( $request['amount_paid'] ?? 0 );
+		$amountPaidCents = $this->intValue( $request['amount_paid_cents'] ?? ( $amountPaid > 0 ? (int) round( $amountPaid * 100 ) : 0 ) );
+		$taxAmount = $this->floatValue( $request['tax_amount'] ?? 0 );
+		$taxAmountCents = $this->intValue( $request['tax_amount_cents'] ?? ( $taxAmount > 0 ? (int) round( $taxAmount * 100 ) : 0 ) );
 		$availableLots = $this->fifoAvailability( array( 'sku' => $sku, 'show_id' => $showId ) );
 		$totalAvailable = array_reduce(
 			$availableLots,
@@ -287,6 +293,10 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 		$pdo->beginTransaction();
 
 		try {
+			$amountPaidSplits = $this->prorateCents( $amountPaidCents, $availableLots, $requestedQuantity );
+			$taxSplits = $this->prorateCents( $taxAmountCents, $availableLots, $requestedQuantity );
+			$allocationIndex = 0;
+
 			foreach ( $availableLots as $lot ) {
 				if ( $remaining <= 0 ) {
 					break;
@@ -313,11 +323,14 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 				$allocationUuid = $this->uuid();
 				$insert = $pdo->prepare(
 					'INSERT INTO "' . BucketFifoSchema::ALLOCATION_TABLE . '" (
-						"allocation_uuid","request_reference","sku","show_id","bucket_code","lot_uuid","quantity","movement_type","created_at"
+						"allocation_uuid","request_reference","sku","show_id","bucket_code","lot_uuid","quantity","movement_type","amount_paid","amount_paid_cents","tax_amount","tax_amount_cents","created_at"
 					) VALUES (
-						:allocation_uuid,:request_reference,:sku,:show_id,:bucket_code,:lot_uuid,:quantity,:movement_type,:created_at
+						:allocation_uuid,:request_reference,:sku,:show_id,:bucket_code,:lot_uuid,:quantity,:movement_type,:amount_paid,:amount_paid_cents,:tax_amount,:tax_amount_cents,:created_at
 					)'
 				);
+
+				$allocatedAmountPaidCents = $amountPaidSplits[ $allocationIndex ] ?? 0;
+				$allocatedTaxCents = $taxSplits[ $allocationIndex ] ?? 0;
 
 				$row = array(
 					'allocation_uuid'  => $allocationUuid,
@@ -328,6 +341,10 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 					'lot_uuid'         => (string) $lot['lot_uuid'],
 					'quantity'         => $allocatable,
 					'movement_type'    => $this->stringValue( $request['movement_type'] ?? 'fifo_pick' ),
+					'amount_paid'      => $allocatedAmountPaidCents / 100,
+					'amount_paid_cents'=> $allocatedAmountPaidCents,
+					'tax_amount'       => $allocatedTaxCents / 100,
+					'tax_amount_cents' => $allocatedTaxCents,
 					'created_at'       => gmdate( 'c' ),
 				);
 
@@ -344,12 +361,17 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 					'quantity'          => $allocatable,
 					'unit_cost'         => (float) $lot['unit_cost'],
 					'unit_cost_cents'   => (int) $lot['unit_cost_cents'],
+					'amount_paid'       => $allocatedAmountPaidCents / 100,
+					'amount_paid_cents' => $allocatedAmountPaidCents,
+					'tax_amount'        => $allocatedTaxCents / 100,
+					'tax_amount_cents'  => $allocatedTaxCents,
 					'received_at'       => (string) $lot['received_at'],
 					'current_location'  => (string) $lot['current_location'],
 					'current_custody'   => (string) $lot['current_custody'],
 				);
 
 				$remaining -= $allocatable;
+				$allocationIndex++;
 			}
 
 			$pdo->commit();
@@ -366,6 +388,10 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 			'show_id'            => $showId,
 			'requested_quantity' => $requestedQuantity,
 			'allocated_quantity' => $requestedQuantity - $remaining,
+			'amount_paid'        => $amountPaid,
+			'amount_paid_cents'  => $amountPaidCents,
+			'tax_amount'         => $taxAmount,
+			'tax_amount_cents'   => $taxAmountCents,
 			'allocations'        => $allocations,
 			'remaining_available'=> max( 0.0, $totalAvailable - $requestedQuantity ),
 		);
@@ -415,9 +441,58 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 			'show_id'           => (string) $row['show_id'],
 			'current_location'  => (string) $row['current_location'],
 			'current_custody'   => (string) $row['current_custody'],
+			'on_hand_quantity'  => isset( $row['on_hand_quantity'] ) ? (float) $row['on_hand_quantity'] : 0.0,
 			'created_at'        => (string) $row['created_at'],
 			'updated_at'        => (string) $row['updated_at'],
 		);
+	}
+
+	/**
+	 * @param array<int, array<string, mixed>> $availableLots
+	 * @return array<int, int>
+	 */
+	private function prorateCents( int $totalCents, array $availableLots, float $requestedQuantity ): array {
+		if ( $totalCents <= 0 || $requestedQuantity <= 0 ) {
+			return array();
+		}
+
+		$remaining = $requestedQuantity;
+		$allocatableQuantities = array();
+
+		foreach ( $availableLots as $lot ) {
+			if ( $remaining <= 0 ) {
+				break;
+			}
+
+			$allocatable = min( $remaining, (float) ( $lot['remaining_quantity'] ?? 0 ) );
+			if ( $allocatable <= 0 ) {
+				continue;
+			}
+
+			$allocatableQuantities[] = $allocatable;
+			$remaining -= $allocatable;
+		}
+
+		if ( empty( $allocatableQuantities ) ) {
+			return array();
+		}
+
+		$splits = array();
+		$allocated = 0;
+		$lastIndex = count( $allocatableQuantities ) - 1;
+
+		foreach ( $allocatableQuantities as $index => $quantity ) {
+			if ( $index === $lastIndex ) {
+				$splits[] = $totalCents - $allocated;
+				break;
+			}
+
+			$share = (int) round( $totalCents * ( $quantity / $requestedQuantity ) );
+			$splits[] = $share;
+			$allocated += $share;
+		}
+
+		return $splits;
 	}
 
 	private function connection(): PDO {

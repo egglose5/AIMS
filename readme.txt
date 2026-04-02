@@ -20,6 +20,8 @@ AIMS intentionally uses short SKUs and integer-cent financial snapshots in its b
 
 See `docs/ames-binary-stream-spec.md` for the binary packet spec and rollout notes.
 
+Deployment note: the current standalone `ames-core` path should be treated as an `IONOS-style` or filesystem-capable shared-host profile, not as something already proven safe for all WordPress hosts. It currently assumes writable local directories, standalone PHP routing, and host support for the active headless storage/runtime path. See `docs/headless-deployment-profiles.md` for the portability notes and planned fork point.
+
 Core AIMS rule: track only metadata that is relevant to the current operational step. Inventory entering the company should carry cost values for intake and profitability work. Inventory moving through the company internally should remain lean and should not carry sale-price data; internal movement truth is SKU, quantity, and location/custody reference. Inventory leaving the company through a sale should capture the actual amount paid for that item at that moment.
 
 == Installation ==

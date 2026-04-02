@@ -162,4 +162,44 @@ final class AmesCoreBucketFifoServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 2.0, $result['allocated_quantity'] );
 		$this->assertSame( 'BUCKET-1', $result['allocations'][0]['bucket_code'] );
 	}
+
+	public function testFifoPickForwardsActualPaidAmountAndTax(): void {
+		$store = new class() implements BucketFifoStoreInterface {
+			public array $lastPick = array();
+
+			public function initialize(): void {}
+			public function upsertBucket( array $bucket ): array { return array(); }
+			public function listBuckets( array $filters = array() ): array { return array(); }
+			public function receiveIntoBucket( array $receipt ): array { return array(); }
+			public function moveBucketCustody( array $movement ): array { return array(); }
+			public function fifoAvailability( array $filters = array() ): array { return array(); }
+
+			public function pickFifo( array $request ): array {
+				$this->lastPick = $request;
+				return array(
+					'sku'                => $request['sku'],
+					'requested_quantity' => $request['quantity'],
+					'allocated_quantity' => $request['quantity'],
+					'amount_paid_cents'  => $request['amount_paid_cents'],
+					'tax_amount_cents'   => $request['tax_amount_cents'],
+					'allocations'        => array(),
+				);
+			}
+		};
+
+		$service = new BucketFifoService( $store );
+		$result = $service->pick(
+			array(
+				'sku'               => 'SKU-1',
+				'quantity'          => 1,
+				'amount_paid'       => 18.25,
+				'tax_amount_cents'  => 146,
+			)
+		);
+
+		$this->assertSame( 1825, $store->lastPick['amount_paid_cents'] );
+		$this->assertSame( 146, $store->lastPick['tax_amount_cents'] );
+		$this->assertSame( 1825, $result['amount_paid_cents'] );
+		$this->assertSame( 146, $result['tax_amount_cents'] );
+	}
 }

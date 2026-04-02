@@ -129,3 +129,14 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [ ] Add reread/rehydration queries for archived movement history.
 - [ ] Define retention thresholds for hot lines versus archived movement batches.
 
+## Following Milestone - Headless Portability Fork
+
+- [ ] Document the current standalone `ames-core` implementation as an `IONOS-style` or filesystem-capable shared-host profile rather than a universal WordPress-host profile.
+- [ ] Keep the AIMS domain rules shared while formalizing a storage/runtime fork point:
+  - current filesystem-heavy SQLite/shared-host profile
+  - future generic WordPress-host database-backed profile
+  - future richer VPS/cloud profile
+- [ ] Extract or preserve clear storage adapter seams so bucket, custody, FIFO, movement, and archive logic can survive host-profile changes.
+- [ ] Add a generic-host storage/runtime plan that does not assume writable sibling directories, local SQLite, or direct standalone filesystem behavior.
+- [ ] Avoid claiming host-agnostic support in release docs until the generic-host profile is actually implemented and verified.
+

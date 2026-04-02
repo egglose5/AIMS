@@ -7,6 +7,8 @@ Use this procedure for safe rollout and rollback.
 
 For the binary-stream lane, AIMS intentionally limits SKUs to 32 UTF-8 bytes and stores sale-side prices and tax snapshots as integer cents. The ingest flow should read Square transactional data at sale time, strip it down to SKU-first operational facts for the hot ledger, and keep the ledger lean while pushing verbose Square metadata to colder storage. Keep only the minimal transaction reference needed for idempotency or reconciliation so the model stays lean without becoming lossy. Internal movement records should stay price-free, inbound intake records remain the place where cost values are captured, and outbound sale records should preserve the actual amount paid for the item. Records that do not fit that contract must be rejected into the exception lane rather than truncated. See `docs/ames-binary-stream-spec.md` for the packet contract and rollout details.
 
+The current headless `ames-core` path should be treated as an `IONOS-style` or filesystem-capable shared-host deployment profile. It is not yet documented as universally safe for all WordPress hosts because it currently assumes writable local directories, standalone PHP routing, and the active SQLite/file-backed storage path. See `docs/headless-deployment-profiles.md` for the formal portability note and planned adapter fork.
+
 ## Scope
 
 - Supported upgrade target: prior releases of this same `ai-man-sys` plugin line.
@@ -78,3 +80,4 @@ For the binary-stream lane, AIMS intentionally limits SKUs to 32 UTF-8 bytes and
 - Full-suite PHPUnit baseline currently passes in this repository state.
 - Binary stream rollout should remain shadow-only until the spec is implemented and reconciled against live movement data.
 - Binary-stream rollout should first run in shadow mode and compare packet counts, per-event totals, and exception counts before any production cutover.
+- Headless deployment claims should stay profile-specific until a generic-host storage/runtime path exists beside the current IONOS-style profile.
