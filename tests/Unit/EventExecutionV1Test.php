@@ -237,8 +237,9 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 
 			public function find( int $bucket_id ): ?array {
 				return array(
-					'id'        => $bucket_id,
-					'vendor_id' => 5,
+					'id'                => $bucket_id,
+					'vendor_id'         => 5,
+					'square_location_id'=> 'LOC-5',
 				);
 			}
 
@@ -266,8 +267,10 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		);
 
 		$this->assertTrue( $result['success'] );
+		$this->assertSame( 'LOC-5', $result['square_location_id'] );
 		$this->assertSame( 0, $result['sealed_state'] );
 		$this->assertCount( 1, $bucket_movement_service->calls );
+		$this->assertSame( 'LOC-5', $bucket_movement_service->calls[0]['square_location_id'] );
 		$this->assertSame( 0, $bucket_movement_service->calls[0]['sealed_state'] );
 		$this->assertCount( 1, $physical_buckets->updates );
 		$this->assertFalse( $physical_buckets->updates[0]['is_sealed'] );
@@ -335,8 +338,9 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
 			public function find( int $bucket_id ): ?array {
 				return array(
-					'id'        => $bucket_id,
-					'vendor_id' => 5,
+					'id'                => $bucket_id,
+					'vendor_id'         => 5,
+					'square_location_id'=> 'LOC-5',
 				);
 			}
 		};
@@ -359,8 +363,10 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 
 		$this->assertTrue( $result['success'] );
 		$this->assertTrue( $result['movement_triggered'] );
+		$this->assertSame( 'LOC-5', $result['square_location_id'] );
 		$this->assertSame( 1, $result['movements_applied'] );
 		$this->assertCount( 1, $bucket_movement_service->calls );
+		$this->assertSame( 'LOC-5', $bucket_movement_service->calls[0]['square_location_id'] );
 		$this->assertCount( 1, $assignment_service->transitions );
 		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT, $assignment_service->transitions[0]['status'] );
 	}
@@ -427,8 +433,9 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
 			public function find( int $bucket_id ): ?array {
 				return array(
-					'id'        => $bucket_id,
-					'vendor_id' => 5,
+					'id'                => $bucket_id,
+					'vendor_id'         => 5,
+					'square_location_id'=> 'LOC-5',
 				);
 			}
 		};
@@ -451,9 +458,126 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 
 		$this->assertTrue( $result['success'] );
 		$this->assertFalse( $result['movement_triggered'] );
+		$this->assertSame( 'LOC-5', $result['square_location_id'] );
 		$this->assertSame( 0, $result['movements_applied'] );
 		$this->assertCount( 0, $bucket_movement_service->calls );
 		$this->assertCount( 1, $assignment_service->transitions );
 		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT, $assignment_service->transitions[0]['status'] );
+	}
+
+	public function testVendorEventCheckinMirrorsPhysicalExecutionIntoHeadlessCore(): void {
+		TestState::set_product(
+			901,
+			new class() {
+				public function get_sku(): string {
+					return 'SKU-901';
+				}
+			}
+		);
+
+		TestState::set_remote_response(
+			array(
+				'code' => 201,
+				'body' => wp_json_encode(
+					array(
+						'ok'   => true,
+						'move' => array( 'movement_uuid' => 'mv-remote' ),
+					)
+				),
+			)
+		);
+
+		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public function __construct() {}
+
+			public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
+				return true;
+			}
+		};
+
+		$assignment_repository = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 77,
+					'physical_bucket_id' => 200,
+					'assignment_status'  => 'staged',
+					'is_active'          => 1,
+				);
+			}
+		};
+
+		$bucket_positions = new class() extends \AIMS_Bucket_Inventory_Position_Repository {
+			public function get_for_bucket( int $bucket_id ): array {
+				return array(
+					array(
+						'product_id' => 901,
+						'vendor_id'  => 5,
+						'quantity'   => 3.0,
+					),
+				);
+			}
+		};
+
+		$bucket_movement_service = new class() extends \AIMS_Bucket_Movement_Service {
+			public function __construct() {}
+
+			public function record_event_load_out( array $data ) {
+				return array(
+					'movement_id'      => 321,
+					'current_quantity' => 7.0,
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function get_primary_for_event( int $event_id ): ?array {
+				return array( 'vendor_id' => 5 );
+			}
+		};
+
+		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find_with_context( int $bucket_id ): ?array {
+				return array(
+					'id'                   => $bucket_id,
+					'vendor_id'            => 5,
+					'bucket_code'          => 'BIN-77',
+					'square_location_id'   => 'LOC-77',
+					'current_location_code'=> 'WH-A',
+					'home_location_code'   => 'WH-A',
+				);
+			}
+		};
+
+		$execution = new \AIMS_Event_Execution_Service(
+			$assignment_service,
+			$assignment_repository,
+			$bucket_positions,
+			$bucket_movement_service,
+			$vendor_event_assignments,
+			$physical_buckets,
+			new \AIMS_Headless_Execution_Mirror_Service(
+				new \AIMS_Headless_Api_Client( 'https://aims-core.test', 'secret-token' )
+			)
+		);
+
+		$result = $execution->vendor_event_checkin(
+			array(
+				'assignment_id' => 400,
+				'reference_id'  => 'CHK-400',
+			)
+		);
+
+		$requests = TestState::get_remote_requests();
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 1, $result['headless_mirror']['attempted'] );
+		$this->assertSame( 1, $result['headless_mirror']['succeeded'] );
+		$this->assertCount( 1, $requests );
+
+		$payload = json_decode( (string) $requests[0]['args']['body'], true );
+		$this->assertSame( 'SKU-901', $payload['sku'] );
+		$this->assertSame( 'WH-A', $payload['from_location'] );
+		$this->assertSame( 'event:77', $payload['to_location'] );
 	}
 }

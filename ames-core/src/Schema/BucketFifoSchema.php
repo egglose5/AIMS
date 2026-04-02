@@ -22,6 +22,7 @@ final class BucketFifoSchema {
 				"bucket_type" TEXT NOT NULL DEFAULT "physical",
 				"status" TEXT NOT NULL DEFAULT "active",
 				"show_id" TEXT NOT NULL DEFAULT "",
+				"square_location_id" TEXT NOT NULL DEFAULT "",
 				"current_location" TEXT NOT NULL DEFAULT "",
 				"current_custody" TEXT NOT NULL DEFAULT "",
 				"created_at" TEXT NOT NULL,
@@ -29,6 +30,7 @@ final class BucketFifoSchema {
 			)',
 			'CREATE INDEX IF NOT EXISTS "idx_aims_core_buckets_location" ON "' . self::BUCKET_TABLE . '" ("current_location")',
 			'CREATE INDEX IF NOT EXISTS "idx_aims_core_buckets_custody" ON "' . self::BUCKET_TABLE . '" ("current_custody")',
+			'CREATE INDEX IF NOT EXISTS "idx_aims_core_buckets_square_location" ON "' . self::BUCKET_TABLE . '" ("square_location_id")',
 			'CREATE TABLE IF NOT EXISTS "' . self::LOT_TABLE . '" (
 				"id" INTEGER PRIMARY KEY AUTOINCREMENT,
 				"lot_uuid" TEXT NOT NULL UNIQUE,
@@ -70,6 +72,7 @@ final class BucketFifoSchema {
 				"request_reference" TEXT NOT NULL DEFAULT "",
 				"sku" TEXT NOT NULL,
 				"show_id" TEXT NOT NULL DEFAULT "",
+				"square_location_id" TEXT NOT NULL DEFAULT "",
 				"bucket_code" TEXT NOT NULL,
 				"lot_uuid" TEXT NOT NULL,
 				"quantity" REAL NOT NULL DEFAULT 0,
@@ -81,6 +84,7 @@ final class BucketFifoSchema {
 				"created_at" TEXT NOT NULL
 			)',
 			'CREATE INDEX IF NOT EXISTS "idx_aims_core_fifo_allocations_request" ON "' . self::ALLOCATION_TABLE . '" ("request_reference")',
+			'CREATE INDEX IF NOT EXISTS "idx_aims_core_fifo_allocations_square_location" ON "' . self::ALLOCATION_TABLE . '" ("square_location_id")',
 		);
 	}
 }

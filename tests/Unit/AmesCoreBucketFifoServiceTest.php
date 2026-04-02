@@ -43,15 +43,17 @@ final class AmesCoreBucketFifoServiceTest extends \AIMS\Tests\TestCase {
 		$service = new BucketFifoService( $store );
 		$result = $service->registerBucket(
 			array(
-				'bucket_code'      => 'BUCKET-1',
-				'current_location' => 'warehouse-a',
-				'current_custody'  => 'main-team',
+				'bucket_code'       => 'BUCKET-1',
+				'current_location'  => 'warehouse-a',
+				'current_custody'   => 'main-team',
+				'square_location_id'=> 'LOC-1',
 			)
 		);
 
 		$this->assertSame( 'BUCKET-1', $result['bucket_code'] );
 		$this->assertSame( 'warehouse-a', $store->lastBucket['current_location'] );
 		$this->assertSame( 'main-team', $store->lastBucket['current_custody'] );
+		$this->assertSame( 'LOC-1', $store->lastBucket['square_location_id'] );
 	}
 
 	public function testFifoReceiptRequiresCostSnapshotAndNormalizesCents(): void {
@@ -153,12 +155,14 @@ final class AmesCoreBucketFifoServiceTest extends \AIMS\Tests\TestCase {
 		$service = new BucketFifoService( $store );
 		$result = $service->pick(
 			array(
-				'sku'      => 'SKU-1',
-				'quantity' => 2,
+				'sku'               => 'SKU-1',
+				'quantity'          => 2,
+				'square_location_id'=> 'LOC-1',
 			)
 		);
 
 		$this->assertSame( 'fifo_pick', $store->lastPick['movement_type'] );
+		$this->assertSame( 'LOC-1', $store->lastPick['square_location_id'] );
 		$this->assertSame( 2.0, $result['allocated_quantity'] );
 		$this->assertSame( 'BUCKET-1', $result['allocations'][0]['bucket_code'] );
 	}

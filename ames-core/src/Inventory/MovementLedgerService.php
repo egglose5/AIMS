@@ -99,6 +99,7 @@ final class MovementLedgerService {
 			'bucket_code'    => $this->sanitizeText( $data['bucket_code'] ?? '' ),
 			'vendor_id'      => $vendorId,
 			'event_id'       => (int) ( $data['event_id'] ?? 0 ),
+			'square_location_id' => $this->sanitizeText( $data['square_location_id'] ?? '' ),
 			'source_bucket_id' => (int) ( $data['source_bucket_id'] ?? 0 ),
 			'target_bucket_id' => (int) ( $data['target_bucket_id'] ?? 0 ),
 			'source_storage_location_id' => (int) ( $data['source_storage_location_id'] ?? 0 ),

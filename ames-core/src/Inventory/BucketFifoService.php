@@ -35,6 +35,7 @@ final class BucketFifoService {
 				'bucket_type'       => $this->stringValue( $input['bucket_type'] ?? 'physical' ),
 				'status'            => $this->stringValue( $input['status'] ?? 'active' ),
 				'show_id'           => $this->stringValue( $input['show_id'] ?? '' ),
+				'square_location_id'=> $this->stringValue( $input['square_location_id'] ?? '' ),
 				'current_location'  => $this->stringValue( $input['current_location'] ?? '' ),
 				'current_custody'   => $this->stringValue( $input['current_custody'] ?? '' ),
 			)
@@ -52,6 +53,7 @@ final class BucketFifoService {
 				'current_location' => $this->stringValue( $filters['current_location'] ?? '' ),
 				'current_custody'  => $this->stringValue( $filters['current_custody'] ?? '' ),
 				'show_id'          => $this->stringValue( $filters['show_id'] ?? '' ),
+				'square_location_id'=> $this->stringValue( $filters['square_location_id'] ?? '' ),
 			)
 		);
 	}
@@ -92,6 +94,7 @@ final class BucketFifoService {
 				'bucket_code'       => $bucketCode,
 				'sku'               => $sku,
 				'show_id'           => $this->stringValue( $input['show_id'] ?? '' ),
+				'square_location_id'=> $this->stringValue( $input['square_location_id'] ?? '' ),
 				'quantity'          => $quantity,
 				'unit_cost'         => $normalizedUnitCost,
 				'unit_cost_cents'   => $normalizedUnitCostCents,
@@ -152,6 +155,7 @@ final class BucketFifoService {
 			array(
 				'sku'     => $sku,
 				'show_id' => $this->stringValue( $filters['show_id'] ?? '' ),
+				'square_location_id' => $this->stringValue( $filters['square_location_id'] ?? '' ),
 			)
 		);
 	}
@@ -185,6 +189,7 @@ final class BucketFifoService {
 			array(
 				'sku'               => $sku,
 				'show_id'           => $this->stringValue( $input['show_id'] ?? '' ),
+				'square_location_id'=> $this->stringValue( $input['square_location_id'] ?? '' ),
 				'quantity'          => $quantity,
 				'request_reference' => $this->stringValue( $input['request_reference'] ?? '' ),
 				'movement_type'     => $this->stringValue( $input['movement_type'] ?? 'fifo_pick' ),

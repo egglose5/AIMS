@@ -16,6 +16,7 @@ final class PhysicalBucketRepositoryTest extends \AIMS\Tests\TestCase {
 					'bucket_label'                 => 'Blue Bin',
 					'bucket_type'                  => 'standard',
 					'status'                       => 'available',
+					'square_location_id'           => 'LOC-12',
 					'current_storage_location_id'  => 12,
 					'home_storage_location_id'     => 11,
 					'vendor_id'                    => 5,
@@ -53,6 +54,7 @@ final class PhysicalBucketRepositoryTest extends \AIMS\Tests\TestCase {
 		$this->assertCount( 1, $rows );
 		$this->assertSame( 300, (int) $rows[0]['id'] );
 		$this->assertSame( 'Blue Bin', $rows[0]['bucket_label'] );
+		$this->assertSame( 'LOC-12', $rows[0]['square_location_id'] );
 		$this->assertSame( 'Staging A', $rows[0]['current_storage_location']['location_name'] );
 		$this->assertSame( 'Warehouse A', $rows[0]['home_storage_location']['location_name'] );
 	}

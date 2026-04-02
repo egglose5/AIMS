@@ -64,6 +64,9 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 			throw new \InvalidArgumentException( 'Movement quantity must be greater than zero.' );
 		}
 
+		$fromEndpoint = $this->stringValue( $input['from_endpoint'] ?? $fromLocation );
+		$toEndpoint   = $this->stringValue( $input['to_endpoint'] ?? $toLocation );
+
 		$row = MovementLedgerSchema::normalizeRow(
 			array(
 				'sku'            => $sku,
@@ -74,8 +77,8 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 				'user_id'        => $userId,
 				'quantity_delta' => $quantity,
 				'movement_type'  => $movementType,
-				'from_endpoint'  => $fromLocation,
-				'to_endpoint'    => $toLocation,
+				'from_endpoint'  => $fromEndpoint,
+				'to_endpoint'    => $toEndpoint,
 				'created_at'     => $occurredAt,
 				'updated_at'     => $occurredAt,
 			)

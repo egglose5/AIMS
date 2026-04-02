@@ -11,6 +11,7 @@ class AIMS_Event_Execution_Service {
 	private $bucket_movement_service;
 	private $vendor_event_assignments;
 	private $physical_buckets;
+	private $headless_execution_mirror;
 
 	public function __construct(
 		AIMS_Event_Bucket_Assignment_Service $assignment_service = null,
@@ -18,7 +19,8 @@ class AIMS_Event_Execution_Service {
 		AIMS_Bucket_Inventory_Position_Repository $bucket_positions = null,
 		AIMS_Bucket_Movement_Service $bucket_movement_service = null,
 		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
-		AIMS_Physical_Bucket_Repository $physical_buckets = null
+		AIMS_Physical_Bucket_Repository $physical_buckets = null,
+		AIMS_Headless_Execution_Mirror_Service $headless_execution_mirror = null
 	) {
 		$this->assignment_service    = $assignment_service ?: new AIMS_Event_Bucket_Assignment_Service( new AIMS_Event_Bucket_Assignment_Repository() );
 		$this->assignment_repository = $assignment_repository ?: new AIMS_Event_Bucket_Assignment_Repository();
@@ -29,6 +31,7 @@ class AIMS_Event_Execution_Service {
 		);
 		$this->vendor_event_assignments = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
 		$this->physical_buckets         = $physical_buckets ?: new AIMS_Physical_Bucket_Repository();
+		$this->headless_execution_mirror = $headless_execution_mirror ?: new AIMS_Headless_Execution_Mirror_Service();
 	}
 
 	public function get_planning_default_status(): string {
@@ -143,6 +146,9 @@ class AIMS_Event_Execution_Service {
 		$applied_by = (int) ( $data['applied_by'] ?? get_current_user_id() );
 		$note       = isset( $data['note'] ) ? sanitize_textarea_field( $data['note'] ) : '';
 		$sealed_state = $this->resolve_sealed_state( $data );
+		$bucket_context = $this->get_bucket_context( $bucket_id );
+		$square_location_id = sanitize_text_field( (string) ( $bucket_context['square_location_id'] ?? '' ) );
+		$occurred_at = current_time( 'mysql' );
 
 		$movement_triggered = true;
 		$movement_message   = (string) $config['message'];
@@ -155,6 +161,13 @@ class AIMS_Event_Execution_Service {
 		$positions = $movement_triggered ? $this->get_bucket_positions( $bucket_id ) : array();
 		$movements  = array();
 		$errors     = array();
+		$headless_mirror = array(
+			'attempted' => 0,
+			'succeeded' => 0,
+			'failed'    => 0,
+			'skipped'   => 0,
+			'results'   => array(),
+		);
 
 		foreach ( $positions as $position ) {
 			$product_id = (int) ( $position['product_id'] ?? 0 );
@@ -173,10 +186,12 @@ class AIMS_Event_Execution_Service {
 					'event_id'       => $event_id,
 					'product_id'     => $product_id,
 					'bucket_id'      => $bucket_id,
+					'square_location_id' => $square_location_id,
 					'movement_type'  => $config['movement_type'],
 					'quantity_delta' => abs( $quantity ) * (float) $config['quantity_delta'],
 					'sealed_state'   => null !== $sealed_state ? ( $sealed_state ? 1 : 0 ) : 0,
 					'applied_by'     => $applied_by,
+					'occurred_at'    => $occurred_at,
 					'note'           => $note,
 				)
 			);
@@ -203,6 +218,42 @@ class AIMS_Event_Execution_Service {
 					'duplicate'   => false,
 				)
 			);
+
+			$mirror_result = $this->mirror_execution_movement_to_headless(
+				array(
+					'product_id'      => $product_id,
+					'quantity_delta'  => abs( $quantity ) * (float) $config['quantity_delta'],
+					'movement_type'   => (string) $config['movement_type'],
+					'applied_by'      => $applied_by,
+				),
+				array(
+					'event_id'       => $event_id,
+					'show_id'        => (string) $event_id,
+					'reference_type' => (string) ( $config['reference_type'] ?? '' ),
+					'bucket'         => $bucket_context,
+					'occurred_at'    => $occurred_at,
+				)
+			);
+
+			$headless_mirror['results'][] = array_merge(
+				array(
+					'product_id' => $product_id,
+					'vendor_id'  => $vendor_id,
+				),
+				$mirror_result
+			);
+
+			if ( ! empty( $mirror_result['attempted'] ) ) {
+				++$headless_mirror['attempted'];
+			}
+
+			if ( ! empty( $mirror_result['success'] ) ) {
+				++$headless_mirror['succeeded'];
+			} elseif ( ! empty( $mirror_result['skipped'] ) ) {
+				++$headless_mirror['skipped'];
+			} else {
+				++$headless_mirror['failed'];
+			}
 		}
 
 		if ( ! empty( $errors ) ) {
@@ -240,7 +291,9 @@ class AIMS_Event_Execution_Service {
 			'physical_bucket_id' => $bucket_id,
 			'status'             => $config['status'],
 			'movement_triggered' => $movement_triggered,
+			'square_location_id' => $square_location_id,
 			'sealed_state'       => null !== $sealed_state ? ( $sealed_state ? 1 : 0 ) : null,
+			'headless_mirror'    => $headless_mirror,
 			'movements'          => $movements,
 			'movements_applied'  => count(
 				array_filter(
@@ -291,14 +344,7 @@ class AIMS_Event_Execution_Service {
 			return $vendor_id;
 		}
 
-		if ( $bucket_id <= 0 || ! is_object( $this->physical_buckets ) || ! method_exists( $this->physical_buckets, 'find' ) ) {
-			return 0;
-		}
-
-		$bucket = $this->physical_buckets->find( $bucket_id );
-		if ( ! is_array( $bucket ) ) {
-			return 0;
-		}
+		$bucket = $this->get_bucket_context( $bucket_id );
 
 		return (int) ( $bucket['vendor_id'] ?? 0 );
 	}
@@ -346,6 +392,34 @@ class AIMS_Event_Execution_Service {
 		return null;
 	}
 
+	private function resolve_bucket_square_location_id( int $bucket_id ): string {
+		$bucket = $this->get_bucket_context( $bucket_id );
+
+		return sanitize_text_field( (string) ( $bucket['square_location_id'] ?? '' ) );
+	}
+
+	private function get_bucket_context( int $bucket_id ): array {
+		if ( $bucket_id <= 0 || ! is_object( $this->physical_buckets ) ) {
+			return array();
+		}
+
+		if ( method_exists( $this->physical_buckets, 'find_with_context' ) ) {
+			$bucket = $this->physical_buckets->find_with_context( $bucket_id );
+			if ( is_array( $bucket ) ) {
+				return $bucket;
+			}
+		}
+
+		if ( method_exists( $this->physical_buckets, 'find' ) ) {
+			$bucket = $this->physical_buckets->find( $bucket_id );
+			if ( is_array( $bucket ) ) {
+				return $bucket;
+			}
+		}
+
+		return array();
+	}
+
 	private function get_assignment( int $assignment_id ): array {
 		if ( $assignment_id <= 0 || ! is_object( $this->assignment_repository ) || ! method_exists( $this->assignment_repository, 'find' ) ) {
 			return array();
@@ -369,6 +443,26 @@ class AIMS_Event_Execution_Service {
 		}
 
 		return $rows;
+	}
+
+	private function mirror_execution_movement_to_headless( array $movement, array $context ): array {
+		if ( ! is_object( $this->headless_execution_mirror ) || ! method_exists( $this->headless_execution_mirror, 'mirror_event_execution_movement' ) ) {
+			return array(
+				'attempted' => false,
+				'success'   => false,
+				'skipped'   => true,
+				'reason'    => 'mirror_unavailable',
+			);
+		}
+
+		$result = $this->headless_execution_mirror->mirror_event_execution_movement( $movement, $context );
+
+		return is_array( $result ) ? $result : array(
+			'attempted' => false,
+			'success'   => false,
+			'skipped'   => true,
+			'reason'    => 'mirror_invalid_response',
+		);
 	}
 
 	private function failure_response( string $message, int $assignment_id, int $event_id, array $extra = array() ): array {

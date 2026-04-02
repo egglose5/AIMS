@@ -160,4 +160,66 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 		$this->assertStringContainsString( 'bucket_register', $output );
 		$this->assertStringContainsString( 'BIN-77', $output );
 	}
+
+	public function testRenderDashboardShowsHotDataPressureGauge(): void {
+		TestState::set_current_user_id( 88 );
+		TestState::set_user_capabilities( 88, array( \AIMS_Capabilities::CAP_MANAGE ) );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_URL, 'https://aims-core.test' );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_TOKEN, 'secret-token' );
+		TestState::set_remote_response(
+			array(
+				'code' => 200,
+				'body' => wp_json_encode(
+					array(
+						'manifest_uuid' => 'manifest-1',
+						'generated_at'  => '2026-04-02T12:00:00Z',
+						'summary'       => array(
+							'merged_items' => 5,
+						),
+						'buckets'       => array(),
+					)
+				),
+			)
+		);
+
+		$health = new class() extends \AIMS_Hot_Db_Health_Service {
+			public function __construct() {}
+
+			public function get_dashboard_snapshot(): array {
+				return array(
+					'band'                       => 'yellow',
+					'band_label'                 => 'Yellow',
+					'band_color'                 => '#f9a825',
+					'total_hot_rows'             => 120000,
+					'usage_percent'              => 48,
+					'capacity_target'            => 250000,
+					'thresholds'                 => array(
+						'green'  => 100000,
+						'yellow' => 250000,
+						'target' => 250000,
+					),
+					'estimated_order_equivalent' => 25000,
+					'counts'                     => array(
+						'square_sales'            => 100000,
+						'bucket_inventory_moves'  => 10000,
+						'fulfillment_allocations' => 5000,
+						'inventory_movements'     => 5000,
+					),
+					'message'                    => 'This stack is entering its caution band. AIMS is still doing its job, but line growth is starting to matter.',
+				);
+			}
+		};
+
+		$menu = new \AIMS_Admin_Menu( null, new \AIMS_Audit_Log_Service( sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-dashboard-audit-' . uniqid( '', true ) ), $health );
+
+		ob_start();
+		$menu->render_dashboard();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Hot Data Pressure', $output );
+		$this->assertStringContainsString( 'Yellow Band', $output );
+		$this->assertStringContainsString( '48% of hot-row target', $output );
+		$this->assertStringContainsString( 'Square sale lines', $output );
+		$this->assertStringContainsString( 'Red at 250,000 and above', $output );
+	}
 }

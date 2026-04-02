@@ -49,6 +49,7 @@ class AIMS_Physical_Bucket_Repository {
 			'bucket_type'                => $bucket_type,
 			'status'                     => $status,
 			'is_sealed'                  => ! empty( $data['is_sealed'] ) ? 1 : 0,
+			'square_location_id'         => sanitize_text_field( $data['square_location_id'] ?? '' ),
 			'current_storage_location_id' => (int) ( $data['current_storage_location_id'] ?? 0 ),
 			'home_storage_location_id'   => (int) ( $data['home_storage_location_id'] ?? 0 ),
 			'vendor_id'                  => (int) ( $data['vendor_id'] ?? 0 ),
@@ -226,6 +227,21 @@ class AIMS_Physical_Bucket_Repository {
 		);
 	}
 
+	public function update_square_location_id( int $bucket_id, string $square_location_id ): bool {
+		global $wpdb;
+
+		return false !== $wpdb->update(
+			$this->get_table_name(),
+			array(
+				'square_location_id' => sanitize_text_field( $square_location_id ),
+				'updated_at'         => current_time( 'mysql' ),
+			),
+			array( 'id' => $bucket_id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+	}
+
 	private function build_bucket_query( array $args ): array {
 		global $wpdb;
 
@@ -291,6 +307,11 @@ class AIMS_Physical_Bucket_Repository {
 		if ( ! empty( $args['location_id'] ) ) {
 			$sql      .= ' AND b.current_storage_location_id = %d';
 			$params[] = (int) $args['location_id'];
+		}
+
+		if ( ! empty( $args['square_location_id'] ) ) {
+			$sql      .= ' AND b.square_location_id = %s';
+			$params[] = sanitize_text_field( (string) $args['square_location_id'] );
 		}
 
 		if ( ! empty( $args['bucket_ids'] ) && is_array( $args['bucket_ids'] ) ) {
@@ -431,6 +452,7 @@ class AIMS_Physical_Bucket_Repository {
 					(string) ( $row['home_location_status'] ?? '' ),
 					(string) ( $row['home_location_barcode'] ?? '' )
 				),
+				'square_location_id'       => sanitize_text_field( (string) ( $row['square_location_id'] ?? '' ) ),
 			)
 		);
 	}

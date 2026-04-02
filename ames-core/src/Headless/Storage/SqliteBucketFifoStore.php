@@ -32,6 +32,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 			'bucket_type'       => $this->stringValue( $bucket['bucket_type'] ?? 'physical' ),
 			'status'            => $this->stringValue( $bucket['status'] ?? 'active' ),
 			'show_id'           => $this->stringValue( $bucket['show_id'] ?? '' ),
+			'square_location_id'=> $this->stringValue( $bucket['square_location_id'] ?? '' ),
 			'current_location'  => $this->stringValue( $bucket['current_location'] ?? '' ),
 			'current_custody'   => $this->stringValue( $bucket['current_custody'] ?? '' ),
 			'created_at'        => $this->stringValue( $bucket['created_at'] ?? $now ),
@@ -40,9 +41,9 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 
 		$statement = $this->connection()->prepare(
 			'INSERT INTO "' . BucketFifoSchema::BUCKET_TABLE . '" (
-				"bucket_code","bucket_label","bucket_type","status","show_id","current_location","current_custody","created_at","updated_at"
+				"bucket_code","bucket_label","bucket_type","status","show_id","square_location_id","current_location","current_custody","created_at","updated_at"
 			) VALUES (
-				:bucket_code,:bucket_label,:bucket_type,:status,:show_id,:current_location,:current_custody,:created_at,:updated_at
+				:bucket_code,:bucket_label,:bucket_type,:status,:show_id,:square_location_id,:current_location,:current_custody,:created_at,:updated_at
 			)
 			ON CONFLICT("bucket_code")
 			DO UPDATE SET
@@ -50,6 +51,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 				"bucket_type" = excluded."bucket_type",
 				"status" = excluded."status",
 				"show_id" = excluded."show_id",
+				"square_location_id" = excluded."square_location_id",
 				"current_location" = excluded."current_location",
 				"current_custody" = excluded."current_custody",
 				"updated_at" = excluded."updated_at"'
@@ -68,7 +70,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 		$where = array();
 		$args  = array();
 
-		foreach ( array( 'bucket_code', 'current_location', 'current_custody', 'show_id' ) as $column ) {
+		foreach ( array( 'bucket_code', 'current_location', 'current_custody', 'show_id', 'square_location_id' ) as $column ) {
 			$value = $this->stringValue( $filters[ $column ] ?? '' );
 			if ( '' === $value ) {
 				continue;
@@ -115,6 +117,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 				'current_location' => $this->stringValue( $receipt['current_location'] ?? '' ),
 				'current_custody'  => $this->stringValue( $receipt['current_custody'] ?? '' ),
 				'show_id'          => $this->stringValue( $receipt['show_id'] ?? '' ),
+				'square_location_id' => $this->stringValue( $receipt['square_location_id'] ?? ( $this->findBucket( $bucketCode )['square_location_id'] ?? '' ) ),
 			)
 		);
 
@@ -229,13 +232,17 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 	public function fifoAvailability( array $filters = array() ): array {
 		$sku = $this->stringValue( $filters['sku'] ?? '' );
 		$showId = $this->stringValue( $filters['show_id'] ?? '' );
+		$squareLocationId = $this->stringValue( $filters['square_location_id'] ?? '' );
 
-		$sql = 'SELECT l.*, b."current_location", b."current_custody"
+		$sql = 'SELECT l.*, b."square_location_id", b."current_location", b."current_custody"
 			FROM "' . BucketFifoSchema::LOT_TABLE . '" l
 			INNER JOIN "' . BucketFifoSchema::BUCKET_TABLE . '" b ON b."bucket_code" = l."bucket_code"
 			WHERE l."sku" = :sku AND l."remaining_quantity" > 0';
 		if ( '' !== $showId ) {
 			$sql .= ' AND l."show_id" = :show_id';
+		}
+		if ( '' !== $squareLocationId ) {
+			$sql .= ' AND b."square_location_id" = :square_location_id';
 		}
 		$sql .= ' ORDER BY l."received_at" ASC, l."id" ASC';
 
@@ -243,6 +250,9 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 		$statement->bindValue( ':sku', $sku );
 		if ( '' !== $showId ) {
 			$statement->bindValue( ':show_id', $showId );
+		}
+		if ( '' !== $squareLocationId ) {
+			$statement->bindValue( ':square_location_id', $squareLocationId );
 		}
 		$statement->execute();
 
@@ -256,6 +266,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 					'bucket_code'        => (string) $row['bucket_code'],
 					'sku'                => (string) $row['sku'],
 					'show_id'            => (string) $row['show_id'],
+					'square_location_id' => (string) $row['square_location_id'],
 					'remaining_quantity' => (float) $row['remaining_quantity'],
 					'unit_cost'          => (float) $row['unit_cost'],
 					'unit_cost_cents'    => (int) $row['unit_cost_cents'],
@@ -271,12 +282,13 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 	public function pickFifo( array $request ): array {
 		$sku = $this->stringValue( $request['sku'] ?? '' );
 		$showId = $this->stringValue( $request['show_id'] ?? '' );
+		$squareLocationId = $this->stringValue( $request['square_location_id'] ?? '' );
 		$requestedQuantity = $this->floatValue( $request['quantity'] ?? 0 );
 		$amountPaid = $this->floatValue( $request['amount_paid'] ?? 0 );
 		$amountPaidCents = $this->intValue( $request['amount_paid_cents'] ?? ( $amountPaid > 0 ? (int) round( $amountPaid * 100 ) : 0 ) );
 		$taxAmount = $this->floatValue( $request['tax_amount'] ?? 0 );
 		$taxAmountCents = $this->intValue( $request['tax_amount_cents'] ?? ( $taxAmount > 0 ? (int) round( $taxAmount * 100 ) : 0 ) );
-		$availableLots = $this->fifoAvailability( array( 'sku' => $sku, 'show_id' => $showId ) );
+		$availableLots = $this->fifoAvailability( array( 'sku' => $sku, 'show_id' => $showId, 'square_location_id' => $squareLocationId ) );
 		$totalAvailable = array_reduce(
 			$availableLots,
 			static fn( float $carry, array $lot ): float => $carry + (float) ( $lot['remaining_quantity'] ?? 0 ),
@@ -323,9 +335,9 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 				$allocationUuid = $this->uuid();
 				$insert = $pdo->prepare(
 					'INSERT INTO "' . BucketFifoSchema::ALLOCATION_TABLE . '" (
-						"allocation_uuid","request_reference","sku","show_id","bucket_code","lot_uuid","quantity","movement_type","amount_paid","amount_paid_cents","tax_amount","tax_amount_cents","created_at"
+						"allocation_uuid","request_reference","sku","show_id","square_location_id","bucket_code","lot_uuid","quantity","movement_type","amount_paid","amount_paid_cents","tax_amount","tax_amount_cents","created_at"
 					) VALUES (
-						:allocation_uuid,:request_reference,:sku,:show_id,:bucket_code,:lot_uuid,:quantity,:movement_type,:amount_paid,:amount_paid_cents,:tax_amount,:tax_amount_cents,:created_at
+						:allocation_uuid,:request_reference,:sku,:show_id,:square_location_id,:bucket_code,:lot_uuid,:quantity,:movement_type,:amount_paid,:amount_paid_cents,:tax_amount,:tax_amount_cents,:created_at
 					)'
 				);
 
@@ -337,6 +349,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 					'request_reference'=> $this->stringValue( $request['request_reference'] ?? '' ),
 					'sku'              => $sku,
 					'show_id'          => $showId,
+					'square_location_id' => (string) ( $lot['square_location_id'] ?? '' ),
 					'bucket_code'      => (string) $lot['bucket_code'],
 					'lot_uuid'         => (string) $lot['lot_uuid'],
 					'quantity'         => $allocatable,
@@ -359,6 +372,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 					'bucket_code'       => (string) $lot['bucket_code'],
 					'lot_uuid'          => (string) $lot['lot_uuid'],
 					'quantity'          => $allocatable,
+					'square_location_id' => (string) ( $lot['square_location_id'] ?? '' ),
 					'unit_cost'         => (float) $lot['unit_cost'],
 					'unit_cost_cents'   => (int) $lot['unit_cost_cents'],
 					'amount_paid'       => $allocatedAmountPaidCents / 100,
@@ -386,6 +400,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 		return array(
 			'sku'                => $sku,
 			'show_id'            => $showId,
+			'square_location_id' => $squareLocationId,
 			'requested_quantity' => $requestedQuantity,
 			'allocated_quantity' => $requestedQuantity - $remaining,
 			'amount_paid'        => $amountPaid,
@@ -439,6 +454,7 @@ final class SqliteBucketFifoStore implements BucketFifoStoreInterface {
 			'bucket_type'       => (string) $row['bucket_type'],
 			'status'            => (string) $row['status'],
 			'show_id'           => (string) $row['show_id'],
+			'square_location_id'=> (string) $row['square_location_id'],
 			'current_location'  => (string) $row['current_location'],
 			'current_custody'   => (string) $row['current_custody'],
 			'on_hand_quantity'  => isset( $row['on_hand_quantity'] ) ? (float) $row['on_hand_quantity'] : 0.0,

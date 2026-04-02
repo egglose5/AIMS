@@ -152,6 +152,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'bucket_type'               => 'standard',
 						'status'                    => 'available',
 						'is_sealed'                 => 1,
+						'square_location_id'        => 'LOC-1',
 						'current_storage_location_id' => 12,
 						'home_storage_location_id'  => 11,
 						'vendor_id'                 => 5,
@@ -163,6 +164,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'bucket_label'              => 'Red Bin',
 						'bucket_type'               => 'standard',
 						'status'                    => 'available',
+						'square_location_id'        => 'LOC-1',
 						'current_storage_location_id' => 12,
 						'home_storage_location_id'  => 11,
 						'vendor_id'                 => 5,
@@ -180,6 +182,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'bucket_type'               => 'standard',
 						'status'                    => 'available',
 						'is_sealed'                 => 0,
+						'square_location_id'        => 'LOC-1',
 						'current_storage_location_id' => 12,
 						'home_storage_location_id'  => 11,
 						'vendor_id'                 => 5,
@@ -191,6 +194,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 						'bucket_label'              => 'Blue Bin',
 						'bucket_type'               => 'standard',
 						'status'                    => 'available',
+						'square_location_id'        => 'LOC-1',
 						'current_storage_location_id' => 12,
 						'home_storage_location_id'  => 11,
 						'vendor_id'                 => 5,
@@ -313,6 +317,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'B-300', $model['workspace']['available_buckets'][0]['bucket_code'] );
 		$this->assertFalse( $model['workspace']['assigned_buckets'][0]['is_sealed'] );
 		$this->assertTrue( $model['workspace']['available_buckets'][0]['is_sealed'] );
+		$this->assertSame( 'LOC-1', $model['workspace']['available_buckets'][0]['square_location_id'] );
 		$this->assertSame( 3.0, $model['workspace']['assigned_buckets'][0]['content_summary']['total_available_quantity'] );
 		$this->assertSame( 'Staging A', $model['workspace']['available_buckets'][0]['storage']['current']['label'] );
 		$this->assertSame( 1, $model['workspace']['summary']['assigned_bucket_count'] );
@@ -525,6 +530,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 					'bucket_type' => 'standard',
 					'status' => 'available',
 					'vendor_id' => 5,
+					'square_location_id' => 'LOC-1',
 				);
 			}
 		};
@@ -636,6 +642,7 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 					'bucket_type' => 'standard',
 					'status' => 'available',
 					'vendor_id' => 5,
+					'square_location_id' => 'LOC-1',
 				);
 			}
 		};

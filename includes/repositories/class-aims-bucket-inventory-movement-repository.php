@@ -74,6 +74,7 @@ class AIMS_Bucket_Inventory_Movement_Repository {
 			'target_bucket_id'           => (int) ( $data['target_bucket_id'] ?? 0 ),
 			'source_storage_location_id' => (int) ( $data['source_storage_location_id'] ?? 0 ),
 			'target_storage_location_id' => (int) ( $data['target_storage_location_id'] ?? 0 ),
+			'square_location_id'         => sanitize_text_field( $data['square_location_id'] ?? '' ),
 			'movement_type'              => sanitize_key( $data['movement_type'] ?? '' ),
 			'quantity_delta'             => number_format( (float) ( $data['quantity_delta'] ?? 0 ), 4, '.', '' ),
 			'sealed_state'               => ! empty( $data['sealed_state'] ) ? 1 : 0,

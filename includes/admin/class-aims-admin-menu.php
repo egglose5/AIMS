@@ -12,10 +12,12 @@ class AIMS_Admin_Menu {
 	const NOTICE_QUERY_ARG    = 'aims_notice';
 	private $surface_authorization;
 	private $audit_log_service;
+	private $hot_db_health_service;
 
-	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null, AIMS_Audit_Log_Service $audit_log_service = null ) {
+	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null, AIMS_Audit_Log_Service $audit_log_service = null, AIMS_Hot_Db_Health_Service $hot_db_health_service = null ) {
 		$this->surface_authorization = $surface_authorization ?: new AIMS_Surface_Authorization_Service();
 		$this->audit_log_service     = $audit_log_service ?: new AIMS_Audit_Log_Service();
+		$this->hot_db_health_service = $hot_db_health_service ?: new AIMS_Hot_Db_Health_Service();
 	}
 
 	public function register(): void {
@@ -122,7 +124,8 @@ class AIMS_Admin_Menu {
 			'json'    => array(),
 		);
 		$availability_query = $this->get_fifo_availability_query();
-		$notice        = $this->get_notice();
+		$notice             = $this->get_notice();
+		$hot_db_health      = $this->hot_db_health_service->get_dashboard_snapshot();
 
 		if ( $client->is_configured() && '' !== (string) ( $availability_query['sku'] ?? '' ) ) {
 			$availability = $client->get_fifo_availability( $availability_query );
@@ -143,6 +146,11 @@ class AIMS_Admin_Menu {
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Core Status</h2>';
 		$this->render_manifest_status( $manifest );
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>Hot Data Pressure</h2>';
+		$this->render_hot_db_health( $hot_db_health );
 		echo '</div>';
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
@@ -261,6 +269,7 @@ class AIMS_Admin_Menu {
 			'bucket_type'      => $this->sanitize_request_string( $_POST['bucket_type'] ?? 'physical' ),
 			'status'           => $this->sanitize_request_string( $_POST['status'] ?? 'active' ),
 			'show_id'          => $this->sanitize_request_string( $_POST['show_id'] ?? '' ),
+			'square_location_id' => $this->sanitize_request_string( $_POST['square_location_id'] ?? '' ),
 			'current_location' => $this->sanitize_request_string( $_POST['current_location'] ?? '' ),
 			'current_custody'  => $this->sanitize_request_string( $_POST['current_custody'] ?? '' ),
 		);
@@ -329,6 +338,7 @@ class AIMS_Admin_Menu {
 		$payload = array(
 			'sku'               => $this->sanitize_request_string( $_POST['sku'] ?? '' ),
 			'show_id'           => $this->sanitize_request_string( $_POST['show_id'] ?? '' ),
+			'square_location_id' => $this->sanitize_request_string( $_POST['square_location_id'] ?? '' ),
 			'request_reference' => $this->sanitize_request_string( $_POST['request_reference'] ?? '' ),
 			'quantity'          => $this->sanitize_request_float( $_POST['quantity'] ?? 0 ),
 			'amount_paid'       => $this->sanitize_request_float( $_POST['amount_paid'] ?? 0 ),
@@ -412,6 +422,7 @@ class AIMS_Admin_Menu {
 		echo '<tr><th scope="row"><label for="aims-bucket-type">Bucket Type</label></th><td><input id="aims-bucket-type" type="text" class="regular-text" name="bucket_type" value="physical" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-status">Status</label></th><td><input id="aims-bucket-status" type="text" class="regular-text" name="status" value="active" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-show-id">Show ID</label></th><td><input id="aims-bucket-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-bucket-square-location-id">Square Location ID</label></th><td><input id="aims-bucket-square-location-id" type="text" class="regular-text" name="square_location_id" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-current-location">Current Location</label></th><td><input id="aims-bucket-current-location" type="text" class="regular-text" name="current_location" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-current-custody">Current Custody</label></th><td><input id="aims-bucket-current-custody" type="text" class="regular-text" name="current_custody" /></td></tr>';
 		echo '</tbody></table>';
@@ -432,12 +443,13 @@ class AIMS_Admin_Menu {
 			return;
 		}
 
-		echo '<table class="widefat striped"><thead><tr><th>Bucket</th><th>Type</th><th>Show</th><th>Location</th><th>Custody</th><th>On Hand</th><th>Status</th></tr></thead><tbody>';
+		echo '<table class="widefat striped"><thead><tr><th>Bucket</th><th>Type</th><th>Show</th><th>Square Location</th><th>Location</th><th>Custody</th><th>On Hand</th><th>Status</th></tr></thead><tbody>';
 		foreach ( $rows as $row ) {
 			echo '<tr>';
 			echo '<td>' . esc_html( (string) ( $row['bucket_code'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['bucket_type'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['show_id'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['square_location_id'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['current_location'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['current_custody'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['on_hand_quantity'] ?? 0 ) ) . '</td>';
@@ -495,6 +507,7 @@ class AIMS_Admin_Menu {
 		echo '<table class="form-table"><tbody>';
 		echo '<tr><th scope="row"><label for="aims-fifo-sku">SKU</label></th><td><input id="aims-fifo-sku" type="text" class="regular-text" name="aims_fifo_sku" value="' . esc_attr( (string) ( $query['sku'] ?? '' ) ) . '" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-fifo-show-id">Show ID</label></th><td><input id="aims-fifo-show-id" type="text" class="regular-text" name="aims_fifo_show_id" value="' . esc_attr( (string) ( $query['show_id'] ?? '' ) ) . '" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-fifo-square-location-id">Square Location ID</label></th><td><input id="aims-fifo-square-location-id" type="text" class="regular-text" name="aims_fifo_square_location_id" value="' . esc_attr( (string) ( $query['square_location_id'] ?? '' ) ) . '" /></td></tr>';
 		echo '</tbody></table>';
 		submit_button( 'Lookup FIFO Availability', 'secondary', '', false );
 		echo '</form>';
@@ -515,12 +528,13 @@ class AIMS_Admin_Menu {
 			return;
 		}
 
-		echo '<table class="widefat striped"><thead><tr><th>Lot</th><th>Bucket</th><th>Show</th><th>Remaining</th><th>Unit Cost</th><th>Received</th><th>Location</th><th>Custody</th></tr></thead><tbody>';
+		echo '<table class="widefat striped"><thead><tr><th>Lot</th><th>Bucket</th><th>Show</th><th>Square Location</th><th>Remaining</th><th>Unit Cost</th><th>Received</th><th>Location</th><th>Custody</th></tr></thead><tbody>';
 		foreach ( $rows as $row ) {
 			echo '<tr>';
 			echo '<td>' . esc_html( (string) ( $row['lot_uuid'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['bucket_code'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['show_id'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['square_location_id'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['remaining_quantity'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['unit_cost'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['received_at'] ?? '' ) ) . '</td>';
@@ -539,6 +553,7 @@ class AIMS_Admin_Menu {
 		echo '<table class="form-table"><tbody>';
 		echo '<tr><th scope="row"><label for="aims-pick-sku">SKU</label></th><td><input id="aims-pick-sku" type="text" class="regular-text" name="sku" required /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-show-id">Show ID</label></th><td><input id="aims-pick-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-pick-square-location-id">Square Location ID</label></th><td><input id="aims-pick-square-location-id" type="text" class="regular-text" name="square_location_id" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-request-reference">Request Reference</label></th><td><input id="aims-pick-request-reference" type="text" class="regular-text" name="request_reference" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-quantity">Quantity</label></th><td><input id="aims-pick-quantity" type="number" min="0.0001" step="0.0001" name="quantity" value="1" required /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-amount-paid">Amount Paid</label></th><td><input id="aims-pick-amount-paid" type="number" min="0" step="0.01" name="amount_paid" value="0.00" required /></td></tr>';
@@ -579,6 +594,48 @@ class AIMS_Admin_Menu {
 		echo '<p><strong>Generated:</strong> ' . esc_html( (string) ( $json['generated_at'] ?? 'n/a' ) ) . '</p>';
 		echo '<p><strong>Items:</strong> ' . esc_html( (string) ( $json['summary']['merged_items'] ?? 0 ) ) . '</p>';
 		echo '<pre style="max-height:320px;overflow:auto;background:#fff;padding:12px;border:1px solid #dcdcde;">' . esc_html( wp_json_encode( $json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ) . '</pre>';
+	}
+
+	private function render_hot_db_health( array $snapshot ): void {
+		$band_label    = (string) ( $snapshot['band_label'] ?? 'Green' );
+		$band_color    = (string) ( $snapshot['band_color'] ?? '#2e7d32' );
+		$usage_percent = max( 0, min( 100, (int) ( $snapshot['usage_percent'] ?? 0 ) ) );
+		$total_rows    = (int) ( $snapshot['total_hot_rows'] ?? 0 );
+		$target        = (int) ( $snapshot['capacity_target'] ?? 250000 );
+		$order_guess   = (int) ( $snapshot['estimated_order_equivalent'] ?? 0 );
+		$counts        = is_array( $snapshot['counts'] ?? null ) ? $snapshot['counts'] : array();
+		$message       = (string) ( $snapshot['message'] ?? '' );
+		$thresholds    = is_array( $snapshot['thresholds'] ?? null ) ? $snapshot['thresholds'] : array();
+		$green_limit   = (int) ( $thresholds['green'] ?? 100000 );
+		$yellow_limit  = (int) ( $thresholds['yellow'] ?? 250000 );
+
+		echo '<p>This is the real impact view for the hot AIMS tables living beside WordPress. AIMS is meant to tell you what happened, where it happened, and what moved physically or financially, not to hide when the stack is nearing ERP territory.</p>';
+		echo '<div style="display:flex;align-items:center;gap:12px;margin:12px 0;">';
+		echo '<span aria-hidden="true" style="display:inline-block;width:16px;height:16px;border-radius:50%;background:' . esc_attr( $band_color ) . ';box-shadow:0 0 0 3px rgba(0,0,0,0.06);"></span>';
+		echo '<strong>' . esc_html( $band_label ) . ' Band</strong>';
+		echo '<span>' . esc_html( $usage_percent ) . '% of hot-row target</span>';
+		echo '</div>';
+		echo '<div style="height:14px;background:#e5e7eb;border-radius:999px;overflow:hidden;max-width:720px;">';
+		echo '<div style="height:14px;width:' . esc_attr( (string) $usage_percent ) . '%;background:' . esc_attr( $band_color ) . ';"></div>';
+		echo '</div>';
+		echo '<p style="margin-top:12px;">';
+		echo '<strong>Hot Rows:</strong> ' . esc_html( number_format( $total_rows ) );
+		echo ' <span style="color:#646970;">/ ' . esc_html( number_format( $target ) ) . ' target</span><br />';
+		echo '<strong>Estimated Order Equivalent:</strong> ' . esc_html( number_format( $order_guess ) );
+		echo ' <span style="color:#646970;">(based on roughly 4 sale lines per order)</span>';
+		echo '</p>';
+		echo '<p><strong>Comfort Bands:</strong> Green under ' . esc_html( number_format( $green_limit ) ) . ', Yellow from ' . esc_html( number_format( $green_limit ) ) . ' to under ' . esc_html( number_format( $yellow_limit ) ) . ', Red at ' . esc_html( number_format( $yellow_limit ) ) . ' and above.</p>';
+
+		echo '<table class="widefat striped" style="max-width:720px;"><thead><tr><th>Hot Table</th><th>Rows</th></tr></thead><tbody>';
+		echo '<tr><td>Square sale lines</td><td>' . esc_html( number_format( (int) ( $counts['square_sales'] ?? 0 ) ) ) . '</td></tr>';
+		echo '<tr><td>Bucket custody movements</td><td>' . esc_html( number_format( (int) ( $counts['bucket_inventory_moves'] ?? 0 ) ) ) . '</td></tr>';
+		echo '<tr><td>Fulfillment allocations</td><td>' . esc_html( number_format( (int) ( $counts['fulfillment_allocations'] ?? 0 ) ) ) . '</td></tr>';
+		echo '<tr><td>Inventory movements</td><td>' . esc_html( number_format( (int) ( $counts['inventory_movements'] ?? 0 ) ) ) . '</td></tr>';
+		echo '</tbody></table>';
+
+		if ( '' !== $message ) {
+			echo '<p style="margin-top:12px;">' . esc_html( $message ) . '</p>';
+		}
 	}
 
 	private function render_notice( string $notice ): void {
@@ -642,6 +699,7 @@ class AIMS_Admin_Menu {
 		return array(
 			'sku'     => isset( $_GET['aims_fifo_sku'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_sku'] ) : '',
 			'show_id' => isset( $_GET['aims_fifo_show_id'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_show_id'] ) : '',
+			'square_location_id' => isset( $_GET['aims_fifo_square_location_id'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_square_location_id'] ) : '',
 		);
 	}
 
