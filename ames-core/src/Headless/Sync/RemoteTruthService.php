@@ -9,15 +9,18 @@ use AIMS\Core\Clients\SquareClient;
 use AIMS\Core\Clients\WooCommerceClient;
 use AIMS\Core\Sync\ManifestGenerator;
 use AIMS\Core\Sync\SyncOrchestrator;
+use AmesCore\Core\Security\SecretStore;
 use AmesCore\Headless\CoreConfig;
 use AmesCore\Headless\Storage\SqliteLedgerRepository;
 
 final class RemoteTruthService {
 	private CoreConfig $config;
 	private NativeHttpTransport $transport;
+	private SecretStore $secretStore;
 
-	public function __construct( CoreConfig $config, ?NativeHttpTransport $transport = null ) {
+	public function __construct( CoreConfig $config, SecretStore $secretStore, ?NativeHttpTransport $transport = null ) {
 		$this->config    = $config;
+		$this->secretStore = $secretStore;
 		$this->transport = $transport ?: new NativeHttpTransport();
 	}
 
@@ -31,7 +34,7 @@ final class RemoteTruthService {
 		$transactionalTruth = $this->fetchTransactionalTruth();
 		$positionalTruth    = array( 'ledger' => $ledger->inventorySummary( $showId ) );
 
-		if ( $this->config->hasWooCredentials() && $this->config->hasSquareCredentials() ) {
+		if ( $this->hasWooCredentials() && $this->hasSquareCredentials() ) {
 			$generator = new ManifestGenerator( $this->wooClient(), $this->squareClient() );
 			$manifest  = ( new SyncOrchestrator( $generator ) )->buildSingleClickManifest(
 				array(
@@ -85,11 +88,11 @@ final class RemoteTruthService {
 			$sku      = trim( (string) ( $row['sku'] ?? '' ) );
 			$quantity = isset( $row['stock_quantity'] ) ? (float) $row['stock_quantity'] : (float) ( $row['quantity'] ?? 0 );
 
-			if ( '' !== $sku && $this->config->hasWooCredentials() ) {
+			if ( '' !== $sku && $this->hasWooCredentials() ) {
 				$wooResults[] = $this->pushWooStock( $row, $quantity );
 			}
 
-			if ( '' !== $sku && $this->config->hasSquareCredentials() ) {
+			if ( '' !== $sku && $this->hasSquareCredentials() ) {
 				$squareResults[] = $this->pushSquareStock( $sku, $quantity, (string) ( $manifest['manifest_uuid'] ?? $manifest['manifest_id'] ?? '' ) );
 			}
 		}
@@ -104,7 +107,7 @@ final class RemoteTruthService {
 	 * @return array<string, mixed>
 	 */
 	private function fetchCatalogTruth(): array {
-		if ( ! $this->config->hasWooCredentials() ) {
+		if ( ! $this->hasWooCredentials() ) {
 			return array( 'products' => array() );
 		}
 
@@ -115,7 +118,7 @@ final class RemoteTruthService {
 	 * @return array<string, mixed>
 	 */
 	private function fetchTransactionalTruth(): array {
-		if ( ! $this->config->hasSquareCredentials() ) {
+		if ( ! $this->hasSquareCredentials() ) {
 			return array(
 				'payments' => array(),
 				'orders'   => array(),
@@ -145,7 +148,7 @@ final class RemoteTruthService {
 			$this->config->wooUrl() . '/wp-json/wc/v3/products/' . $productId,
 			array(
 				'headers' => array(
-					'authorization' => 'Basic ' . base64_encode( $this->config->wooConsumerKey() . ':' . $this->config->wooConsumerSecret() ),
+					'authorization' => 'Basic ' . base64_encode( $this->wooSecrets()['consumer_key'] . ':' . $this->wooSecrets()['consumer_secret'] ),
 					'content-type'  => 'application/json',
 					'accept'        => 'application/json',
 				),
@@ -184,7 +187,7 @@ final class RemoteTruthService {
 			$this->config->squareUrl() . '/v2/inventory/changes/batch-create',
 			array(
 				'headers' => array(
-					'authorization'  => 'Bearer ' . $this->config->squareToken(),
+					'authorization'  => 'Bearer ' . $this->squareSecrets()['access_token'],
 					'square-version' => $this->config->squareVersion(),
 					'content-type'   => 'application/json',
 					'accept'         => 'application/json',
@@ -228,7 +231,7 @@ final class RemoteTruthService {
 			$this->config->squareUrl() . '/v2/catalog/search-catalog-items',
 			array(
 				'headers' => array(
-					'authorization'  => 'Bearer ' . $this->config->squareToken(),
+					'authorization'  => 'Bearer ' . $this->squareSecrets()['access_token'],
 					'square-version' => $this->config->squareVersion(),
 					'content-type'   => 'application/json',
 					'accept'         => 'application/json',
@@ -257,20 +260,60 @@ final class RemoteTruthService {
 	}
 
 	private function wooClient(): WooCommerceClient {
+		$secrets = $this->wooSecrets();
+
 		return new WooCommerceClient(
 			$this->config->wooUrl(),
-			$this->config->wooConsumerKey(),
-			$this->config->wooConsumerSecret(),
+			(string) $secrets['consumer_key'],
+			(string) $secrets['consumer_secret'],
 			$this->transport
 		);
 	}
 
 	private function squareClient(): SquareClient {
+		$secrets = $this->squareSecrets();
+
 		return new SquareClient(
 			$this->config->squareUrl(),
-			$this->config->squareToken(),
+			(string) $secrets['access_token'],
 			$this->transport
 		);
+	}
+
+	/**
+	 * @return array<string, string>
+	 */
+	private function wooSecrets(): array {
+		$secrets = $this->secretStore->getProvider( 'woocommerce' );
+
+		return array(
+			'consumer_key'    => trim( (string) ( $secrets['consumer_key'] ?? '' ) ),
+			'consumer_secret' => trim( (string) ( $secrets['consumer_secret'] ?? '' ) ),
+		);
+	}
+
+	/**
+	 * @return array<string, string>
+	 */
+	private function squareSecrets(): array {
+		$secrets = $this->secretStore->getProvider( 'square' );
+
+		return array(
+			'access_token'  => trim( (string) ( $secrets['access_token'] ?? '' ) ),
+			'refresh_token' => trim( (string) ( $secrets['refresh_token'] ?? '' ) ),
+			'client_id'     => trim( (string) ( $secrets['client_id'] ?? '' ) ),
+			'client_secret' => trim( (string) ( $secrets['client_secret'] ?? '' ) ),
+		);
+	}
+
+	private function hasWooCredentials(): bool {
+		$secrets = $this->wooSecrets();
+		return $this->config->hasWooBaseUrl() && '' !== $secrets['consumer_key'] && '' !== $secrets['consumer_secret'];
+	}
+
+	private function hasSquareCredentials(): bool {
+		$secrets = $this->squareSecrets();
+		return $this->config->hasSquareBaseUrl() && '' !== $secrets['access_token'];
 	}
 
 	private function stringifyQuantity( float $quantity ): string {

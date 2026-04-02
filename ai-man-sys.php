@@ -2,14 +2,14 @@
 /**
  * Plugin Name:       AIMS
  * Plugin URI:        https://aims.local
- * Description:       AIMS thin client for the headless core API, with dashboard, settings, and remote sync controls.
+ * Description:       AIMS thin client for the headless core API, with dashboard, settings, and remote sync controls. Provided "as is" without warranty.
  * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            AIMS Team
  * Author URI:        https://aims.local
- * License:           GPL-2.0-or-later
- * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * License:           Apache-2.0
+ * License URI:       https://www.apache.org/licenses/LICENSE-2.0
  * Text Domain:       ai-man-sys
  */
 

@@ -2,7 +2,7 @@
   "name": "egglose5/aims",
   "description": "AIMS WordPress plugin test harness",
   "type": "wordpress-plugin",
-  "license": "GPL-2.0-or-later",
+  "license": "Apache-2.0",
   "require": {
     "php": "^8.3"
   },

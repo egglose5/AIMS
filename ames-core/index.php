@@ -3,6 +3,9 @@
 declare( strict_types=1 );
 
 use AmesCore\Archive\ArchiveService;
+use AmesCore\Core\OAuth\OAuthService;
+use AmesCore\Core\Security\Cryptographer;
+use AmesCore\Core\Security\SecretStore;
 use AmesCore\Headless\CoreConfig;
 use AmesCore\Headless\Security\TokenAuthenticator;
 use AmesCore\Headless\Storage\FlowParquetArchiveWriter;
@@ -50,10 +53,13 @@ spl_autoload_register(
 $config = CoreConfig::fromRoot( $root );
 $config->ensureDirectories();
 
-$logger  = new FileLogger( $config->logsPath() );
-$auth    = new TokenAuthenticator( $config->sharedSecret(), $config->archiveSecret() );
-$ledger  = new SqliteLedgerRepository( $config->sqlitePath() );
-$remote  = new RemoteTruthService( $config );
+$logger       = new FileLogger( $config->logsPath() );
+$auth         = new TokenAuthenticator( $config->sharedSecret(), $config->archiveSecret() );
+$ledger       = new SqliteLedgerRepository( $config->sqlitePath() );
+$cryptographer = new Cryptographer( $config->encryptionKey() );
+$secretStore  = new SecretStore( $config->secretStorePath(), $cryptographer );
+$oauth        = new OAuthService( $secretStore );
+$remote       = new RemoteTruthService( $config, $secretStore );
 $archive = new ArchiveService( $ledger, new FlowParquetArchiveWriter(), $config->vaultPath() );
 $history = new FlowParquetHistoryReader();
 
@@ -70,13 +76,15 @@ try {
 				'paths'   => array(
 					'sink'  => $config->sinkPath(),
 					'vault' => $config->vaultPath(),
+					'config'=> $config->configPath(),
 					'logs'  => $config->logsPath(),
 				),
 				'capabilities' => array(
 					'pdo_sqlite'        => extension_loaded( 'pdo_sqlite' ),
 					'flow_php_parquet'  => class_exists( '\Flow\Parquet\Writer' ) && class_exists( '\Flow\Parquet\Reader' ),
+					'openssl'           => function_exists( 'openssl_encrypt' ) && function_exists( 'openssl_decrypt' ),
 				),
-				'routes' => array( 'POST /move', 'GET /manifest', 'POST /manifest/push', 'GET /history', 'GET /internal/archive' ),
+				'routes' => array( 'POST /move', 'GET /manifest', 'POST /manifest/push', 'GET /history', 'GET /internal/archive', 'POST /internal/secrets/{provider}', 'POST /oauth/{provider}/authorize', 'GET /oauth/{provider}/callback', 'GET /oauth/{provider}/status' ),
 			)
 		);
 	}
@@ -100,6 +108,57 @@ try {
 		$result = $remote->pushManifest( json_request_body() );
 		$logger->info( 'manifest.pushed', $result );
 		json_response( array( 'ok' => true, 'result' => $result, 'message' => 'Manifest push completed.' ) );
+	}
+
+	if ( route_match( $path, '#^/internal/secrets/([a-z0-9_\-]+)$#i', $matches ) && 'POST' === $method ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$provider = strtolower( (string) $matches[1] );
+		$payload  = json_request_body();
+		$secretStore->mergeProvider( $provider, $payload );
+		$logger->info( 'secret_store.updated', array( 'provider' => $provider, 'keys' => array_keys( $payload ) ) );
+		json_response(
+			array(
+				'ok'       => true,
+				'provider' => $provider,
+				'status'   => secret_status( $secretStore, $provider ),
+				'message'  => 'Adapter secrets stored in encrypted SecretStore.',
+			),
+			201
+		);
+	}
+
+	if ( route_match( $path, '#^/oauth/([a-z0-9_\-]+)/authorize$#i', $matches ) && 'POST' === $method ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$provider = strtolower( (string) $matches[1] );
+		$result   = $oauth->beginAuthorization( $provider, json_request_body() );
+		$logger->info( 'oauth.authorize.started', array( 'provider' => $provider ) );
+		json_response( array( 'ok' => true, 'provider' => $provider, 'oauth' => $result ) );
+	}
+
+	if ( route_match( $path, '#^/oauth/([a-z0-9_\-]+)/callback$#i', $matches ) && 'GET' === $method ) {
+		$provider = strtolower( (string) $matches[1] );
+		$result   = $oauth->exchangeAuthorizationCode( $provider, $query );
+		$logger->info( 'oauth.callback.completed', array( 'provider' => $provider ) );
+		json_response(
+			array(
+				'ok'       => true,
+				'provider' => $provider,
+				'status'   => $result,
+				'message'  => 'OAuth tokens stored in the encrypted SecretStore.',
+			)
+		);
+	}
+
+	if ( route_match( $path, '#^/oauth/([a-z0-9_\-]+)/status$#i', $matches ) && 'GET' === $method ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$provider = strtolower( (string) $matches[1] );
+		json_response(
+			array(
+				'ok'       => true,
+				'provider' => $provider,
+				'status'   => $oauth->status( $provider ),
+			)
+		);
 	}
 
 	if ( 'GET' === $method && '/internal/archive' === $path ) {
@@ -193,6 +252,14 @@ function resolve_request_path(): string {
 }
 
 /**
+ * @param array<int, string> $matches
+ */
+function route_match( string $path, string $pattern, ?array &$matches = null ): bool {
+	$result = preg_match( $pattern, $path, $matches );
+	return 1 === $result;
+}
+
+/**
  * @return array<string, mixed>
  */
 function json_request_body(): array {
@@ -247,4 +314,19 @@ function stream_json_rows( array $meta, array $rows ): void {
 	}
 
 	echo ']}';
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function secret_status( SecretStore $secretStore, string $provider ): array {
+	$payload = $secretStore->getProvider( $provider );
+
+	return array(
+		'provider'          => $provider,
+		'configured'        => ! empty( $payload ),
+		'keys'              => array_values( array_keys( $payload ) ),
+		'has_access_token'  => ! empty( $payload['access_token'] ?? null ),
+		'has_refresh_token' => ! empty( $payload['refresh_token'] ?? null ),
+	);
 }

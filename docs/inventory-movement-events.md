@@ -2,6 +2,8 @@
 
 Stock changes in AIMS must only occur for physical-world inventory movement.
 
+Hot-path movement output may also be written to the fixed-width binary stream described in `docs/ames-binary-stream-spec.md`. That stream uses short SKUs and integer-cent financial snapshots by design, and it records the actual realized sale price for event-specific pricing rather than the catalog price.
+
 ## Rule
 
 - Planning-only actions must not mutate stock.

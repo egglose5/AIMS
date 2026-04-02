@@ -2,7 +2,7 @@
   "name": "aims/ames-core",
   "description": "Portable Ames Core movement ledger and orchestration library",
   "type": "library",
-  "license": "GPL-2.0-or-later",
+  "license": "Apache-2.0",
   "require": {
     "php": "^8.3"
   },

@@ -5,14 +5,20 @@ Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
 Stable tag: 1.0.0
-License: GPLv2 or later
-License URI: https://www.gnu.org/licenses/gpl-2.0.html
+License: Apache License 2.0
+License URI: https://www.apache.org/licenses/LICENSE-2.0
 
 AIMS is a modular operations plugin for vendors, events, stitching, Square sync, reporting, and event execution using custom database tables.
 
 == Description ==
 
 AIMS provides production workflows for vendor management, event planning and execution, Square ingestion and review, and event-centric reporting.
+
+This software is provided "as is", without warranty of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. Use of this software is at your own risk.
+
+AIMS intentionally uses short SKUs and integer-cent financial snapshots in its binary-stream hot path. The binary packet design limits SKU data to 32 UTF-8 bytes, stores the actual realized event sale price and tax as integer cents, and rejects invalid records into an exception lane instead of truncating them.
+
+See `docs/ames-binary-stream-spec.md` for the binary packet spec and rollout notes.
 
 == Installation ==
 

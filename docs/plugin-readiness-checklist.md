@@ -117,6 +117,11 @@ This checklist maps release tasks to concrete code areas in this repository.
 
 - [x] Add movement batch and archive-manifest schema so hot line writes can be grouped into archival units.
 - [x] Bind hot bucket movement writes to movement batches with inline line metadata.
+- [ ] Add the fixed-width binary stream hot path for small-business throughput:
+  - enforce `SKU <= 32 UTF-8 bytes` as an intentional product rule
+  - write price and tax snapshots as integer cents only
+  - reject invalid records into an exception lane instead of truncating them
+  - follow `docs/ames-binary-stream-spec.md` for packet layout and rollout guidance
 - [ ] Add export/archive jobs that write compressed local-server payloads for older movement batches.
 - [ ] Add reread/rehydration queries for archived movement history.
 - [ ] Define retention thresholds for hot lines versus archived movement batches.

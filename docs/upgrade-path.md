@@ -5,6 +5,8 @@ This repository is a full rebuild of the operations stack.
 Older plugins are reference-only and are not treated as runtime-compatible upgrade targets.
 Use this procedure for safe rollout and rollback.
 
+For the binary-stream lane, AIMS intentionally limits SKUs to 32 UTF-8 bytes and stores hot-path prices and tax snapshots as integer cents. Records that do not fit that contract must be rejected into the exception lane rather than truncated. See `docs/ames-binary-stream-spec.md` for the packet contract and rollout details.
+
 ## Scope
 
 - Supported upgrade target: prior releases of this same `ai-man-sys` plugin line.
@@ -52,7 +54,12 @@ Use this procedure for safe rollout and rollback.
 - Confirm transfer records persist with node endpoint fields and status transitions.
 - Confirm dispatch and receipt create custody movement ledger rows.
 
-5. Capability-First Role Model
+5. Binary Stream Rollout
+- Review `docs/ames-binary-stream-spec.md` before enabling the binary hot path.
+- Run the binary stream in shadow mode beside the existing movement ledger first.
+- Verify that SKU validation, cent snapshots, and packet counts reconcile cleanly before promotion.
+
+6. Capability-First Role Model
 - Open the AIMS Role Editor.
 - Verify built-in AIMS roles appear as templates.
 - Verify custom roles cloned from templates retain their capability set.
@@ -69,3 +76,5 @@ Use this procedure for safe rollout and rollback.
 
 - Touched-area unit tests for planning, sync safety/telemetry, and inventory transfers pass.
 - Full-suite PHPUnit baseline currently passes in this repository state.
+- Binary stream rollout should remain shadow-only until the spec is implemented and reconciled against live movement data.
+- Binary-stream rollout should first run in shadow mode and compare packet counts, per-event totals, and exception counts before any production cutover.
