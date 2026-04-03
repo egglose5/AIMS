@@ -42,6 +42,12 @@ class AIMS_Headless_Api_Client {
 		) );
 	}
 
+	public function pull_square_thin_client_window( array $query = array() ): array {
+		return $this->request( 'GET', '/internal/square/pull', array(
+			'query' => $query,
+		) );
+	}
+
 	public function get_buckets( array $query = array() ): array {
 		return $this->request( 'GET', '/buckets', array(
 			'query' => $query,

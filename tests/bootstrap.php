@@ -418,6 +418,37 @@ if ( ! function_exists( 'do_action' ) ) {
 	}
 }
 
+if ( ! defined( 'MINUTE_IN_SECONDS' ) ) {
+	define( 'MINUTE_IN_SECONDS', 60 );
+}
+
+if ( ! function_exists( 'add_filter' ) ) {
+	function add_filter( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ): void {
+		\AIMS\Tests\Support\TestState::add_filter( $hook, $callback );
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			$hook,
+			array(
+				'callback'      => $callback,
+				'priority'      => $priority,
+				'accepted_args' => $accepted_args,
+				'type'          => 'filter',
+			)
+		);
+	}
+}
+
+if ( ! function_exists( 'wp_next_scheduled' ) ) {
+	function wp_next_scheduled( string $hook ) {
+		return \AIMS\Tests\Support\TestState::next_scheduled( $hook );
+	}
+}
+
+if ( ! function_exists( 'wp_schedule_event' ) ) {
+	function wp_schedule_event( int $timestamp, string $recurrence, string $hook, array $args = array() ): bool {
+		return \AIMS\Tests\Support\TestState::schedule_event( $timestamp, $recurrence, $hook, $args );
+	}
+}
+
 if ( ! function_exists( 'apply_filters' ) ) {
 	function apply_filters( string $hook, $value, ...$args ) {
 		\AIMS\Tests\Support\TestState::record_hook_call(

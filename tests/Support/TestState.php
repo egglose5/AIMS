@@ -17,6 +17,7 @@ final class TestState {
 			'products'        => array(),
 			'user_caps'       => array(),
 			'hook_calls'      => array(),
+			'scheduled_events'=> array(),
 			'options'         => array(),
 			'remote_requests' => array(),
 			'remote_response' => array(
@@ -93,6 +94,24 @@ final class TestState {
 
 	public static function get_remote_requests(): array {
 		return array_values( self::$state['remote_requests'] ?? array() );
+	}
+
+	public static function schedule_event( int $timestamp, string $recurrence, string $hook, array $args = array() ): bool {
+		self::$state['scheduled_events'][ $hook ] = array(
+			'timestamp'  => $timestamp,
+			'recurrence' => $recurrence,
+			'args'       => $args,
+		);
+
+		return true;
+	}
+
+	public static function next_scheduled( string $hook ) {
+		return self::$state['scheduled_events'][ $hook ]['timestamp'] ?? false;
+	}
+
+	public static function get_scheduled_event( string $hook ): array {
+		return (array) ( self::$state['scheduled_events'][ $hook ] ?? array() );
 	}
 
 	public static function get_option( string $option, $default = false ) {

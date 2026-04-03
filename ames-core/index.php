@@ -240,6 +240,18 @@ try {
 		);
 	}
 
+	if ( 'GET' === $method && '/internal/square/pull' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, true );
+		$result = $remote->pullSquareThinClientWindow( $query );
+		$logger->info( 'square.thin_client_pull', array( 'pulled_count' => $result['pulled_count'] ?? 0 ) );
+		json_response(
+			array(
+				'ok'     => true,
+				'result' => $result,
+			)
+		);
+	}
+
 	if ( 'GET' === $method && '/history' === $path ) {
 		$auth->assertAuthorized( $_SERVER, $query, false );
 

@@ -14,6 +14,7 @@ class AIMS_Plugin {
 	private static $instance = null;
 
 	private $admin_menu;
+	private $square_thin_client_sync;
 
 	public static function instance(): AIMS_Plugin {
 		if ( null === self::$instance ) {
@@ -98,12 +99,16 @@ class AIMS_Plugin {
 	}
 
 	private function __construct() {
-		$this->admin_menu = new AIMS_Admin_Menu();
+		$this->admin_menu               = new AIMS_Admin_Menu();
+		$this->square_thin_client_sync  = new AIMS_Square_Thin_Client_Sync_Service();
 	}
 
 	public function boot(): void {
 		add_action( 'admin_menu', array( $this->admin_menu, 'register' ) );
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
+		if ( is_object( $this->square_thin_client_sync ) && method_exists( $this->square_thin_client_sync, 'boot' ) ) {
+			$this->square_thin_client_sync->boot();
+		}
 	}
 
 	public function load_textdomain(): void {

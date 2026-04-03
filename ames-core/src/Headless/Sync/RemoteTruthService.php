@@ -93,7 +93,12 @@ final class RemoteTruthService {
 			}
 
 			if ( '' !== $sku && $this->hasSquareCredentials() ) {
-				$squareResults[] = $this->pushSquareStock( $sku, $quantity, (string) ( $manifest['manifest_uuid'] ?? $manifest['manifest_id'] ?? '' ) );
+				$squareResults[] = $this->pushSquareStock(
+					$sku,
+					$quantity,
+					(string) ( $manifest['manifest_uuid'] ?? $manifest['manifest_id'] ?? '' ),
+					(string) ( $row['square_location_id'] ?? '' )
+				);
 			}
 		}
 
@@ -126,6 +131,71 @@ final class RemoteTruthService {
 		}
 
 		return $this->squareClient()->fetchTransactionalTruth();
+	}
+
+	/**
+	 * @param array<string, mixed> $query
+	 * @return array<string, mixed>
+	 */
+	public function pullSquareThinClientWindow( array $query = array() ): array {
+		$locationIds = array_values(
+			array_filter(
+				array_map(
+					static fn( $value ): string => trim( (string) $value ),
+					(array) ( $query['location_ids'] ?? array() )
+				)
+			)
+		);
+
+		if ( empty( $locationIds ) && '' !== $this->config->squareLocationId() ) {
+			$locationIds[] = $this->config->squareLocationId();
+		}
+
+		$overlapMinutes = max( 0, (int) ( $query['overlap_minutes'] ?? 15 ) );
+		$nowTs          = isset( $query['end_time'] ) ? strtotime( (string) $query['end_time'] ) : time();
+		$startTs        = isset( $query['begin_time'] ) ? strtotime( (string) $query['begin_time'] ) : false;
+
+		if ( false === $startTs ) {
+			$watermarkTs = isset( $query['watermark'] ) ? strtotime( (string) $query['watermark'] ) : false;
+			if ( false !== $watermarkTs ) {
+				$startTs = $watermarkTs - ( $overlapMinutes * 60 );
+			}
+		}
+
+		if ( false === $startTs ) {
+			$lookbackMinutes = max( 1, (int) ( $query['bootstrap_minutes'] ?? 60 ) );
+			$startTs         = $nowTs - ( $lookbackMinutes * 60 );
+		}
+
+		if ( false === $nowTs ) {
+			$nowTs = time();
+		}
+
+		$beginTime = gmdate( 'c', (int) $startTs );
+		$endTime   = gmdate( 'c', (int) $nowTs );
+		$orders    = $this->squareClient()->fetchOrdersWindow(
+			$locationIds,
+			$beginTime,
+			$endTime,
+			max( 1, min( 1000, (int) ( $query['limit'] ?? 200 ) ) )
+		);
+
+		return array(
+			'orders'          => array_map(
+				static function ( array $order ): array {
+					return (array) ( $order['raw'] ?? $order );
+				},
+				$orders
+			),
+			'window'          => array(
+				'begin_time'      => $beginTime,
+				'end_time'        => $endTime,
+				'overlap_minutes' => $overlapMinutes,
+				'location_ids'    => $locationIds,
+			),
+			'next_watermark'  => $endTime,
+			'pulled_count'    => count( $orders ),
+		);
 	}
 
 	/**
@@ -171,7 +241,20 @@ final class RemoteTruthService {
 	/**
 	 * @return array<string, mixed>
 	 */
-	private function pushSquareStock( string $sku, float $quantity, string $referenceId ): array {
+	private function pushSquareStock( string $sku, float $quantity, string $referenceId, string $squareLocationId = '' ): array {
+		$squareLocationId = trim( $squareLocationId );
+		if ( '' === $squareLocationId ) {
+			$squareLocationId = $this->config->squareLocationId();
+		}
+
+		if ( '' === $squareLocationId ) {
+			return array(
+				'sku'     => $sku,
+				'status'  => 'skipped',
+				'message' => 'Square location ID is required.',
+			);
+		}
+
 		$variationId = $this->findSquareVariationIdBySku( $sku );
 
 		if ( '' === $variationId ) {
@@ -202,7 +285,7 @@ final class RemoteTruthService {
 								'reference_id'      => '' !== $referenceId ? $referenceId : $this->uuid(),
 								'catalog_object_id' => $variationId,
 								'state'             => 'IN_STOCK',
-								'location_id'       => $this->config->squareLocationId(),
+								'location_id'       => $squareLocationId,
 								'quantity'          => $this->stringifyQuantity( $quantity ),
 								'occurred_at'       => gmdate( 'c' ),
 							),
@@ -215,6 +298,7 @@ final class RemoteTruthService {
 		return array(
 			'sku'          => $sku,
 			'variation_id' => $variationId,
+			'square_location_id' => $squareLocationId,
 			'quantity'     => $quantity,
 			'success'      => (bool) ( $response['success'] ?? false ),
 			'status'       => (int) ( $response['status'] ?? 0 ),
