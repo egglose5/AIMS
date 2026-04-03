@@ -222,4 +222,91 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 		$this->assertStringContainsString( 'Square sale lines', $output );
 		$this->assertStringContainsString( 'Red at 250,000 and above', $output );
 	}
+
+	public function testHandleSyncRemoteManifestBlocksDuringLiveEventWindow(): void {
+		TestState::set_current_user_id( 91 );
+		TestState::set_user_capabilities( 91, array( \AIMS_Capabilities::CAP_MANAGE ) );
+		TestState::set_throw_on_redirect( true );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_URL, 'https://aims-core.test' );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_TOKEN, 'secret-token' );
+
+		$policy = new class() extends \AIMS_Square_Location_Push_Policy_Service {
+			public function __construct() {}
+
+			public function get_manifest_sync_gate(): array {
+				return array(
+					'allowed'       => false,
+					'active_events' => array(
+						array(
+							'event_name' => 'PAX East',
+							'start_date' => '2026-04-02',
+							'end_date'   => '2026-04-04',
+						),
+					),
+					'message'       => 'Square location pushes are locked while a live event window is active.',
+				);
+			}
+		};
+
+		$menu = new \AIMS_Admin_Menu( null, new \AIMS_Audit_Log_Service( sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-manifest-lock-' . uniqid( '', true ) ), null, $policy );
+
+		try {
+			$menu->handle_sync_remote_manifest();
+			$this->fail( 'Expected redirect exception.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertStringContainsString( 'manifest_sync_locked', $exception->getMessage() );
+		}
+
+		$this->assertCount( 0, TestState::get_remote_requests() );
+	}
+
+	public function testRenderDashboardExplainsManifestPushIsLockedDuringLiveShowWindow(): void {
+		TestState::set_current_user_id( 92 );
+		TestState::set_user_capabilities( 92, array( \AIMS_Capabilities::CAP_MANAGE ) );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_URL, 'https://aims-core.test' );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_TOKEN, 'secret-token' );
+		TestState::set_remote_response(
+			array(
+				'code' => 200,
+				'body' => wp_json_encode(
+					array(
+						'manifest_uuid' => 'manifest-2',
+						'generated_at'  => '2026-04-02T12:00:00Z',
+						'summary'       => array(
+							'merged_items' => 3,
+						),
+						'buckets'       => array(),
+					)
+				),
+			)
+		);
+
+		$policy = new class() extends \AIMS_Square_Location_Push_Policy_Service {
+			public function __construct() {}
+
+			public function get_manifest_sync_gate(): array {
+				return array(
+					'allowed'       => false,
+					'active_events' => array(
+						array(
+							'event_name' => 'PAX East',
+							'start_date' => '2026-04-02',
+							'end_date'   => '2026-04-04',
+						),
+					),
+					'message'       => 'Square location pushes are locked while a live event window is active.',
+				);
+			}
+		};
+
+		$menu = new \AIMS_Admin_Menu( null, new \AIMS_Audit_Log_Service( sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-dashboard-manifest-' . uniqid( '', true ) ), null, $policy );
+
+		ob_start();
+		$menu->render_dashboard();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Square inventory pushes stay manual on purpose', $output );
+		$this->assertStringContainsString( 'PAX East (2026-04-02 to 2026-04-04)', $output );
+		$this->assertStringContainsString( 'disabled="disabled"', $output );
+	}
 }

@@ -13,11 +13,13 @@ class AIMS_Admin_Menu {
 	private $surface_authorization;
 	private $audit_log_service;
 	private $hot_db_health_service;
+	private $square_location_push_policy;
 
-	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null, AIMS_Audit_Log_Service $audit_log_service = null, AIMS_Hot_Db_Health_Service $hot_db_health_service = null ) {
-		$this->surface_authorization = $surface_authorization ?: new AIMS_Surface_Authorization_Service();
-		$this->audit_log_service     = $audit_log_service ?: new AIMS_Audit_Log_Service();
-		$this->hot_db_health_service = $hot_db_health_service ?: new AIMS_Hot_Db_Health_Service();
+	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null, AIMS_Audit_Log_Service $audit_log_service = null, AIMS_Hot_Db_Health_Service $hot_db_health_service = null, AIMS_Square_Location_Push_Policy_Service $square_location_push_policy = null ) {
+		$this->surface_authorization     = $surface_authorization ?: new AIMS_Surface_Authorization_Service();
+		$this->audit_log_service         = $audit_log_service ?: new AIMS_Audit_Log_Service();
+		$this->hot_db_health_service     = $hot_db_health_service ?: new AIMS_Hot_Db_Health_Service();
+		$this->square_location_push_policy = $square_location_push_policy ?: new AIMS_Square_Location_Push_Policy_Service();
 	}
 
 	public function register(): void {
@@ -126,6 +128,7 @@ class AIMS_Admin_Menu {
 		$availability_query = $this->get_fifo_availability_query();
 		$notice             = $this->get_notice();
 		$hot_db_health      = $this->hot_db_health_service->get_dashboard_snapshot();
+		$manifest_sync_gate = $this->square_location_push_policy->get_manifest_sync_gate();
 
 		if ( $client->is_configured() && '' !== (string) ( $availability_query['sku'] ?? '' ) ) {
 			$availability = $client->get_fifo_availability( $availability_query );
@@ -190,7 +193,7 @@ class AIMS_Admin_Menu {
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Manifest Sync</h2>';
-		$this->render_remote_manifest_sync_form();
+		$this->render_remote_manifest_sync_form( $manifest_sync_gate );
 		echo '</div>';
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
@@ -373,6 +376,14 @@ class AIMS_Admin_Menu {
 	public function handle_sync_remote_manifest(): void {
 		$this->require_capability();
 		check_admin_referer( 'aims_sync_remote_manifest' );
+
+		$gate = $this->square_location_push_policy->get_manifest_sync_gate();
+		if ( empty( $gate['allowed'] ) ) {
+			$this->record_audit_event( 'manifest_sync', 'manifest', false );
+			$this->redirect_back( array(
+				self::NOTICE_QUERY_ARG => 'manifest_sync_locked',
+			) );
+		}
 
 		$client   = AIMS_Headless_Api_Client::from_plugin_options();
 		$manifest = $client->get_manifest();
@@ -573,12 +584,40 @@ class AIMS_Admin_Menu {
 		echo '</form>';
 	}
 
-	private function render_remote_manifest_sync_form(): void {
-		echo '<p>Fetch the latest manifest from the core, then push it back in a single remote transaction.</p>';
+	private function render_remote_manifest_sync_form( array $gate ): void {
+		$active_events = is_array( $gate['active_events'] ?? null ) ? $gate['active_events'] : array();
+		echo '<p>Square inventory pushes stay manual on purpose. Use this after planning, not during a live show window. Done well, pre-planning here is what saves roughly 45 minutes on the loading dock.</p>';
+		echo '<p>' . esc_html( (string) ( $gate['message'] ?? '' ) ) . '</p>';
+
+		if ( ! empty( $active_events ) ) {
+			$labels = array_map(
+				static function ( array $event ): string {
+					$label = (string) ( $event['event_name'] ?? 'Event' );
+					$date  = (string) ( $event['start_date'] ?? '' );
+					$end   = (string) ( $event['end_date'] ?? '' );
+					if ( '' !== $date && '' !== $end && $date !== $end ) {
+						return $label . ' (' . $date . ' to ' . $end . ')';
+					}
+					if ( '' !== $date ) {
+						return $label . ' (' . $date . ')';
+					}
+
+					return $label;
+				},
+				$active_events
+			);
+
+			echo '<p><strong>Live event window:</strong> ' . esc_html( implode( ', ', $labels ) ) . '</p>';
+		}
+
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		echo '<input type="hidden" name="action" value="aims_sync_remote_manifest" />';
 		wp_nonce_field( 'aims_sync_remote_manifest' );
-		submit_button( 'Sync Manifest', 'primary' );
+		if ( ! empty( $gate['allowed'] ) ) {
+			submit_button( 'Sync Manifest', 'primary' );
+		} else {
+			echo '<p><button type="submit" class="button button-primary" disabled="disabled" aria-disabled="true">Sync Manifest</button></p>';
+		}
 		echo '</form>';
 	}
 
@@ -651,6 +690,7 @@ class AIMS_Admin_Menu {
 			'fifo_picked'    => array( 'success', 'FIFO pick completed in AIMS Core.' ),
 			'fifo_pick_failed' => array( 'error', 'FIFO pick failed.' ),
 			'manifest_synced'=> array( 'success', 'Manifest sync completed.' ),
+			'manifest_sync_locked' => array( 'warning', 'Manifest sync is locked during a live show window. Push Square inventory before the show starts or after it ends.' ),
 			'manifest_sync_failed' => array( 'error', 'Manifest sync failed.' ),
 			'archive_started'=> array( 'success', 'Archive request sent.' ),
 			'archive_failed' => array( 'error', 'Archive request failed.' ),
