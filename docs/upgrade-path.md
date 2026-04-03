@@ -39,6 +39,7 @@ The current headless `ames-core` path should be treated as an `IONOS-style` or f
 - Open Event Planning list and workspace.
 - Confirm authorized users only see/edit authorized events.
 - Confirm assignment action forms submit successfully with nonce checks.
+- Confirm event-specific setup materials such as signage, tape, and check-in supplies remain visible in planning context without mutating stock.
 
 2. Square Sync Safety
 - Open Square Sync and Sync Runs pages.

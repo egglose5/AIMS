@@ -14,9 +14,10 @@ final class SchemaResponsibilityCleanupTest extends \AIMS\Tests\TestCase {
 		$this->assertContains( $prefix . 'aims_responsibility_templates', $table_names );
 		$this->assertContains( $prefix . 'aims_user_responsibilities', $table_names );
 		$this->assertContains( $prefix . 'aims_user_surface_capabilities', $table_names );
+		$this->assertContains( $prefix . 'aims_event_bucket_materials', $table_names );
 	}
 
-	public function testSchemaVersionBumpsWithIdentityCleanup(): void {
-		$this->assertSame( '0.15.0', \AIMS_Plugin::SCHEMA_VERSION );
+	public function testSchemaVersionBumpsWithEventBucketMaterials(): void {
+		$this->assertSame( '0.16.0', \AIMS_Plugin::SCHEMA_VERSION );
 	}
 }

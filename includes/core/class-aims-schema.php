@@ -30,6 +30,7 @@ class AIMS_Schema {
 			$wpdb->prefix . 'aims_stitch_job_item_payout_snapshots',
 			$wpdb->prefix . 'aims_storage_locations',
 			$wpdb->prefix . 'aims_physical_buckets',
+			$wpdb->prefix . 'aims_event_bucket_materials',
 			$wpdb->prefix . 'aims_event_bucket_assignments',
 			$wpdb->prefix . 'aims_inventory_buckets',
 			$wpdb->prefix . 'aims_movement_batches',
@@ -84,6 +85,7 @@ class AIMS_Schema {
 		$stitch_job_item_payout_snapshots_table = $wpdb->prefix . 'aims_stitch_job_item_payout_snapshots';
 		$storage_locations_table = $wpdb->prefix . 'aims_storage_locations';
 		$physical_buckets_table  = $wpdb->prefix . 'aims_physical_buckets';
+		$event_bucket_materials_table = $wpdb->prefix . 'aims_event_bucket_materials';
 		$event_bucket_assignments_table = $wpdb->prefix . 'aims_event_bucket_assignments';
 		$inventory_buckets_table = $wpdb->prefix . 'aims_inventory_buckets';
 		$movement_batches_table  = $wpdb->prefix . 'aims_movement_batches';
@@ -604,6 +606,29 @@ class AIMS_Schema {
 				KEY home_storage_location_id (home_storage_location_id),
 				KEY vendor_id (vendor_id),
 				KEY barcode_value (barcode_value)
+			) {$charset_collate};",
+			"CREATE TABLE {$event_bucket_materials_table} (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				event_id bigint(20) unsigned NOT NULL,
+				physical_bucket_id bigint(20) unsigned NOT NULL,
+				material_key varchar(100) NOT NULL DEFAULT '',
+				label varchar(191) NOT NULL DEFAULT '',
+				quantity decimal(20,4) NOT NULL DEFAULT 0.0000,
+				unit varchar(32) NOT NULL DEFAULT '',
+				is_required tinyint(1) NOT NULL DEFAULT 0,
+				is_consumable tinyint(1) NOT NULL DEFAULT 1,
+				packed_status varchar(32) NOT NULL DEFAULT 'planned',
+				notes text NULL,
+				sort_order int(11) NOT NULL DEFAULT 0,
+				created_at datetime NOT NULL,
+				updated_at datetime NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY event_bucket_material (event_id, physical_bucket_id, material_key),
+				KEY event_id (event_id),
+				KEY physical_bucket_id (physical_bucket_id),
+				KEY packed_status (packed_status),
+				KEY is_required (is_required),
+				KEY sort_order (sort_order)
 			) {$charset_collate};",
 			"CREATE TABLE {$event_bucket_assignments_table} (
 				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,

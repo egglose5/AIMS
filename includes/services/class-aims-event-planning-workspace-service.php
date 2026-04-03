@@ -14,6 +14,7 @@ class AIMS_Event_Planning_Workspace_Service {
 	private $vendor_event_assignments;
 	private $access_service;
 	private $bucket_availability_service;
+	private $event_bucket_materials;
 	private $event_context_map = array();
 
 	public function __construct(
@@ -25,7 +26,8 @@ class AIMS_Event_Planning_Workspace_Service {
 		AIMS_Storage_Location_Repository $storage_locations = null,
 		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
 		$access_service = null,
-		$bucket_availability_service = null
+		$bucket_availability_service = null,
+		AIMS_Event_Bucket_Material_Repository $event_bucket_materials = null
 	) {
 		$this->events                    = $events ?: new AIMS_Event_Repository();
 		$this->demand_planning           = $demand_planning ?: new AIMS_Event_Demand_Planning_Service( new AIMS_Event_Customer_Request_Item_Repository() );
@@ -36,6 +38,7 @@ class AIMS_Event_Planning_Workspace_Service {
 		$this->vendor_event_assignments  = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
 		$this->access_service            = $access_service ?: ( class_exists( 'AIMS_Event_Planning_Access_Service' ) ? new AIMS_Event_Planning_Access_Service() : null );
 		$this->bucket_availability_service = $bucket_availability_service;
+		$this->event_bucket_materials    = $event_bucket_materials ?: new AIMS_Event_Bucket_Material_Repository();
 	}
 
 	public function get_page_model( array $request = array() ): array {
@@ -469,7 +472,7 @@ class AIMS_Event_Planning_Workspace_Service {
 					continue;
 				}
 
-				$rows[] = $this->build_bucket_selection_row( $bucket, false, $active_assignment );
+				$rows[] = $this->build_bucket_selection_row( $bucket, false, $active_assignment, $event_id );
 			}
 		}
 
@@ -505,7 +508,7 @@ class AIMS_Event_Planning_Workspace_Service {
 				continue;
 			}
 
-			$normalized[] = $this->build_bucket_selection_row( $row, ! empty( $active_assignment ), $active_assignment );
+			$normalized[] = $this->build_bucket_selection_row( $row, ! empty( $active_assignment ), $active_assignment, $event_id );
 		}
 
 		return $normalized;
@@ -518,7 +521,7 @@ class AIMS_Event_Planning_Workspace_Service {
 		$summary   = $this->summarize_contents( $contents );
 
 		return array_merge(
-			$this->build_bucket_selection_row( $bucket, $is_assigned, $assignment ),
+			$this->build_bucket_selection_row( $bucket, $is_assigned, $assignment, (int) ( $assignment['event_id'] ?? 0 ) ),
 			array(
 				'physical_bucket_id' => $bucket_id,
 				'assignment_id'    => (int) ( $assignment['id'] ?? 0 ),
@@ -542,9 +545,10 @@ class AIMS_Event_Planning_Workspace_Service {
 		);
 	}
 
-	private function build_bucket_selection_row( array $bucket, bool $has_active_assignment = false, ?array $assignment = null ): array {
+	private function build_bucket_selection_row( array $bucket, bool $has_active_assignment = false, ?array $assignment = null, int $event_id = 0 ): array {
 		$bucket_id = (int) ( $bucket['id'] ?? 0 );
 		$assignment = is_array( $assignment ) ? $assignment : array();
+		$materials  = $this->get_event_bucket_materials( $event_id, $bucket_id );
 
 		return array(
 			'physical_bucket_id'         => $bucket_id,
@@ -561,8 +565,60 @@ class AIMS_Event_Planning_Workspace_Service {
 			'storage'                    => $this->build_storage_context( $bucket ),
 			'contents'                   => $this->get_bucket_contents( $bucket_id ),
 			'content_summary'            => $this->summarize_contents( $this->get_bucket_contents( $bucket_id ) ),
+			'event_materials'            => $materials,
+			'event_materials_summary'    => $this->summarize_event_materials( $materials ),
 			'is_active_assignment'       => $has_active_assignment,
 			'active_assignment'          => $assignment,
+		);
+	}
+
+	private function get_event_bucket_materials( int $event_id, int $bucket_id ): array {
+		if ( $event_id <= 0 || $bucket_id <= 0 || ! is_object( $this->event_bucket_materials ) || ! method_exists( $this->event_bucket_materials, 'get_for_event_bucket' ) ) {
+			return array();
+		}
+
+		return array_values(
+			array_filter(
+				(array) $this->event_bucket_materials->get_for_event_bucket( $event_id, $bucket_id ),
+				static function ( $row ): bool {
+					return is_array( $row );
+				}
+			)
+		);
+	}
+
+	private function summarize_event_materials( array $materials ): array {
+		$total_count      = 0;
+		$packed_count     = 0;
+		$required_count   = 0;
+		$required_missing = 0;
+
+		foreach ( $materials as $material ) {
+			if ( ! is_array( $material ) ) {
+				continue;
+			}
+
+			++$total_count;
+			$status      = sanitize_key( (string) ( $material['packed_status'] ?? '' ) );
+			$is_required = ! empty( $material['is_required'] );
+
+			if ( in_array( $status, array( 'packed', 'ready', 'loaded' ), true ) ) {
+				++$packed_count;
+			}
+
+			if ( $is_required ) {
+				++$required_count;
+				if ( ! in_array( $status, array( 'packed', 'ready', 'loaded' ), true ) ) {
+					++$required_missing;
+				}
+			}
+		}
+
+		return array(
+			'total_count'      => $total_count,
+			'packed_count'     => $packed_count,
+			'required_count'   => $required_count,
+			'required_missing' => $required_missing,
 		);
 	}
 

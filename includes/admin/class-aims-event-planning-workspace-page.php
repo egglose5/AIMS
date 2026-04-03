@@ -334,6 +334,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<th>Planning State</th>';
 		echo '<th>Execution State</th>';
 		echo '<th>Seal</th>';
+		echo '<th>Event Materials</th>';
 		echo '<th>Contents</th>';
 		echo '<th>Assigned</th>';
 		echo '<th>Assigned By</th>';
@@ -350,6 +351,7 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td>' . esc_html( (string) ( $row['assignment_label'] ?? $row['assignment_status'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_execution_state_label( $assignment_status ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_sealed_label( ! empty( $row['is_sealed'] ) ) ) . '</td>';
+			echo '<td>' . esc_html( $this->build_event_materials_summary_label( (array) ( $row['event_materials_summary'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_content_summary_label( (array) ( $row['content_summary'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_at'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['assigned_by_label'] ?? '' ) ) . '</td>';
@@ -403,6 +405,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		echo '<th>Bucket</th>';
 		echo '<th>Status</th>';
 		echo '<th>Seal</th>';
+		echo '<th>Event Materials</th>';
 		echo '<th>Contents</th>';
 		echo '<th>Storage</th>';
 		echo '<th>Action</th>';
@@ -416,6 +419,7 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td>' . esc_html( $this->build_bucket_label( $row ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['status'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_sealed_label( ! empty( $row['is_sealed'] ) ) ) . '</td>';
+			echo '<td>' . esc_html( $this->build_event_materials_summary_label( (array) ( $row['event_materials_summary'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_content_summary_label( (array) ( $row['content_summary'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . esc_html( $this->build_storage_label( (array) ( $row['storage'] ?? array() ) ) ) . '</td>';
 			echo '<td>' . $this->render_assign_form( $event_id, $bucket_id ) . '</td>';
@@ -670,6 +674,23 @@ class AIMS_Event_Planning_Workspace_Page {
 		}
 
 		return empty( $parts ) ? 'Not assigned' : implode( ' | ', $parts );
+	}
+
+	private function build_event_materials_summary_label( array $summary ): string {
+		$total_count      = (int) ( $summary['total_count'] ?? 0 );
+		$packed_count     = (int) ( $summary['packed_count'] ?? 0 );
+		$required_missing = (int) ( $summary['required_missing'] ?? 0 );
+
+		if ( $total_count <= 0 ) {
+			return 'No event materials';
+		}
+
+		$label = sprintf( '%d items, %d packed', $total_count, $packed_count );
+		if ( $required_missing > 0 ) {
+			$label .= sprintf( ', %d required missing', $required_missing );
+		}
+
+		return $label;
 	}
 
 	private function build_execution_state_label( string $status ): string {

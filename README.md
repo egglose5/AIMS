@@ -108,6 +108,8 @@ The direction is clear even if the cutover is not 100% complete yet:
 - Event demand never creates reservations, payments, or Square orders.
 - Inventory is committed to an event only when a manager or supervisor explicitly assigns one or more physical buckets to that event.
 - Event bucket assignment is the planning commitment record.
+- Event planning should also carry event-specific operational materials such as signage, tape, check-in supplies, and other show-day setup items vendors already track outside the system today.
+- These event-specific materials should live as planning-visible mise en place context, even when they are not sale inventory and do not belong in the stock ledger.
 - Inventory movements are reserved for actual physical execution such as staging, load-out, transfer, return, and adjustment.
 
 ## Event execution model
@@ -136,10 +138,11 @@ The direction is clear even if the cutover is not 100% complete yet:
 2. The planner sees only events assigned to them or their subordinates.
 3. The planner can filter by event scope, event search, bucket search, and planner ownership (all/me/subordinate planner).
 4. AIMS shows event demand summary by SKU, planning summary metrics, warehouse telemetry, assignment timeline (with age-band analytics), team activity, currently assigned buckets, available buckets, and bucket contents.
-5. The planner manually assigns buckets to the event (single or bulk, with optional delegation to subordinate planners).
-6. AIMS writes planning assignment records and optional warehouse telemetry timestamps, but not inventory movement records.
-7. Inventory movement records are created only when physical actions occur: `loaded`/`in_transit` (departure), `vendor_event_checkin` (stock-at-event), and `event_return` (return flows).
-8. Age-band metrics (Staged > 24h, Open > 8h) are informational analytics only — planners may keep stock staged for days or weeks; the metric records that fact without implying a violation.
+5. AIMS should also give planners a clear place to note event-specific materials like signage, tape, table setup items, and check-in supplies so they stop living only in side spreadsheets or memory.
+6. The planner manually assigns buckets to the event (single or bulk, with optional delegation to subordinate planners).
+7. AIMS writes planning assignment records and optional warehouse telemetry timestamps, but not inventory movement records.
+8. Inventory movement records are created only when physical actions occur: `loaded`/`in_transit` (departure), `vendor_event_checkin` (stock-at-event), and `event_return` (return flows).
+9. Age-band metrics (Staged > 24h, Open > 8h) are informational analytics only — planners may keep stock staged for days or weeks; the metric records that fact without implying a violation.
 
 ## Square Thin-Client Model
 

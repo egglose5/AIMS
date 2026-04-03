@@ -34,8 +34,11 @@ Core rule: only track metadata that is relevant to the current operational step.
 
 - Event demand intake and demand edits.
 - Event bucket assignment/release planning actions.
+- Event-specific planning materials such as signage, tape, table setup supplies, and check-in supplies.
 - Public projection edits and publication status updates.
 - Replay/reporting actions that do not represent physical movement.
+
+These event-specific materials still need a real home in AIMS planning because vendors already track them operationally. They should be visible in the event mise en place workflow without being forced into the stock movement ledger unless they become actual tracked inventory.
 
 ## Enforcement
 

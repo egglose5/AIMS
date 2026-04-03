@@ -265,6 +265,47 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 			}
 		};
 
+		$event_bucket_materials = new class() extends \AIMS_Event_Bucket_Material_Repository {
+			public function __construct() {}
+
+			public function get_for_event_bucket( int $event_id, int $physical_bucket_id ): array {
+				if ( 10 === $event_id && 200 === $physical_bucket_id ) {
+					return array(
+						array(
+							'id'                 => 1,
+							'event_id'           => 10,
+							'physical_bucket_id' => 200,
+							'material_key'       => 'signage',
+							'label'              => 'Check-In Signage',
+							'quantity'           => 1.0,
+							'unit'               => 'pcs',
+							'is_required'        => true,
+							'is_consumable'      => false,
+							'packed_status'      => 'planned',
+							'notes'              => '',
+							'sort_order'         => 0,
+						),
+						array(
+							'id'                 => 2,
+							'event_id'           => 10,
+							'physical_bucket_id' => 200,
+							'material_key'       => 'tape',
+							'label'              => 'Tape',
+							'quantity'           => 2.0,
+							'unit'               => 'rolls',
+							'is_required'        => false,
+							'is_consumable'      => true,
+							'packed_status'      => 'packed',
+							'notes'              => '',
+							'sort_order'         => 1,
+						),
+					);
+				}
+
+				return array();
+			}
+		};
+
 		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
 			public function get_for_event( int $event_id ): array {
 				return array(
@@ -300,7 +341,9 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 			$bucket_positions,
 			$storage_locations,
 			$vendor_event_assignments,
-			$access_service
+			$access_service,
+			null,
+			$event_bucket_materials
 		);
 
 		$model = $service->get_page_model( array( 'event_id' => 99 ) );
@@ -320,6 +363,10 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'LOC-1', $model['workspace']['available_buckets'][0]['square_location_id'] );
 		$this->assertSame( 3.0, $model['workspace']['assigned_buckets'][0]['content_summary']['total_available_quantity'] );
 		$this->assertSame( 'Staging A', $model['workspace']['available_buckets'][0]['storage']['current']['label'] );
+		$this->assertCount( 2, $model['workspace']['assigned_buckets'][0]['event_materials'] );
+		$this->assertSame( 2, $model['workspace']['assigned_buckets'][0]['event_materials_summary']['total_count'] );
+		$this->assertSame( 1, $model['workspace']['assigned_buckets'][0]['event_materials_summary']['packed_count'] );
+		$this->assertSame( 1, $model['workspace']['assigned_buckets'][0]['event_materials_summary']['required_missing'] );
 		$this->assertSame( 1, $model['workspace']['summary']['assigned_bucket_count'] );
 		$this->assertSame( 1, $model['workspace']['summary']['assigned_staged_bucket_count'] );
 		$this->assertSame( 1, $model['workspace']['summary']['available_bucket_count'] );
