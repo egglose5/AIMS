@@ -1,6 +1,6 @@
 # AIMS
 
-AIMS (`ai-man-sys`) is a modular WordPress operations plugin for vendor management, event management, stitch workflow, Square ingestion, and reporting.
+AIMS (`ai-man-sys`) is a headless operations backbone with a WordPress/WooCommerce thin client. WordPress is the default management surface, Square is the payment and sales thin client, and AIMS owns the physical movement truth.
 
 This codebase is a full rebuild. Older plugins are reference material only and are not part of the runtime design, schema, or migration path.
 
@@ -10,9 +10,20 @@ THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPL
 
 You are solely responsible for how you install, configure, operate, back up, secure, and use this software. If you lose data, corrupt data, misconfigure your environment, interrupt your business, or otherwise damage your own systems through use of this software, that responsibility remains yours, not the author's. Support, recovery, customization, maintenance, and operational help are only provided by separate paid agreement.
 
+## What AIMS Is
+
+AIMS is designed for micro and small businesses that need physical truth before they need a full ERP.
+
+- AIMS tracks actual physical movements.
+- AIMS records chain of custody with lightweight operational proof.
+- AIMS tracks only movement-adjacent financial meaning: what inventory cost on the way in, and what it earned on the way out.
+- WordPress remains the default control console and identity layer.
+- Square remains the payment/sales endpoint and remote location inventory surface, not the authority on physical truth.
+- WooCommerce remains a natural product/catalog authoring surface, not the movement ledger.
+
 ## Binary Stream
 
-AIMS intentionally treats short SKUs as a product rule in its binary-stream design. The hot path uses a fixed 64-byte packet with `SKU` limited to 32 UTF-8 bytes and all financial snapshots stored as integer cents, not floats. AIMS reads Square transactional data at sale time, strips it down to SKU-first operational facts for the hot ledger, and keeps that ledger lean while pushing verbose Square metadata to colder storage. `PRICE_CENT_SNAPSHOT` must record the actual realized sale price at the moment of sale, including event-specific price adjustments, rather than the catalog price. Invalid records are rejected into an exception lane rather than silently truncated, and compact transaction references are retained as idempotency/reconciliation anchors so the lean model is not lossy.
+AIMS intentionally treats short SKUs as a product rule in its planned binary-stream design. The target hot path uses a fixed 64-byte packet with `SKU` limited to 32 UTF-8 bytes and all financial snapshots stored as integer cents, not floats. AIMS reads Square transactional data at sale time, strips it down to SKU-first operational facts for the hot ledger, and keeps that ledger lean while pushing verbose Square metadata to colder storage. `PRICE_CENT_SNAPSHOT` must record the actual realized sale price at the moment of sale, including event-specific price adjustments, rather than the catalog price. Invalid records are rejected into an exception lane rather than silently truncated, and compact transaction references are retained as idempotency/reconciliation anchors so the lean model is not lossy.
 
 See `docs/ames-binary-stream-spec.md` for the packet layout, validation rules, and rollout guidance.
 
@@ -24,27 +35,33 @@ The current standalone `ames-core` build should be treated as an `IONOS-style` o
 
 The repository currently provides:
 
-- plugin bootstrap and class loader
-- installer and schema registration
-- explicit custom table definitions with indexes across events, demand, buckets, inventory, Square sync, attribution, and fulfillment
-- capability and admin menu shells
-- custom AIMS role editor with template-based role creation and capability assignment
-- vendor, event, Square sync, and reporting module bootstraps
-- ledger-first inventory movement backbone with hot-line lifecycle scaffolding
-- physical bucket, storage, and event-bucket assignment architecture
-- Event Demand Intake v1 with account-linked request history
-- curated public event projection layer with public catalog/detail shortcodes
-- admin demand summary and public projection management pages
-- frontend vendor portal navigation layer with theme-friendly output (shortcode + widget)
-- vendor portal links conditioned by login state, vendor assignment, and event timing
-- Event Check-In visibility gated to the authorized pre-event window (opens at 10:00, three days before the event)
-- Square queue/raw event/normalized sale/replay scaffolding
-- capability-gated, nonce-protected replay/undo triggers with duplicate-request protection per sync run
-- Sync Runs operator telemetry (last status, completed timestamp, processed rows, error totals)
-- runtime assignment, attribution, sync effect, and exception table foundations
-- native product cost rule storage for COGS-based profitability
-- PHPUnit harness with passing first unit tests
-- vendor portal navigation service unit coverage for login, assignment, authorization, and timing windows
+- standalone `ames-core` router with token-authenticated routes for movement, buckets, FIFO, custody, manifest build/push, history, archive, OAuth, and encrypted provider secrets
+- WordPress/Woo thin-client bridge through [class-aims-headless-api-client.php](C:/Users/sided/source/repos/AIMS%20Local%20Repo/includes/core/class-aims-headless-api-client.php) and the AIMS cockpit
+- bucket-first physical truth with current seal state, current Square location context, custody movement, FIFO receive, FIFO availability, and FIFO pick
+- event planning and execution workspace in WordPress, including staged bucket prep, temporary release, dock-safe seal checks, check-in, and return flows
+- execution-side mirroring of real event movements into headless AIMS so standalone positional truth is fed by actual physical actions
+- structured WP-side audit logs for operator actions instead of hot-path audit table bloat
+- hot-data health gauge in the cockpit with small-business-safe pressure bands
+- Square queue/raw event/normalized sale/replay scaffolding with sync-run telemetry
+- Square thin-client overlap sync foundation: headless AIMS can pull recent Square orders by location/window, and the WP side can replay them into the existing queue/import flow
+- location-aware Square stock push from AIMS so bucket-linked stock can be projected to the correct Square location
+- capability-first permissions editor with surface-aware access control, while keeping WordPress as the default management experience
+- custom table definitions with indexes across events, demand, buckets, inventory, Square sync, attribution, fulfillment, and operational logging
+- PHPUnit coverage across the headless bridge, event execution, FIFO, auth surfaces, audit logging, and thin-client Square sync foundations
+
+## Current architecture truth
+
+The current build is intentionally hybrid:
+
+- AIMS Core is already a real headless API and is becoming the long-term operations backend.
+- WordPress is still the default operator surface and still owns some planning, reporting, and sync orchestration.
+- Square is being pushed toward a thinner role: payment intake, sale capture, webhook source, overlap-window pull source, and remote location inventory surface.
+
+The direction is clear even if the cutover is not 100% complete yet:
+
+- AIMS should own physical movement truth.
+- WordPress should be the default management point, not the data engine.
+- Square should be a thin client for sales and inventory projection, not the operational authority.
 
 ## Core rules
 
@@ -53,10 +70,10 @@ The repository currently provides:
 - Keep WordPress users, WooCommerce products, and WooCommerce orders as native objects.
 - Treat WooCommerce as product truth.
 - Treat AIMS as the operations, event planning, inventory, and physical control truth.
-- Treat Square as payment and sales truth.
+- Treat Square as payment and sales thin-client truth.
 - Write imported Square sales into AIMS tables first.
 - Avoid any design that can double-apply stock changes.
-- Design for an expected lifecycle of at least 100,000 physical movement writes on the local WordPress server.
+- Design for an honest small-business lifecycle, not a pretend shared-host ERP.
 - Public event pages must never read directly from internal financial or operational tables.
 - Public event output must come from the curated projection layer.
 - Event Demand Intake v1 is a core product feature.
@@ -68,6 +85,7 @@ The repository currently provides:
 - Inventory entering the company should carry cost values for intake, COGS, and profitability work.
 - Inventory moving through the company internally should not carry sale-price data; internal movement truth is `SKU`, quantity, and location/custody reference.
 - Inventory leaving the company through a sale should capture the actual amount paid for that item at that moment.
+- AIMS should only care about actual physical movements and the minimum financial meaning attached to those movements.
 - BOPIS and reservations remain a separate future v2 add-on.
 - Inventory is assigned to events only by explicit manager or supervisor planning action. Never automatically.
 - Built-in AIMS roles are starter templates, not required runtime identities.
@@ -123,6 +141,14 @@ The repository currently provides:
 7. Inventory movement records are created only when physical actions occur: `loaded`/`in_transit` (departure), `vendor_event_checkin` (stock-at-event), and `event_return` (return flows).
 8. Age-band metrics (Staged > 24h, Open > 8h) are informational analytics only — planners may keep stock staged for days or weeks; the metric records that fact without implying a violation.
 
+## Square Thin-Client Model
+
+- AIMS should decide stock truth and bucket/location truth.
+- Square should expose payment events and remote location inventory surfaces.
+- Bucket-linked `square_location_id` values let AIMS push stock counts to the correct Square location.
+- Square sales should be ingested through a mixture of webhooks and overlap-window polling so missed events can be recovered without trusting one ingestion lane.
+- Imported Square records should land in AIMS tables first, then be normalized, replayed, and attributed from there.
+
 ## Distributed custody model
 
 - Mom handles raw-material intake and first-stage production before unfinished work enters the stitch workflow.
@@ -169,6 +195,7 @@ The repository currently provides:
 AIMS now uses a ledger-first inventory design:
 
 - `aims_inventory_movements` and `aims_bucket_inventory_movements` remain the hot movement-line ledgers used for active balance math.
+- headless AIMS also maintains its own SQLite positional and movement sink for standalone operation and future mobile-facing workflows.
 - `aims_movement_batches` groups hot lines into movement batches with inline line metadata so one physical action can later be exported and reread as a single historical unit.
 - `aims_movement_archive_manifests` stores archive/export metadata so historical movement batches can be compressed, exported, and rehydrated locally.
 - `aims_inventory_buckets` is the current aggregate view per vendor/product/bucket.
@@ -184,6 +211,7 @@ AIMS now uses a ledger-first inventory design:
 - `aims_product_cost_rules` stores per-product and per-category cost mappings for COGS and profitability calculations.
 - `aims_sale_fulfillment_allocations` stores event-stock and warehouse-backorder allocations.
 - Square sales are intended to land in `aims_square_sales` before any optional WooCommerce projection.
+- Square location inventory should be treated as a projection target, not the primary stock ledger.
 - event automation now matches Square sales to events by Square location and sold-at date window, then recalculates event financials.
 - `aims_event_bucket_assignments` is the point where inventory is committed to an event by human planning action.
 - `aims_inventory_movements` should not be used to represent planning intent.
