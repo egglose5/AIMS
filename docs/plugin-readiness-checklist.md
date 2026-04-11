@@ -123,7 +123,7 @@ This checklist maps release tasks to concrete code areas in this repository.
 
 - [x] Add movement batch and archive-manifest schema so hot line writes can be grouped into archival units.
 - [x] Bind hot bucket movement writes to movement batches with inline line metadata.
-- [ ] Add the fixed-width binary stream hot path for small-business throughput:
+- [x] Add the fixed-width binary stream **shadow lane** for small-business throughput:
   - enforce `SKU <= 32 UTF-8 bytes` as an intentional product rule
   - ingest Square at the time of sale and reduce the payload to SKU-first operational facts for the hot ledger
   - write the actual realized sale price and tax snapshots as integer cents only
@@ -131,9 +131,36 @@ This checklist maps release tasks to concrete code areas in this repository.
   - push verbose Square metadata to colder storage so the hot ledger stays lean
   - reject invalid records into an exception lane instead of truncating them
   - follow `docs/ames-binary-stream-spec.md` for packet layout and rollout guidance
-- [ ] Add export/archive jobs that write compressed local-server payloads for older movement batches.
-- [ ] Add reread/rehydration queries for archived movement history.
-- [ ] Define retention thresholds for hot lines versus archived movement batches.
+  - include buffered flushing, packet reread/reconciliation, dashboard visibility, and archive metadata for the shadow path
+- [x] Add export/archive jobs that write local-server Parquet payloads for older movement batches.
+- [x] Add reread/rehydration queries for archived movement history.
+- [x] Define retention thresholds for hot lines versus archived movement batches.
+- [ ] Keep the binary lane in shadow mode until a staging soak confirms clean packet counts, per-event totals, exception counts, and operator sign-off for promotion.
+
+## Following Milestone - Square Projection Observability and Monte Carlo Export
+
+- [x] Emit `import_projection` sync effects from `AIMS_Square_Import_Service::persist_queue_to_sales_flow()` so every WooCommerce order projection is traceable back to its originating Square sync run.
+  - Effects carry `sync_run_id`, `sync_action_id`, `square_order_id`, `sale_id`, `line_item_uid`, and `woo_order_id` in `metadata_json`.
+  - `AIMS_Square_Thin_Client_Sync_Service` now injects `sync_run_id` into every ingest and persist payload context.
+- [x] Extend Sync Runs data provider with per-run projection drill-in (top-3 skip reasons, sample order IDs, normalized effect rows).
+  - `AIMS_Square_Sync_Runs_Data_Provider::get_projection_effect_details()` returns up to 50,000 normalized rows per run.
+  - Skipped reasons are always surfaced above non-skipped reasons in the drill-in summary string.
+- [x] Add a read-only forensic projection effects panel to the Sync Runs admin page.
+  - Accessible via `?aims_projection_run_id=N`; renders a normalized 9-column effects table scoped to that run.
+- [x] Add `AIMS_Square_Projection_Parquet_Export_Service` for Monte Carlo–ready business-state snapshots.
+  - Typed Flow Parquet schema with 23 fields including `snapshot_kind`, `point_state`, `run_id`, `snapshot_recorded_at`.
+  - Accepts an injectable writer callback so tests run without the `flow-php/parquet` runtime.
+  - `export_run()` persists a named file to `ames-core/vault/exports/square-sync/`.
+  - `stream_to_resource()` writes to a temp path then pipes bytes to any PHP writable resource (e.g. `php://output`) via `stream_copy_to_stream` and immediately removes the temp file — no vault artifact left on disk.
+- [x] Include hot inventory positions (`aims_bucket_inventory_positions`) in the Parquet snapshot as `snapshot_kind = hot_position` rows with `point_state = position_status` so LLM/FLM tools receive a unified simulation-ready view of both the projection event stream and live stock state.
+  - `AIMS_Bucket_Inventory_Position_Repository::get_all_positions()` returns all positions ordered by `updated_at DESC, id DESC` with an optional row cap.
+- [x] Gate the export action (`admin_post_aims_square_export_projection_parquet`) with capability check + nonce and wire it to a per-run **Export Parquet** form button in the Sync Runs page.
+  - Controller uses `stream_to_resource()` — no intermediate vault file, no `Content-Length` header.
+- [x] Cover the full observability chain with unit tests.
+  - `SquareImportServiceTest`: projection effect emitted with correct `sync_run_id` and `woo_order_id`.
+  - `SquareThinClientSyncServiceTest`: `sync_run_id` present on both ingest and persist contexts.
+  - `SquareSyncSafetyTest`: summary aggregation, drill-in detail rows, controller action registration, page form rendering.
+  - `SquareProjectionParquetExportServiceTest`: `export_run` callback path (mixed projection + hot row assertions); `stream_to_resource` path (bytes reach output resource, no `path` key returned).
 
 ## Following Milestone - Headless Portability Fork
 

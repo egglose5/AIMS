@@ -58,7 +58,14 @@ $config->ensureDirectories();
 
 $logger       = new FileLogger( $config->logsPath() );
 $auth         = new TokenAuthenticator( $config->sharedSecret(), $config->archiveSecret() );
-$ledger       = new SqliteLedgerRepository( $config->sqlitePath() );
+$ledger       = new SqliteLedgerRepository(
+	$config->sqlitePath(),
+	array(
+		'binary_stream_mode' => $config->binaryStreamMode(),
+		'binary_flush_packet_limit' => $config->binaryFlushPacketLimit(),
+		'binary_flush_byte_limit' => $config->binaryFlushByteLimit(),
+	)
+);
 $bucketStore  = new SqliteBucketFifoStore( $config->sqlitePath() );
 $bucketFifo   = new BucketFifoService( $bucketStore );
 $cryptographer = new Cryptographer( $config->encryptionKey() );
@@ -66,7 +73,15 @@ $secretStore  = new SecretStore( $config->secretStorePath(), $cryptographer );
 $oauth        = new OAuthService( $secretStore );
 $remote       = new RemoteTruthService( $config, $secretStore );
 $laserBatches = new LaserBatchInboxService( $config->sinkPath() );
-$archive = new ArchiveService( $ledger, new FlowParquetArchiveWriter(), $config->vaultPath() );
+$archive = new ArchiveService(
+	$ledger,
+	new FlowParquetArchiveWriter(),
+	$config->vaultPath(),
+	array(
+		'hot_retention_days' => $config->hotRetentionDays(),
+		'vault_retention_days' => $config->vaultRetentionDays(),
+	)
+);
 $history = new FlowParquetHistoryReader();
 
 try {
@@ -330,14 +345,19 @@ try {
 	if ( 'GET' === $method && '/history' === $path ) {
 		$auth->assertAuthorized( $_SERVER, $query, false );
 
-		$showId   = trim( (string) ( $query['show_id'] ?? '' ) );
-		$source   = strtolower( trim( (string) ( $query['source'] ?? 'all' ) ) );
-		$limit    = max( 1, min( 2000, (int) ( $query['limit'] ?? 500 ) ) );
-		$from     = trim( (string) ( $query['from'] ?? $query['from_timestamp'] ?? '' ) );
-		$to       = trim( (string) ( $query['to'] ?? $query['to_timestamp'] ?? '' ) );
-		$warnings = array();
-		$rows     = array();
+		$showId        = trim( (string) ( $query['show_id'] ?? '' ) );
+		$source        = strtolower( trim( (string) ( $query['source'] ?? 'all' ) ) );
+		$limit         = max( 1, min( 2000, (int) ( $query['limit'] ?? 500 ) ) );
+		$from          = trim( (string) ( $query['from'] ?? $query['from_timestamp'] ?? '' ) );
+		$to            = trim( (string) ( $query['to'] ?? $query['to_timestamp'] ?? '' ) );
+		$referenceType = trim( (string) ( $query['reference_type'] ?? '' ) );
+		$referenceId   = trim( (string) ( $query['reference_id'] ?? '' ) );
+		$sku           = trim( (string) ( $query['sku'] ?? '' ) );
+		$eventId       = max( 0, (int) ( $query['event_id'] ?? 0 ) );
+		$warnings      = array();
+		$rows          = array();
 		$archiveManifests = array();
+		$binaryShadow  = array();
 
 		if ( 'all' === $source || 'hot' === $source ) {
 			$rows = array_merge( $rows, $ledger->movementHistory( $showId, $limit ) );
@@ -351,6 +371,7 @@ try {
 					array(
 						'from' => $from,
 						'to'   => $to,
+						'sku'  => $sku,
 					)
 				);
 
@@ -362,6 +383,7 @@ try {
 						array(
 							'from'  => $from,
 							'to'    => $to,
+							'sku'   => $sku,
 							'limit' => $remainingLimit,
 						)
 					) as $row ) {
@@ -376,6 +398,23 @@ try {
 			}
 		}
 
+		if ( 'all' === $source || 'binary' === $source ) {
+			$binaryShadow = $ledger->binaryShadowArchiveSummary( $showId );
+
+			if ( 'binary' === $source ) {
+				$rows = $ledger->queryBinaryShadow(
+					array(
+						'show_id'        => $showId,
+						'reference_type' => $referenceType,
+						'reference_id'   => $referenceId,
+						'sku'            => $sku,
+						'event_id'       => $eventId,
+					),
+					$limit
+				);
+			}
+		}
+
 		stream_json_rows(
 			array(
 				'ok'                => true,
@@ -383,7 +422,12 @@ try {
 				'source'            => $source,
 				'from'              => '' !== $from ? $from : null,
 				'to'                => '' !== $to ? $to : null,
+				'sku'               => '' !== $sku ? $sku : null,
+				'reference_type'    => '' !== $referenceType ? $referenceType : null,
+				'reference_id'      => '' !== $referenceId ? $referenceId : null,
+				'event_id'          => $eventId > 0 ? $eventId : null,
 				'archive_manifests' => $archiveManifests,
+				'binary_shadow'     => $binaryShadow,
 				'warnings'          => $warnings,
 			),
 			$rows

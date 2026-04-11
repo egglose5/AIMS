@@ -15,9 +15,25 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 	private string $sqlitePath;
 	private ?PDO $connection = null;
 	private ?BinarySaleStreamWriter $binaryWriter = null;
+	private ?BinarySaleStreamReader $binaryReader = null;
+	/** @var array<string, mixed> */
+	private array $binaryOptions = array();
 
-	public function __construct( string $sqlitePath ) {
+	/**
+	 * @param array<string, mixed> $options
+	 */
+	public function __construct( string $sqlitePath, array $options = array() ) {
+		$mode = strtolower( trim( (string) ( $options['binary_stream_mode'] ?? 'shadow' ) ) );
+		if ( ! in_array( $mode, array( 'off', 'shadow', 'primary' ), true ) ) {
+			$mode = 'shadow';
+		}
+
 		$this->sqlitePath = $sqlitePath;
+		$this->binaryOptions = array(
+			'binary_stream_mode' => $mode,
+			'flush_packet_limit' => max( 1, (int) ( $options['binary_flush_packet_limit'] ?? 1 ) ),
+			'flush_byte_limit'   => max( BinarySaleStreamWriter::PACKET_BYTES, (int) ( $options['binary_flush_byte_limit'] ?? 65536 ) ),
+		);
 	}
 
 	public function initialize(): void {
@@ -146,6 +162,172 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 	 */
 	public function binaryShadowSummary(): array {
 		return $this->binaryWriter()->summary();
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function binaryShadowArchiveSummary( string $showId = '' ): array {
+		$pointers   = $this->binaryWriter()->listPointers( $showId );
+		$summary    = $this->binaryWriter()->summary();
+		$segments   = array();
+		$firstStamp = 0;
+		$lastStamp  = 0;
+
+		foreach ( $pointers as $pointer ) {
+			$segmentName = (string) ( $pointer['segment_name'] ?? basename( (string) ( $pointer['segment_path'] ?? '' ) ) );
+			if ( '' !== $segmentName ) {
+				$segments[ $segmentName ] = true;
+			}
+
+			$timestamp = (int) ( $pointer['timestamp'] ?? 0 );
+			if ( $timestamp > 0 && ( 0 === $firstStamp || $timestamp < $firstStamp ) ) {
+				$firstStamp = $timestamp;
+			}
+
+			if ( $timestamp > 0 && $timestamp > $lastStamp ) {
+				$lastStamp = $timestamp;
+			}
+		}
+
+		return array(
+			'show_id'         => $showId,
+			'pointer_count'   => count( $pointers ),
+			'packet_count'    => count( $pointers ),
+			'segment_count'   => count( $segments ),
+			'segments'        => array_values( array_keys( $segments ) ),
+			'exception_count' => (int) ( $summary['exception_count'] ?? 0 ),
+			'active_from'     => $firstStamp > 0 ? gmdate( 'c', $firstStamp ) : '',
+			'active_to'       => $lastStamp > 0 ? gmdate( 'c', $lastStamp ) : '',
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $filters
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function queryBinaryShadow( array $filters = array(), int $limit = 100 ): array {
+		$showId        = $this->stringValue( $filters['show_id'] ?? '' );
+		$referenceType = $this->stringValue( $filters['reference_type'] ?? '' );
+		$referenceId   = $this->stringValue( $filters['reference_id'] ?? '' );
+		$sku           = $this->stringValue( $filters['sku'] ?? '' );
+		$eventId       = $this->intValue( $filters['event_id'] ?? 0 );
+		$pointerId     = $this->intValue( $filters['reference_pointer_id'] ?? $filters['pointer_id'] ?? 0 );
+		$limit         = max( 1, min( 1000, $limit ) );
+
+		$pointers = '' !== $referenceType && '' !== $referenceId
+			? $this->binaryWriter()->findPointers( $referenceType, $referenceId )
+			: $this->binaryWriter()->listPointers( $showId );
+
+		$matches = array();
+
+		foreach ( $pointers as $pointer ) {
+			if ( $pointerId > 0 && $pointerId !== (int) ( $pointer['reference_pointer_id'] ?? 0 ) ) {
+				continue;
+			}
+
+			if ( '' !== $showId && $showId !== (string) ( $pointer['show_id'] ?? '' ) ) {
+				continue;
+			}
+
+			if ( '' !== $referenceType && $referenceType !== (string) ( $pointer['reference_type'] ?? '' ) ) {
+				continue;
+			}
+
+			if ( '' !== $referenceId && $referenceId !== (string) ( $pointer['reference_id'] ?? '' ) ) {
+				continue;
+			}
+
+			if ( '' !== $sku && $sku !== (string) ( $pointer['sku'] ?? '' ) ) {
+				continue;
+			}
+
+			if ( $eventId > 0 && $eventId !== (int) ( $pointer['event_id'] ?? 0 ) ) {
+				continue;
+			}
+
+			$packet = $this->binaryReader()->readPacket( (string) ( $pointer['segment_path'] ?? '' ), (int) ( $pointer['byte_offset'] ?? 0 ) );
+			$matches[] = array_merge(
+				$pointer,
+				$packet,
+				array(
+					'history_source' => 'binary_shadow',
+				)
+			);
+
+			if ( count( $matches ) >= $limit ) {
+				break;
+			}
+		}
+
+		return $matches;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function reconcileBinaryShadow( string $showId = '' ): array {
+		$pointers            = $this->binaryWriter()->listPointers( $showId );
+		$saleRows            = $this->saleMovementRows( $showId );
+		$summary             = $this->binaryWriter()->summary();
+		$driftRows           = array();
+		$eventTotals         = array();
+		$totalPriceCents     = 0;
+		$totalTaxCents       = 0;
+		$decodedPacketCount  = 0;
+
+		foreach ( $pointers as $pointer ) {
+			$packet = $this->binaryReader()->readPacket( (string) $pointer['segment_path'], (int) $pointer['byte_offset'] );
+			++$decodedPacketCount;
+
+			$totalPriceCents += (int) ( $packet['price_cents'] ?? 0 );
+			$totalTaxCents   += (int) ( $packet['tax_cents'] ?? 0 );
+
+			$eventId = (int) ( $packet['event_id'] ?? 0 );
+			if ( ! isset( $eventTotals[ $eventId ] ) ) {
+				$eventTotals[ $eventId ] = array(
+					'packet_count' => 0,
+					'price_cents'  => 0,
+					'tax_cents'    => 0,
+				);
+			}
+
+			++$eventTotals[ $eventId ]['packet_count'];
+			$eventTotals[ $eventId ]['price_cents'] += (int) ( $packet['price_cents'] ?? 0 );
+			$eventTotals[ $eventId ]['tax_cents']   += (int) ( $packet['tax_cents'] ?? 0 );
+
+			$pointerMismatch = (string) ( $pointer['sku'] ?? '' ) !== (string) ( $packet['sku'] ?? '' )
+				|| (int) ( $pointer['price_cents'] ?? 0 ) !== (int) ( $packet['price_cents'] ?? 0 )
+				|| (int) ( $pointer['tax_cents'] ?? 0 ) !== (int) ( $packet['tax_cents'] ?? 0 )
+				|| (int) ( $pointer['timestamp'] ?? 0 ) !== (int) ( $packet['timestamp'] ?? 0 )
+				|| (int) ( $pointer['event_id'] ?? 0 ) !== (int) ( $packet['event_id'] ?? 0 );
+
+			if ( $pointerMismatch ) {
+				$driftRows[] = array(
+					'reference_type' => (string) ( $pointer['reference_type'] ?? '' ),
+					'reference_id'   => (string) ( $pointer['reference_id'] ?? '' ),
+					'byte_offset'    => (int) ( $pointer['byte_offset'] ?? 0 ),
+					'pointer'        => $pointer,
+					'packet'         => $packet,
+				);
+			}
+		}
+
+		return array(
+			'show_id'             => $showId,
+			'sale_movement_count' => count( $saleRows ),
+			'pointer_count'       => count( $pointers ),
+			'packet_count'        => $decodedPacketCount,
+			'count_match'         => count( $saleRows ) === count( $pointers ),
+			'total_price_cents'   => $totalPriceCents,
+			'total_tax_cents'     => $totalTaxCents,
+			'drift_count'         => count( $driftRows ),
+			'drift_rows'          => $driftRows,
+			'exception_count'     => (int) ( $summary['exception_count'] ?? 0 ),
+			'dictionary_count'    => (int) ( $summary['dictionary_count'] ?? 0 ),
+			'event_totals'        => $eventTotals,
+			'ok'                  => count( $saleRows ) === count( $pointers ) && 0 === count( $driftRows ),
+		);
 	}
 
 	/**
@@ -408,6 +590,10 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 	 */
 	private function recordBinaryShadow( array $input, array $row, string $occurredAt, string $movementType ): array {
 		$priceFieldsPresent = array_key_exists( 'price_cents', $input ) || array_key_exists( 'amount_paid_cents', $input ) || array_key_exists( 'paid_amount_cents', $input );
+		if ( ! $this->isBinaryShadowEnabled() ) {
+			return array( 'status' => 'disabled' );
+		}
+
 		if ( ! $this->isSaleMovementType( $movementType ) && ! $priceFieldsPresent ) {
 			return array( 'status' => 'skipped' );
 		}
@@ -419,10 +605,30 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 				'tax_cents'      => $this->resolveMoneyCents( $input, array( 'tax_cents', 'tax_amount_cents' ) ),
 				'timestamp'      => $occurredAt,
 				'event_id'       => $this->intValue( $input['event_id'] ?? 0 ),
+				'show_id'        => $this->stringValue( $row['show_id'] ?? $input['show_id'] ?? '' ),
 				'reference_type' => $this->stringValue( $input['reference_type'] ?? $movementType ),
 				'reference_id'   => $this->stringValue( $input['reference_id'] ?? $input['square_order_id'] ?? $row['movement_uuid'] ?? '' ),
 			)
 		);
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function saleMovementRows( string $showId = '' ): array {
+		$query = 'SELECT "movement_uuid", "show_id", "sku", "movement_type", "timestamp" FROM "' . self::HOT_TABLE . '" WHERE "movement_type" IN ("square_sale", "stock_out_sale", "show_consumption")';
+		if ( '' !== $showId ) {
+			$query .= ' AND "show_id" = :show_id';
+		}
+
+		$query .= ' ORDER BY "timestamp" ASC, "id" ASC';
+		$statement = $this->connection()->prepare( $query );
+		if ( '' !== $showId ) {
+			$statement->bindValue( ':show_id', $showId );
+		}
+
+		$statement->execute();
+		return $statement->fetchAll( PDO::FETCH_ASSOC ) ?: array();
 	}
 
 	private function binaryWriter(): BinarySaleStreamWriter {
@@ -431,9 +637,23 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 		}
 
 		$rootPath = dirname( $this->sqlitePath ) . DIRECTORY_SEPARATOR . 'sink' . DIRECTORY_SEPARATOR . 'hot-binary';
-		$this->binaryWriter = new BinarySaleStreamWriter( $rootPath );
+		$this->binaryWriter = new BinarySaleStreamWriter( $rootPath, $this->binaryOptions );
 
 		return $this->binaryWriter;
+	}
+
+	private function binaryReader(): BinarySaleStreamReader {
+		if ( null !== $this->binaryReader ) {
+			return $this->binaryReader;
+		}
+
+		$this->binaryReader = new BinarySaleStreamReader();
+
+		return $this->binaryReader;
+	}
+
+	private function isBinaryShadowEnabled(): bool {
+		return 'off' !== (string) ( $this->binaryOptions['binary_stream_mode'] ?? 'shadow' );
 	}
 
 	private function isSaleMovementType( string $movementType ): bool {

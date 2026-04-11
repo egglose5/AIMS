@@ -19,6 +19,11 @@ final class CoreConfig {
 	private string $squareUrl;
 	private string $squareLocationId;
 	private string $squareVersion;
+	private string $binaryStreamMode;
+	private int $binaryFlushPacketLimit;
+	private int $binaryFlushByteLimit;
+	private int $hotRetentionDays;
+	private int $vaultRetentionDays;
 
 	private function __construct( array $values ) {
 		$this->rootPath          = $values['root_path'];
@@ -33,8 +38,13 @@ final class CoreConfig {
 		$this->encryptionKey     = $values['encryption_key'];
 		$this->wooUrl            = $values['woo_url'];
 		$this->squareUrl         = $values['square_url'];
-		$this->squareLocationId  = $values['square_location_id'];
-		$this->squareVersion     = $values['square_version'];
+		$this->squareLocationId      = $values['square_location_id'];
+		$this->squareVersion         = $values['square_version'];
+		$this->binaryStreamMode       = $values['binary_stream_mode'];
+		$this->binaryFlushPacketLimit = (int) $values['binary_flush_packet_limit'];
+		$this->binaryFlushByteLimit   = (int) $values['binary_flush_byte_limit'];
+		$this->hotRetentionDays       = (int) $values['hot_retention_days'];
+		$this->vaultRetentionDays     = (int) $values['vault_retention_days'];
 	}
 
 	public static function fromRoot( string $rootPath ): self {
@@ -45,22 +55,32 @@ final class CoreConfig {
 		$logsPath   = self::envPath( 'AIMS_LOG_PATH', $rootPath . DIRECTORY_SEPARATOR . 'logs', $rootPath );
 		$sqlitePath = self::envPath( 'AIMS_SQLITE_PATH', $sinkPath . DIRECTORY_SEPARATOR . 'ames_ledger.db', $rootPath );
 
+		$binaryMode = strtolower( trim( (string) ( getenv( 'AIMS_BINARY_STREAM_MODE' ) ?: 'shadow' ) ) );
+		if ( ! in_array( $binaryMode, array( 'off', 'shadow', 'primary' ), true ) ) {
+			$binaryMode = 'shadow';
+		}
+
 		return new self(
 			array(
-				'root_path'           => $rootPath,
-				'sink_path'           => $sinkPath,
-				'vault_path'          => $vaultPath,
-				'config_path'         => $configPath,
-				'logs_path'           => $logsPath,
-				'sqlite_path'         => $sqlitePath,
-				'secret_store_path'   => $configPath . DIRECTORY_SEPARATOR . 'secrets.json',
-				'shared_secret'       => trim( (string) getenv( 'AIMS_SHARED_SECRET' ) ),
-				'archive_secret'      => trim( (string) ( getenv( 'AIMS_ARCHIVE_SECRET' ) ?: getenv( 'AIMS_SHARED_SECRET' ) ) ),
-				'encryption_key'      => trim( (string) getenv( 'AIMS_ENCRYPTION_KEY' ) ),
-				'woo_url'             => rtrim( trim( (string) getenv( 'AIMS_WOO_URL' ) ), '/' ),
-				'square_url'          => rtrim( trim( (string) ( getenv( 'AIMS_SQUARE_URL' ) ?: 'https://connect.squareup.com' ) ), '/' ),
-				'square_location_id'  => trim( (string) getenv( 'AIMS_SQUARE_LOCATION_ID' ) ),
-				'square_version'      => trim( (string) ( getenv( 'AIMS_SQUARE_VERSION' ) ?: '2026-01-22' ) ),
+				'root_path'                => $rootPath,
+				'sink_path'                => $sinkPath,
+				'vault_path'               => $vaultPath,
+				'config_path'              => $configPath,
+				'logs_path'                => $logsPath,
+				'sqlite_path'              => $sqlitePath,
+				'secret_store_path'        => $configPath . DIRECTORY_SEPARATOR . 'secrets.json',
+				'shared_secret'            => trim( (string) getenv( 'AIMS_SHARED_SECRET' ) ),
+				'archive_secret'           => trim( (string) ( getenv( 'AIMS_ARCHIVE_SECRET' ) ?: getenv( 'AIMS_SHARED_SECRET' ) ) ),
+				'encryption_key'           => trim( (string) getenv( 'AIMS_ENCRYPTION_KEY' ) ),
+				'woo_url'                  => rtrim( trim( (string) getenv( 'AIMS_WOO_URL' ) ), '/' ),
+				'square_url'               => rtrim( trim( (string) ( getenv( 'AIMS_SQUARE_URL' ) ?: 'https://connect.squareup.com' ) ), '/' ),
+				'square_location_id'       => trim( (string) getenv( 'AIMS_SQUARE_LOCATION_ID' ) ),
+				'square_version'           => trim( (string) ( getenv( 'AIMS_SQUARE_VERSION' ) ?: '2026-01-22' ) ),
+				'binary_stream_mode'       => $binaryMode,
+				'binary_flush_packet_limit'=> max( 1, (int) ( getenv( 'AIMS_BINARY_FLUSH_PACKET_LIMIT' ) ?: 1024 ) ),
+				'binary_flush_byte_limit'  => max( 64, (int) ( getenv( 'AIMS_BINARY_FLUSH_BYTE_LIMIT' ) ?: 65536 ) ),
+				'hot_retention_days'       => max( 1, (int) ( getenv( 'AIMS_HOT_RETENTION_DAYS' ) ?: 30 ) ),
+				'vault_retention_days'     => max( 1, (int) ( getenv( 'AIMS_VAULT_RETENTION_DAYS' ) ?: 365 ) ),
 			)
 		);
 	}
@@ -127,6 +147,26 @@ final class CoreConfig {
 
 	public function squareVersion(): string {
 		return $this->squareVersion;
+	}
+
+	public function binaryStreamMode(): string {
+		return $this->binaryStreamMode;
+	}
+
+	public function binaryFlushPacketLimit(): int {
+		return $this->binaryFlushPacketLimit;
+	}
+
+	public function binaryFlushByteLimit(): int {
+		return $this->binaryFlushByteLimit;
+	}
+
+	public function hotRetentionDays(): int {
+		return $this->hotRetentionDays;
+	}
+
+	public function vaultRetentionDays(): int {
+		return $this->vaultRetentionDays;
 	}
 
 	public function hasWooBaseUrl(): bool {

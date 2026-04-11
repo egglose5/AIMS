@@ -83,6 +83,17 @@ class AIMS_Bucket_Inventory_Position_Repository {
 		);
 	}
 
+	public function get_all_positions( int $limit = 0 ): array {
+		global $wpdb;
+
+		$query = 'SELECT * FROM ' . $this->get_table_name() . ' ORDER BY updated_at DESC, id DESC';
+		if ( $limit > 0 ) {
+			$query .= $wpdb->prepare( ' LIMIT %d', $limit );
+		}
+
+		return $wpdb->get_results( $query, ARRAY_A );
+	}
+
 	public function get_bucket_contents_summary( int $bucket_id ): array {
 		$summary = array();
 

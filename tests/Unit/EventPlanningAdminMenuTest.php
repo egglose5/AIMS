@@ -233,21 +233,18 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 				'code' => 200,
 				'body' => wp_json_encode(
 					array(
-						'manifest_uuid' => 'manifest-archive',
-						'generated_at'  => '2026-04-11T12:00:00Z',
-						'summary'       => array(
-							'merged_items' => 5,
-						),
-						'buckets'       => array(),
-						'archive_manifests' => array(
-							array(
-								'show_id'       => 'SHOW-42',
-								'row_count'     => 12,
-								'segment_count' => 2,
-								'active_from'   => '2026-04-01T09:15:00Z',
-								'active_to'     => '2026-04-10T16:45:00Z',
+						'meta' => array(
+							'archive_manifests' => array(
+								array(
+									'show_id'       => 'SHOW-42',
+									'row_count'     => 12,
+									'segment_count' => 2,
+									'active_from'   => '2026-04-01T09:15:00Z',
+									'active_to'     => '2026-04-10T16:45:00Z',
+								),
 							),
 						),
+						'rows' => array(),
 					)
 				),
 			)
@@ -263,6 +260,42 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 		$this->assertStringContainsString( 'SHOW-42', $output );
 		$this->assertStringContainsString( '2026-04-01T09:15:00Z to 2026-04-10T16:45:00Z', $output );
 		$this->assertStringContainsString( '2 segment(s)', $output );
+	}
+
+	public function testRenderDashboardShowsBinaryShadowSummaryWhenHistoryProvidesIt(): void {
+		TestState::set_current_user_id( 90 );
+		TestState::set_user_capabilities( 90, array( \AIMS_Capabilities::CAP_MANAGE ) );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_URL, 'https://aims-core.test' );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_TOKEN, 'secret-token' );
+		TestState::set_remote_response(
+			array(
+				'code' => 200,
+				'body' => wp_json_encode(
+					array(
+						'meta' => array(
+							'binary_shadow' => array(
+								'pointer_count' => 3,
+								'exception_count' => 1,
+								'segment_count' => 1,
+								'segments' => array( 'sales-shadow-20260411.bin' ),
+							),
+						),
+						'rows' => array(),
+					)
+				),
+			)
+		);
+
+		$menu = new \AIMS_Admin_Menu( null, new \AIMS_Audit_Log_Service( sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-dashboard-binary-' . uniqid( '', true ) ) );
+
+		ob_start();
+		$menu->render_dashboard();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Binary Shadow Status', $output );
+		$this->assertStringContainsString( '3 pointer(s)', $output );
+		$this->assertStringContainsString( '1 exception(s)', $output );
+		$this->assertStringContainsString( 'sales-shadow-20260411.bin', $output );
 	}
 
 	public function testHandleSyncRemoteManifestBlocksDuringLiveEventWindow(): void {

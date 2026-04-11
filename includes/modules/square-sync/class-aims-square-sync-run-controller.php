@@ -22,6 +22,7 @@ class AIMS_Square_Sync_Run_Controller {
 	public function register(): void {
 		add_action( 'admin_post_aims_square_replay', array( $this, 'handle_replay' ) );
 		add_action( 'admin_post_aims_square_undo', array( $this, 'handle_undo' ) );
+		add_action( 'admin_post_aims_square_export_projection_parquet', array( $this, 'handle_export_projection_parquet' ) );
 	}
 
 	public function handle_replay(): void {
@@ -42,6 +43,55 @@ class AIMS_Square_Sync_Run_Controller {
 			'aims_square_undo_requested',
 			'undo_requested'
 		);
+	}
+
+	public function handle_export_projection_parquet(): void {
+		if ( ! $this->can_manage_square_sync() ) {
+			wp_die( esc_html__( 'You are not allowed to export projection effects.', 'ai-man-sys' ) );
+		}
+
+		check_admin_referer( 'aims_square_sync_export_projection_parquet', '_aims_nonce' );
+
+		$run_id = max( 0, (int) ( $_REQUEST['run_id'] ?? 0 ) );
+		if ( $run_id <= 0 ) {
+			$this->redirect_to_sync_runs( '', $run_id, 'error', 'A valid Square sync run is required.' );
+		}
+
+		$run = $this->runs->find( $run_id );
+		if ( ! is_array( $run ) || 'square' !== sanitize_key( (string) ( $run['source_system'] ?? '' ) ) ) {
+			$this->redirect_to_sync_runs( '', $run_id, 'error', 'Square sync run not found.' );
+		}
+
+		$provider = new AIMS_Square_Sync_Runs_Data_Provider();
+		$details  = $provider->get_projection_effect_details( $run_id, 50000 );
+		$rows     = (array) ( $details['rows'] ?? array() );
+		$hot_positions = ( new AIMS_Bucket_Inventory_Position_Repository() )->get_all_positions( 200000 );
+
+		if ( empty( $rows ) && empty( $hot_positions ) ) {
+			$this->redirect_to_sync_runs( '', $run_id, 'error', 'No projection or hot-list rows were available to export.' );
+		}
+
+		$filename = sprintf( 'aims-square-projection-run-%d-%s.parquet', $run_id, gmdate( 'Ymd-His' ) );
+		$service  = new AIMS_Square_Projection_Parquet_Export_Service();
+
+		nocache_headers();
+		header( 'Content-Type: application/vnd.apache.parquet' );
+		header( 'Content-Disposition: attachment; filename=' . $filename );
+
+		$out = fopen( 'php://output', 'wb' );
+		if ( false === $out ) {
+			exit;
+		}
+
+		try {
+			$service->stream_to_resource( $run_id, $rows, $hot_positions, $out, $filename );
+		} catch ( Throwable $throwable ) {
+			// Headers already sent; nothing useful we can surface to the browser.
+		} finally {
+			fclose( $out );
+		}
+
+		exit;
 	}
 
 	private function handle_request( string $mode, string $capability, string $denied_message, string $action_hook, string $notice_key ): void {
@@ -132,5 +182,10 @@ class AIMS_Square_Sync_Run_Controller {
 		}
 
 		return true;
+	}
+
+	private function can_manage_square_sync(): bool {
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		return $user_id > 0 && is_object( $this->responsibility_auth ) && $this->responsibility_auth->can_manage_square_sync( $user_id );
 	}
 }

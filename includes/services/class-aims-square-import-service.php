@@ -13,6 +13,8 @@ class AIMS_Square_Import_Service {
 	private $normalization;
 	private $intake;
 	private $assignment_service;
+	private $projection;
+	private $effects;
 
 	public function __construct(
 		AIMS_Square_Import_Queue_Repository $queue,
@@ -22,7 +24,9 @@ class AIMS_Square_Import_Service {
 		AIMS_Fulfillment_Service $fulfillment,
 		AIMS_Square_Normalization_Service $normalization = null,
 		AIMS_Square_Webhook_Intake_Service $intake = null,
-		AIMS_Square_Assignment_Service $assignment_service = null
+		AIMS_Square_Assignment_Service $assignment_service = null,
+		AIMS_Woo_Order_Projection_Service $projection = null,
+		AIMS_Sync_Effect_Repository $effects = null
 	) {
 		$this->queue              = $queue;
 		$this->sales              = $sales;
@@ -32,6 +36,8 @@ class AIMS_Square_Import_Service {
 		$this->normalization      = $normalization ? $normalization : new AIMS_Square_Normalization_Service();
 		$this->intake             = $intake;
 		$this->assignment_service  = $assignment_service;
+		$this->projection         = $projection;
+		$this->effects            = $effects;
 	}
 
 	public function ingest_order_payload( array $payload ): array {
@@ -85,6 +91,7 @@ class AIMS_Square_Import_Service {
 		$customer_id       = $this->resolve_customer_id( $analysis['customer_data'] ?? array() );
 		$shipping_address_id = $this->resolve_shipping_address_id( $customer_id, $analysis['address_data'] ?? array() );
 		$sale_ids          = array();
+		$projection        = array();
 		$has_errors        = false;
 		$order_totals      = $this->normalization->extract_order_totals( $payload, (array) ( $analysis['shipping_marker'] ?? array() ) );
 		$default_vendor_id  = (int) ( $payload['vendor_id'] ?? $sale_assignment['vendor_id'] ?? 0 );
@@ -123,6 +130,28 @@ class AIMS_Square_Import_Service {
 			$sale_ids[] = $sale_id;
 
 			$this->create_fulfillment_allocations_for_sale( $sale_id, $payload, $line_item, $analysis, $line_context );
+
+			$projection_record = $this->project_sale_to_woo(
+				array_merge( $sale_record, array( 'id' => $sale_id ) ),
+				array(
+					'allow_woo_order_projection' => ! empty( $payload['allow_woo_order_projection'] ),
+					'allow_unreconciled_projection' => ! empty( $payload['allow_unreconciled_projection'] ),
+					'reconciliation_status'      => (string) ( $payload['reconciliation_status'] ?? 'pending' ),
+					'projection_mode'            => (string) ( $payload['projection_mode'] ?? 'draft' ),
+					'queue_id'                   => $queue_id,
+					'line_item'                  => $line_item,
+				)
+			);
+
+			if ( ! empty( $projection_record ) ) {
+				$projection[] = $projection_record;
+				$this->record_projection_effect( $payload, $sale_record, $projection_record, $line_item, $queue_id );
+
+				if ( ! empty( $projection_record['woo_order_id'] ) ) {
+					$sale_record['woo_order_id'] = (int) $projection_record['woo_order_id'];
+					$this->sales->save( $sale_record );
+				}
+			}
 		}
 
 		if ( $has_errors || empty( $sale_ids ) ) {
@@ -136,6 +165,7 @@ class AIMS_Square_Import_Service {
 			'sale_ids'          => $sale_ids,
 			'analysis'          => $analysis,
 			'sale_assignment'   => $sale_assignment,
+			'projection'        => $projection,
 			'order_totals'      => $order_totals,
 		);
 	}
@@ -270,5 +300,43 @@ class AIMS_Square_Import_Service {
 		}
 
 		return '';
+	}
+
+	private function project_sale_to_woo( array $sale_record, array $context = array() ): array {
+		if ( null === $this->projection || ! method_exists( $this->projection, 'project_normalized_sale' ) ) {
+			return array();
+		}
+
+		return (array) $this->projection->project_normalized_sale( $sale_record, $context );
+	}
+
+	private function record_projection_effect( array $payload, array $sale_record, array $projection_record, array $line_item, int $queue_id ): void {
+		if ( null === $this->effects || ! method_exists( $this->effects, 'save' ) ) {
+			return;
+		}
+
+		$this->effects->save(
+			array(
+				'sync_run_id'        => (int) ( $payload['sync_run_id'] ?? 0 ),
+				'sync_action_id'     => (int) ( $payload['sync_action_id'] ?? 0 ),
+				'effect_type'        => 'import_projection',
+				'target_table'       => 'aims_square_sales',
+				'target_id'          => (int) ( $sale_record['id'] ?? 0 ),
+				'reversal_status'    => 'none',
+				'reversed_at'        => null,
+				'reversal_sync_action_id' => 0,
+				'metadata_json'      => wp_json_encode(
+					array(
+						'queue_id'      => $queue_id,
+						'square_order_id'=> (string) ( $payload['id'] ?? '' ),
+						'sale_id'       => (int) ( $sale_record['id'] ?? 0 ),
+						'line_item_uid' => (string) ( $line_item['uid'] ?? '' ),
+						'projection'    => array( $projection_record ),
+					)
+				),
+				'created_at'         => current_time( 'mysql' ),
+				'updated_at'         => current_time( 'mysql' ),
+			)
+		);
 	}
 }

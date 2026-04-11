@@ -69,17 +69,21 @@ Each packet is exactly `64 bytes` and is fixed-width for cache-friendly processi
 
 ## Current Implementation Status
 
-As of `2026-04-11`, the first shadow-mode implementation slice is live in `ames-core` through `AmesCore\Headless\Storage\BinarySaleStreamWriter` and its integration with `SqliteLedgerRepository`.
+As of `2026-04-11`, the binary stream lane is live in `ames-core` as a **shadow-write** implementation through `AmesCore\Headless\Storage\BinarySaleStreamWriter`, `BinarySaleStreamReader`, and their integration with `SqliteLedgerRepository`.
 
 Current behavior:
 
-- sale-side writes can emit the fixed `64-byte` packet in shadow mode
+- sale-side writes emit the fixed `64-byte` packet in shadow mode
 - a sidecar reference dictionary reuses a stable pointer ID for repeated `reference_type + reference_id` values
 - an append-only pointer index records `segment path + byte offset + packet length + event ID + cents snapshots`
 - invalid hot-path rows are routed to an exception lane instead of poisoning the packet stream
-- the packet, pointer index, and exception lane live under the headless sink path so WordPress page requests do not become the hot write path
+- packets can be reread by `segment path + byte offset` through `BinarySaleStreamReader`
+- `SqliteLedgerRepository::reconcileBinaryShadow()` can compare packet counts, cents totals, and decoded packet values against the current movement flow to surface drift
+- `GET /history?source=binary` plus the WordPress **Binary Shadow Status** dashboard card expose rehydrated packet rows, pointer counts, exception counts, and active segment files for operator review
+- buffered flush thresholds are now configurable via `AIMS_BINARY_FLUSH_PACKET_LIMIT` and `AIMS_BINARY_FLUSH_BYTE_LIMIT`
+- archive manifests can now carry binary-shadow metadata plus hot/vault retention thresholds from `AIMS_HOT_RETENTION_DAYS` and `AIMS_VAULT_RETENTION_DAYS`
 
-This is intentionally a **shadow-write** slice only. The canonical movement ledger remains the source of truth while packet counts, cents totals, and replay behavior are reconciled.
+This remains intentionally **shadow-only**. The canonical movement ledger is still the source of truth until staging soak comparisons stay clean and an operator explicitly approves promotion.
 
 ## Streaming Strategy
 
@@ -93,6 +97,8 @@ Recommended starting thresholds:
 
 - `1024` packets per flush, or
 - `64 KB` buffered payload, whichever comes first
+
+These thresholds are currently exposed via `AIMS_BINARY_FLUSH_PACKET_LIMIT` and `AIMS_BINARY_FLUSH_BYTE_LIMIT`.
 
 ## Exception Lane
 
@@ -114,9 +120,10 @@ Exception records should preserve enough context for later correction and audit,
 
 1. ✅ Add the binary stream in shadow mode.
 2. ✅ Write binary packets alongside the current ledger path.
-3. Reconcile packet counts and financial totals against the existing movement flow.
-4. Confirm that no cent drift appears across repeated write/read cycles.
-5. Promote the binary stream only after shadow output stays clean.
+3. ✅ Add packet reread, reconciliation reporting, buffered flushing, archive metadata, retention thresholds, and dashboard visibility for the shadow lane.
+4. Run a staging soak that compares packet counts, per-event totals, and exception counts across real or replayed sale windows.
+5. Confirm that no cent drift appears across repeated write/read cycles during that soak.
+6. Promote the binary stream only after shadow output stays clean and an operator explicitly approves the cutover.
 
 ## Storage Guidance
 

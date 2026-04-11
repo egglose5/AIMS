@@ -13,6 +13,7 @@ class AIMS_Square_Replay_Service {
 	private $effects;
 	private $exceptions;
 	private $fulfillment;
+	private $projection;
 
 	public function __construct(
 		AIMS_Square_Raw_Event_Repository $raw_events = null,
@@ -22,7 +23,8 @@ class AIMS_Square_Replay_Service {
 		AIMS_Square_Normalization_Service $normalization = null,
 		AIMS_Sync_Effect_Repository $effects = null,
 		AIMS_Square_Exception_Service $exceptions = null,
-		AIMS_Fulfillment_Service $fulfillment = null
+		AIMS_Fulfillment_Service $fulfillment = null,
+		AIMS_Woo_Order_Projection_Service $projection = null
 	) {
 		$this->raw_events       = $raw_events;
 		$this->normalized_sales = $normalized_sales;
@@ -32,6 +34,7 @@ class AIMS_Square_Replay_Service {
 		$this->effects          = $effects;
 		$this->exceptions       = $exceptions;
 		$this->fulfillment      = $fulfillment;
+		$this->projection       = $projection;
 	}
 
 	public function replay_by_raw_event_id( int $raw_event_id, array $context = array() ): array {
@@ -89,6 +92,7 @@ class AIMS_Square_Replay_Service {
 		$attributions    = array();
 		$effects         = array();
 		$fulfillment     = array();
+		$projection      = array();
 		$line_items      = (array) ( $payload['line_items'] ?? array() );
 
 		if ( empty( $line_items ) ) {
@@ -126,8 +130,6 @@ class AIMS_Square_Replay_Service {
 				$sale_record['normalized_sale_id'] = (int) $this->normalized_sales->save( $sale_record );
 			}
 
-			$normalized_rows[] = $sale_record;
-
 			$attribution_record = null !== $this->attribution
 				? $this->attribution->attribute_sale( $sale_record, $resolved_assignment, array_merge( $context, array( 'raw_event_id' => (int) ( $raw_event['id'] ?? 0 ) ) ) )
 				: array();
@@ -141,7 +143,34 @@ class AIMS_Square_Replay_Service {
 				$fulfillment = array_merge( $fulfillment, $fulfillment_records );
 			}
 
-			$effect_record = $this->build_effect_record( $raw_event, $sale_record, $attribution_record, $fulfillment_records, $context );
+			$projection_record = $this->project_sale_to_woo(
+				$sale_record,
+				array_merge(
+					$context,
+					array(
+						'raw_event_id'      => (int) ( $raw_event['id'] ?? 0 ),
+						'line_item'         => $line_item,
+						'payload'           => $payload,
+						'analysis'          => $analysis,
+						'resolved_assignment' => $resolved_assignment,
+					)
+				)
+			);
+			if ( ! empty( $projection_record ) ) {
+				if ( ! empty( $projection_record['woo_order_id'] ) ) {
+					$sale_record['woo_order_id'] = (int) $projection_record['woo_order_id'];
+
+					if ( null !== $this->normalized_sales && method_exists( $this->normalized_sales, 'save' ) && ! empty( $sale_record['normalized_sale_id'] ) ) {
+						$this->normalized_sales->save( $sale_record, (int) $sale_record['normalized_sale_id'] );
+					}
+				}
+
+				$projection[] = $projection_record;
+			}
+
+			$normalized_rows[] = $sale_record;
+
+			$effect_record = $this->build_effect_record( $raw_event, $sale_record, $attribution_record, $fulfillment_records, $projection_record, $context );
 
 			if ( null !== $this->effects && method_exists( $this->effects, 'save' ) ) {
 				$effect_record['id'] = (int) $this->effects->save( $effect_record );
@@ -157,6 +186,7 @@ class AIMS_Square_Replay_Service {
 			'normalized_rows' => $normalized_rows,
 			'attributions'    => $attributions,
 			'fulfillment'     => $fulfillment,
+			'projection'      => $projection,
 			'effects'         => $effects,
 		);
 	}
@@ -195,7 +225,7 @@ class AIMS_Square_Replay_Service {
 		return is_array( $payload ) ? $payload : array();
 	}
 
-	private function build_effect_record( array $raw_event, array $sale_record, array $attribution_record, array $fulfillment_records, array $context ): array {
+	private function build_effect_record( array $raw_event, array $sale_record, array $attribution_record, array $fulfillment_records, array $projection_record, array $context ): array {
 		return array(
 			'sync_run_id'        => (int) ( $context['sync_run_id'] ?? 0 ),
 			'sync_action_id'     => (int) ( $context['sync_action_id'] ?? 0 ),
@@ -211,6 +241,7 @@ class AIMS_Square_Replay_Service {
 					'sale_id'      => (int) ( $sale_record['normalized_sale_id'] ?? 0 ),
 					'attribution'  => $attribution_record,
 					'fulfillment'  => $fulfillment_records,
+					'projection'   => empty( $projection_record ) ? array() : array( $projection_record ),
 				)
 			),
 			'created_at'         => current_time( 'mysql' ),
@@ -255,5 +286,13 @@ class AIMS_Square_Replay_Service {
 		}
 
 		return $created;
+	}
+
+	private function project_sale_to_woo( array $sale_record, array $context = array() ): array {
+		if ( null === $this->projection || ! method_exists( $this->projection, 'project_normalized_sale' ) ) {
+			return array();
+		}
+
+		return (array) $this->projection->project_normalized_sale( $sale_record, $context );
 	}
 }

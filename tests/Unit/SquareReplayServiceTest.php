@@ -130,4 +130,141 @@ final class SquareReplayServiceTest extends \AIMS\Tests\TestCase {
 		$metadata = json_decode( (string) ( $effects->saved[0]['metadata_json'] ?? '' ), true );
 		$this->assertSame( 222, $metadata['fulfillment'][0]['allocation_id'] ?? 0 );
 	}
+
+	public function testReplayRawEventKeepsWooProjectionBehindReconciliationGate(): void {
+		$normalized_sales = new class() extends \AIMS_Square_Normalized_Sale_Repository {
+			public function __construct() {}
+
+			public function save( array $data, int $sale_id = 0 ): int {
+				unset( $data, $sale_id );
+				return 601;
+			}
+		};
+
+		$projection = new \AIMS_Woo_Order_Projection_Service();
+
+		$service = new \AIMS_Square_Replay_Service(
+			null,
+			$normalized_sales,
+			null,
+			null,
+			new \AIMS_Square_Normalization_Service(),
+			null,
+			null,
+			null,
+			$projection
+		);
+
+		$result = $service->replay_raw_event(
+			array(
+				'id'      => 1002,
+				'payload' => array(
+					'id'         => 'SQ-ORDER-456',
+					'created_at' => '2026-04-11T11:00:00Z',
+					'event_id'   => 44,
+					'line_items' => array(
+						array(
+							'uid'            => 'LINE-2',
+							'woo_product_id' => 902,
+							'sku'            => 'SKU-202',
+							'quantity'       => 1,
+							'net_amount'     => 22.00,
+						),
+					),
+				),
+			),
+			array(
+				'allow_woo_order_projection' => true,
+				'reconciliation_status'      => 'pending',
+			)
+		);
+
+		$this->assertTrue( $result['replayed'] );
+		$this->assertSame( 'skipped', $result['projection'][0]['status'] ?? '' );
+		$this->assertSame( 'awaiting_reconciliation', $result['projection'][0]['reason'] ?? '' );
+	}
+
+	public function testReplayRawEventProjectsDraftWooOrderWhenExplicitlyEnabled(): void {
+		$normalized_sales = new class() extends \AIMS_Square_Normalized_Sale_Repository {
+			/** @var array<int, array<string, mixed>> */
+			public array $saved = array();
+
+			public function __construct() {}
+
+			public function save( array $data, int $sale_id = 0 ): int {
+				unset( $sale_id );
+				$this->saved[] = $data;
+				return 777;
+			}
+		};
+
+		$effects = new class() extends \AIMS_Sync_Effect_Repository {
+			/** @var array<int, array<string, mixed>> */
+			public array $saved = array();
+
+			public function __construct() {}
+
+			public function save( array $data, int $effect_id = 0 ): int {
+				unset( $effect_id );
+				$this->saved[] = $data;
+				return 88;
+			}
+		};
+
+		$projection = new \AIMS_Woo_Order_Projection_Service(
+			static function( array $sale_record, array $context = array() ): array {
+				unset( $sale_record );
+
+				return array(
+					'woo_order_id'    => 7801,
+					'projection_mode' => (string) ( $context['projection_mode'] ?? 'draft' ),
+				);
+			}
+		);
+
+		$service = new \AIMS_Square_Replay_Service(
+			null,
+			$normalized_sales,
+			null,
+			null,
+			new \AIMS_Square_Normalization_Service(),
+			$effects,
+			null,
+			null,
+			$projection
+		);
+
+		$result = $service->replay_raw_event(
+			array(
+				'id'      => 1003,
+				'payload' => array(
+					'id'         => 'SQ-ORDER-789',
+					'created_at' => '2026-04-11T12:00:00Z',
+					'event_id'   => 55,
+					'line_items' => array(
+						array(
+							'uid'            => 'LINE-3',
+							'woo_product_id' => 903,
+							'sku'            => 'SKU-303',
+							'quantity'       => 1,
+							'net_amount'     => 33.00,
+						),
+					),
+				),
+			),
+			array(
+				'allow_woo_order_projection' => true,
+				'reconciliation_status'      => 'reconciled',
+				'projection_mode'            => 'draft',
+			)
+		);
+
+		$this->assertTrue( $result['replayed'] );
+		$this->assertSame( 'projected', $result['projection'][0]['status'] ?? '' );
+		$this->assertSame( 7801, $result['projection'][0]['woo_order_id'] ?? 0 );
+		$this->assertSame( 7801, $result['normalized_rows'][0]['woo_order_id'] ?? 0 );
+
+		$metadata = json_decode( (string) ( $effects->saved[0]['metadata_json'] ?? '' ), true );
+		$this->assertSame( 7801, $metadata['projection'][0]['woo_order_id'] ?? 0 );
+	}
 }

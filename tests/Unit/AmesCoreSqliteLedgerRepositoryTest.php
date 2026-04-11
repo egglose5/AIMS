@@ -131,4 +131,168 @@ final class AmesCoreSqliteLedgerRepositoryTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 0, $summary['pointer_count'] );
 		$this->assertCount( 1, $repo->movementHistory( 'spring-show' ) );
 	}
+
+	public function testReconcileBinaryShadowSummarizesSaleCountsAndPacketTotals(): void {
+		if ( ! extension_loaded( 'pdo_sqlite' ) ) {
+			$this->markTestSkipped( 'The pdo_sqlite extension is required for this test.' );
+		}
+
+		$sqlitePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-ledger-' . uniqid( '', true ) . '.sqlite';
+		$repo       = new SqliteLedgerRepository( $sqlitePath );
+		$repo->initialize();
+
+		$repo->recordMove(
+			array(
+				'sku'               => 'PATCH-RED',
+				'from_location'     => 'event-floor',
+				'show_id'           => 'spring-show',
+				'quantity'          => 1,
+				'movement_type'     => 'square_sale',
+				'occurred_at'       => '2026-04-11T10:08:00Z',
+				'event_id'          => 42,
+				'amount_paid_cents' => 1599,
+				'tax_amount_cents'  => 123,
+				'reference_type'    => 'square_sale',
+				'reference_id'      => 'sale-3001',
+			)
+		);
+
+		$repo->recordMove(
+			array(
+				'sku'               => 'PATCH-BLK',
+				'from_location'     => 'event-floor',
+				'show_id'           => 'spring-show',
+				'quantity'          => 1,
+				'movement_type'     => 'square_sale',
+				'occurred_at'       => '2026-04-11T10:09:00Z',
+				'event_id'          => 42,
+				'amount_paid_cents' => 1899,
+				'tax_amount_cents'  => 146,
+				'reference_type'    => 'square_sale',
+				'reference_id'      => 'sale-3002',
+			)
+		);
+
+		$report = $repo->reconcileBinaryShadow( 'spring-show' );
+
+		$this->assertSame( 2, $report['sale_movement_count'] );
+		$this->assertSame( 2, $report['pointer_count'] );
+		$this->assertSame( 2, $report['packet_count'] );
+		$this->assertTrue( $report['count_match'] );
+		$this->assertSame( 3498, $report['total_price_cents'] );
+		$this->assertSame( 269, $report['total_tax_cents'] );
+		$this->assertSame( 0, $report['drift_count'] );
+		$this->assertSame( 3498, $report['event_totals'][42]['price_cents'] );
+	}
+
+	public function testRecordMoveCanBufferBinaryShadowUntilConfiguredThreshold(): void {
+		if ( ! extension_loaded( 'pdo_sqlite' ) ) {
+			$this->markTestSkipped( 'The pdo_sqlite extension is required for this test.' );
+		}
+
+		$sqlitePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-ledger-' . uniqid( '', true ) . '.sqlite';
+		$repo       = new SqliteLedgerRepository(
+			$sqlitePath,
+			array(
+				'binary_stream_mode' => 'shadow',
+				'binary_flush_packet_limit' => 2,
+			)
+		);
+		$repo->initialize();
+
+		$first = $repo->recordMove(
+			array(
+				'sku'               => 'PATCH-RED',
+				'from_location'     => 'event-floor',
+				'show_id'           => 'spring-show',
+				'quantity'          => 1,
+				'movement_type'     => 'square_sale',
+				'occurred_at'       => '2026-04-11T10:10:00Z',
+				'event_id'          => 42,
+				'amount_paid_cents' => 1599,
+				'tax_amount_cents'  => 123,
+				'reference_type'    => 'square_sale',
+				'reference_id'      => 'sale-buffered-1',
+			)
+		);
+
+		$this->assertSame( 'buffered', $first['binary_shadow']['status'] );
+		$this->assertSame( 1, $repo->binaryShadowSummary()['pending_packet_count'] );
+
+		$second = $repo->recordMove(
+			array(
+				'sku'               => 'PATCH-BLK',
+				'from_location'     => 'event-floor',
+				'show_id'           => 'spring-show',
+				'quantity'          => 1,
+				'movement_type'     => 'square_sale',
+				'occurred_at'       => '2026-04-11T10:11:00Z',
+				'event_id'          => 42,
+				'amount_paid_cents' => 1899,
+				'tax_amount_cents'  => 146,
+				'reference_type'    => 'square_sale',
+				'reference_id'      => 'sale-buffered-2',
+			)
+		);
+
+		$this->assertSame( 'written', $second['binary_shadow']['status'] );
+		$this->assertSame( 0, $repo->binaryShadowSummary()['pending_packet_count'] );
+		$this->assertSame( 2, $repo->binaryShadowSummary()['pointer_count'] );
+	}
+
+	public function testQueryBinaryShadowCanFilterByReferenceAndShow(): void {
+		if ( ! extension_loaded( 'pdo_sqlite' ) ) {
+			$this->markTestSkipped( 'The pdo_sqlite extension is required for this test.' );
+		}
+
+		$sqlitePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-ledger-' . uniqid( '', true ) . '.sqlite';
+		$repo       = new SqliteLedgerRepository( $sqlitePath );
+		$repo->initialize();
+
+		$repo->recordMove(
+			array(
+				'sku'               => 'PATCH-RED',
+				'from_location'     => 'event-floor',
+				'show_id'           => 'spring-show',
+				'quantity'          => 1,
+				'movement_type'     => 'square_sale',
+				'occurred_at'       => '2026-04-11T10:12:00Z',
+				'event_id'          => 42,
+				'amount_paid_cents' => 1599,
+				'tax_amount_cents'  => 123,
+				'reference_type'    => 'square_sale',
+				'reference_id'      => 'sale-query-1',
+			)
+		);
+
+		$repo->recordMove(
+			array(
+				'sku'               => 'PATCH-BLK',
+				'from_location'     => 'event-floor',
+				'show_id'           => 'other-show',
+				'quantity'          => 1,
+				'movement_type'     => 'square_sale',
+				'occurred_at'       => '2026-04-11T10:13:00Z',
+				'event_id'          => 99,
+				'amount_paid_cents' => 1899,
+				'tax_amount_cents'  => 146,
+				'reference_type'    => 'square_sale',
+				'reference_id'      => 'sale-query-2',
+			)
+		);
+
+		$matches = $repo->queryBinaryShadow(
+			array(
+				'show_id'       => 'spring-show',
+				'reference_type'=> 'square_sale',
+				'reference_id'  => 'sale-query-1',
+			)
+		);
+
+		$this->assertCount( 1, $matches );
+		$this->assertSame( 'spring-show', $matches[0]['show_id'] );
+		$this->assertSame( 'sale-query-1', $matches[0]['reference_id'] );
+		$this->assertSame( 'PATCH-RED', $matches[0]['sku'] );
+		$this->assertSame( 1599, $matches[0]['price_cents'] );
+	}
 }

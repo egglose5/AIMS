@@ -137,8 +137,15 @@ class AIMS_Square_Thin_Client_Sync_Service {
 				continue;
 			}
 
-			$queueResult = $this->import->ingest_order_payload( $payload );
-			$persisted   = $this->import->persist_queue_to_sales_flow( $payload, (int) ( $queueResult['queue_id'] ?? 0 ) );
+			$payload_context = array_merge(
+				$payload,
+				array(
+					'sync_run_id' => $runId,
+				)
+			);
+
+			$queueResult = $this->import->ingest_order_payload( $payload_context );
+			$persisted   = $this->import->persist_queue_to_sales_flow( $payload_context, (int) ( $queueResult['queue_id'] ?? 0 ) );
 
 			if ( ! empty( $persisted['sale_ids'] ) ) {
 				++$result['processed_count'];

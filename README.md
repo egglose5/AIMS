@@ -61,6 +61,7 @@ Use this path for a first manual install on the current filesystem-capable share
    - set `AIMS_ARCHIVE_SECRET` (it may match the shared secret if you do not want a separate archive secret)
    - set `AIMS_ENCRYPTION_KEY`
    - optionally set `AIMS_SINK_PATH`, `AIMS_VAULT_PATH`, `AIMS_CONFIG_PATH`, `AIMS_LOG_PATH`, `AIMS_SQLITE_PATH`, `AIMS_WOO_URL`, and Square values for your environment
+   - for the binary lane, optionally set `AIMS_BINARY_STREAM_MODE`, `AIMS_BINARY_FLUSH_PACKET_LIMIT`, `AIMS_BINARY_FLUSH_BYTE_LIMIT`, `AIMS_HOT_RETENTION_DAYS`, and `AIMS_VAULT_RETENTION_DAYS`
 6. **Activate and connect WordPress**
    - activate the `AIMS` plugin in wp-admin
    - open `AIMS > Settings`
@@ -91,7 +92,7 @@ The repository currently provides:
 - Square thin-client overlap sync foundation: headless AIMS can pull recent Square orders by location/window, and the WP side can replay them into the existing queue/import flow
 - location-aware Square stock push from AIMS so bucket-linked stock can be projected to the correct Square location
 - authenticated laser-control batch ingress in both headless AIMS (`POST /internal/laser/batches`) and the WooCommerce REST surface (`POST /wp-json/wc/v3/aims/laser-batches`) so Docker-based production tooling can push batches without using WordPress as the hot write path
-- shadow-mode binary sale stream writer in `ames-core` with a fixed-width packet, reusable reference dictionary, byte-offset pointer index, and exception lane for invalid hot-path rows
+- shadow-mode binary sale stream lane in `ames-core` with a fixed-width packet, reusable reference dictionary, byte-offset pointer index, exception lane for invalid hot-path rows, packet reread/reconciliation support, buffered flush thresholds, retention metadata, and dashboard visibility for binary shadow status
 - capability-first permissions editor with surface-aware access control, while keeping WordPress as the default management experience
 - custom table definitions with indexes across events, demand, buckets, inventory, Square sync, attribution, fulfillment, operational logging, and pre-production laser batch handoff
 - PHPUnit coverage across the headless bridge, event execution, FIFO, auth surfaces, audit logging, thin-client Square sync foundations, laser batch ingress, and the new binary stream writer

@@ -94,4 +94,143 @@ final class SquareSyncSafetyTest extends \AIMS\Tests\TestCase {
 		$this->assertTrue( $rows[0]['can_replay'] );
 		$this->assertTrue( $rows[0]['can_undo'] );
 	}
+
+	public function testSquareSyncRowsExposeWooProjectionSummaryFromEffectMetadata(): void {
+		TestState::set_current_user_id( 56 );
+
+		$this->wpdb()->queue_results(
+			array(
+				array(
+					'id'                => 24,
+					'source_system'     => 'square',
+					'sync_watermark'    => '2026-03-25T11:00:00Z',
+					'processed_records' => 6,
+					'error_count'       => 1,
+					'completed_at'      => '2026-03-25 11:05:00',
+					'success'           => 1,
+				),
+			)
+		);
+
+		$this->wpdb()->queue_results(
+			array(
+				array(
+					'id'           => 1001,
+					'sync_run_id'  => 24,
+					'metadata_json' => wp_json_encode(
+						array(
+							'square_order_id' => 'SQ-ORDER-ROOT',
+							'projection' => array(
+								array( 'status' => 'projected', 'reason' => 'draft_projected', 'square_order_id' => 'SQ-ORDER-1' ),
+								array( 'status' => 'skipped', 'reason' => 'awaiting_reconciliation', 'square_order_id' => 'SQ-ORDER-2' ),
+							),
+						)
+					),
+				),
+			)
+		);
+
+		$provider = new \AIMS_Square_Sync_Runs_Data_Provider();
+		$rows     = $provider->get_rows();
+
+		$this->assertCount( 1, $rows );
+		$this->assertSame( 'mixed', $rows[0]['woo_projection_status'] );
+		$this->assertStringContainsString( 'Projected 1 | Skipped 1 | Linked 0', (string) $rows[0]['woo_projection_summary'] );
+		$this->assertStringContainsString( 'Top reason: awaiting reconciliation', (string) $rows[0]['woo_projection_summary'] );
+		$this->assertStringContainsString( 'Reasons: awaiting reconciliation (1), draft projected (1)', (string) $rows[0]['woo_projection_details'] );
+		$this->assertStringContainsString( 'Orders: SQ-ORDER-1, SQ-ORDER-2', (string) $rows[0]['woo_projection_details'] );
+	}
+
+	public function testProjectionEffectDetailsExposeNormalizedRowsForRequestedRun(): void {
+		$this->wpdb()->queue_results(
+			array(
+				array(
+					'id'            => 2001,
+					'effect_type'   => 'import_projection',
+					'target_table'  => 'aims_square_sales',
+					'target_id'     => 3301,
+					'created_at'    => '2026-04-11 14:10:00',
+					'metadata_json' => wp_json_encode(
+						array(
+							'square_order_id' => 'SQ-ORDER-ROOT',
+							'sale_id'         => 3301,
+							'line_item_uid'   => 'LINE-ROOT',
+							'projection'      => array(
+								array(
+									'status'          => 'projected',
+									'reason'          => 'draft_projected',
+									'woo_order_id'    => 8801,
+									'projection_mode' => 'draft',
+									'square_order_id' => 'SQ-ORDER-1',
+									'line_item_uid'   => 'LINE-1',
+								),
+							),
+						)
+					),
+				),
+			)
+		);
+
+		$provider = new \AIMS_Square_Sync_Runs_Data_Provider();
+		$details  = $provider->get_projection_effect_details( 24, 10 );
+
+		$this->assertSame( 24, $details['run_id'] );
+		$this->assertSame( 1, $details['total_rows'] );
+		$this->assertSame( 2001, $details['rows'][0]['effect_id'] ?? 0 );
+		$this->assertSame( 8801, $details['rows'][0]['woo_order_id'] ?? 0 );
+		$this->assertSame( 'SQ-ORDER-1', $details['rows'][0]['square_order_id'] ?? '' );
+		$this->assertSame( 'LINE-1', $details['rows'][0]['line_item_uid'] ?? '' );
+	}
+
+	public function testSquareSyncRunControllerRegistersParquetExportAction(): void {
+		$controller = new \AIMS_Square_Sync_Run_Controller();
+		$controller->register();
+
+		$hook_calls = TestState::get_hook_calls( 'admin_post_aims_square_export_projection_parquet' );
+		$this->assertNotEmpty( $hook_calls );
+	}
+
+	public function testSquareSyncRunsPageRendersExportParquetAction(): void {
+		$page = new \AIMS_Square_Sync_Runs_Page(
+			new class() extends \AIMS_Square_Sync_Runs_Data_Provider {
+				public function __construct() {}
+
+				public function get_rows(): array {
+					return array(
+						array(
+							'run_id'                  => 24,
+							'source_system'           => 'square',
+							'sync_watermark'          => '2026-03-25T11:00:00Z',
+							'status'                  => 'success',
+							'processed_records'       => '6',
+							'error_count'             => '1',
+							'woo_projection_status'   => 'mixed',
+							'woo_projection_summary'  => 'Projected 1 | Skipped 1 | Linked 0',
+							'woo_projection_details'  => 'Reasons: awaiting reconciliation (1)',
+							'completed_at'            => '2026-03-25 11:05:00',
+							'can_replay'              => true,
+							'can_undo'                => true,
+						),
+					);
+				}
+
+				public function get_summary(): array {
+					return array(
+						'total_runs'              => 1,
+						'total_processed_records' => 6,
+						'total_error_count'       => 1,
+						'last_sync_completed_at'  => '2026-03-25 11:05:00',
+						'last_sync_status'        => 'success',
+					);
+				}
+			}
+		);
+
+		ob_start();
+		$page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'aims_square_export_projection_parquet', $html );
+		$this->assertStringContainsString( 'Export Parquet', $html );
+	}
 }

@@ -5,6 +5,8 @@ declare( strict_types=1 );
 namespace AmesCore\Headless\Storage;
 
 final class BinarySaleStreamWriter {
+	public const PACKET_BYTES = 64;
+
 	private const SEGMENT_PREFIX = 'sales-shadow-';
 	private const SEGMENT_SUFFIX = '.bin';
 	private const DICTIONARY_FILE = 'reference-dictionary.json';
@@ -12,9 +14,25 @@ final class BinarySaleStreamWriter {
 	private const EXCEPTION_FILE = 'exception-lane.jsonl';
 
 	private string $rootPath;
+	private int $flushPacketLimit;
+	private int $flushByteLimit;
+	/** @var array<int, array<string, mixed>> */
+	private array $pendingPackets = array();
+	private int $pendingBytes = 0;
 
-	public function __construct( string $rootPath ) {
-		$this->rootPath = rtrim( $rootPath, "\\/" );
+	/**
+	 * @param array<string, mixed> $options
+	 */
+	public function __construct( string $rootPath, array $options = array() ) {
+		$this->rootPath         = rtrim( $rootPath, "\\/" );
+		$this->flushPacketLimit = max( 1, (int) ( $options['flush_packet_limit'] ?? 1 ) );
+		$this->flushByteLimit   = max( self::PACKET_BYTES, (int) ( $options['flush_byte_limit'] ?? 65536 ) );
+	}
+
+	public function __destruct() {
+		if ( array() !== $this->pendingPackets ) {
+			$this->flushPending();
+		}
 	}
 
 	/**
@@ -36,21 +54,21 @@ final class BinarySaleStreamWriter {
 		$eventId        = $this->resolveInt( $payload, array( 'event_id' ) );
 		$referenceType  = $this->stringValue( $payload['reference_type'] ?? 'sale' );
 		$referenceId    = $this->stringValue( $payload['reference_id'] ?? '' );
+		$showId         = $this->stringValue( $payload['show_id'] ?? '' );
 		$referenceEntry = $this->rememberReference( $referenceType, $referenceId );
 		$segmentPath    = $this->segmentPath();
-		$byteOffset     = file_exists( $segmentPath ) ? (int) filesize( $segmentPath ) : 0;
+		$byteOffset     = $this->nextByteOffsetForSegment( $segmentPath );
 		$packet         = $this->buildPacket( $sku, $priceCents, $taxCents, $timestamp, $eventId );
-
-		file_put_contents( $segmentPath, $packet, FILE_APPEND | LOCK_EX );
 
 		$pointerRow = array(
 			'reference_pointer_id' => $referenceEntry['id'],
 			'reference_type'       => $referenceType,
 			'reference_id'         => $referenceId,
+			'show_id'              => $showId,
 			'segment_name'         => basename( $segmentPath ),
 			'segment_path'         => $segmentPath,
 			'byte_offset'          => $byteOffset,
-			'byte_length'          => 64,
+			'byte_length'          => self::PACKET_BYTES,
 			'packet_count'         => 1,
 			'sku'                  => $sku,
 			'price_cents'          => $priceCents,
@@ -60,15 +78,37 @@ final class BinarySaleStreamWriter {
 			'created_at'           => gmdate( 'c' ),
 		);
 
-		$this->appendJsonLine( $this->pointerIndexPath(), $pointerRow );
+		$this->pendingPackets[] = array(
+			'segment_path' => $segmentPath,
+			'packet'       => $packet,
+			'pointer_row'  => $pointerRow,
+		);
+		$this->pendingBytes += self::PACKET_BYTES;
+
+		if ( $this->shouldFlushPending() ) {
+			$flushResult = $this->flushPending();
+
+			return array(
+				'status'               => 'written',
+				'packet_bytes'         => self::PACKET_BYTES,
+				'byte_offset'          => $byteOffset,
+				'segment_path'         => $segmentPath,
+				'reference_pointer_id' => $referenceEntry['id'],
+				'pointer_hash'         => $referenceEntry['pointer_hash'],
+				'flush_packet_count'   => (int) ( $flushResult['flushed_packet_count'] ?? 0 ),
+				'pending_packet_count' => (int) ( $flushResult['pending_packet_count'] ?? 0 ),
+			);
+		}
 
 		return array(
-			'status'               => 'written',
-			'packet_bytes'         => 64,
+			'status'               => 'buffered',
+			'packet_bytes'         => self::PACKET_BYTES,
 			'byte_offset'          => $byteOffset,
 			'segment_path'         => $segmentPath,
 			'reference_pointer_id' => $referenceEntry['id'],
 			'pointer_hash'         => $referenceEntry['pointer_hash'],
+			'pending_packet_count' => count( $this->pendingPackets ),
+			'pending_bytes'        => $this->pendingBytes,
 		);
 	}
 
@@ -96,27 +136,43 @@ final class BinarySaleStreamWriter {
 				continue;
 			}
 
-			$matches[] = array(
-				'reference_pointer_id' => $pointerId,
-				'reference_type'       => (string) ( $row['reference_type'] ?? '' ),
-				'reference_id'         => (string) ( $row['reference_id'] ?? '' ),
-				'segment_name'         => (string) ( $row['segment_name'] ?? '' ),
-				'segment_path'         => (string) ( $row['segment_path'] ?? '' ),
-				'byte_offset'          => (int) ( $row['byte_offset'] ?? 0 ),
-				'byte_length'          => (int) ( $row['byte_length'] ?? 0 ),
-				'packet_count'         => (int) ( $row['packet_count'] ?? 0 ),
-				'sku'                  => (string) ( $row['sku'] ?? '' ),
-				'price_cents'          => (int) ( $row['price_cents'] ?? 0 ),
-				'tax_cents'            => (int) ( $row['tax_cents'] ?? 0 ),
-				'timestamp'            => (int) ( $row['timestamp'] ?? 0 ),
-				'event_id'             => (int) ( $row['event_id'] ?? 0 ),
-				'created_at'           => (string) ( $row['created_at'] ?? '' ),
-			);
+			$matches[] = $this->normalizePointerRow( $row );
 		}
 
 		usort(
 			$matches,
 			static fn( array $left, array $right ): int => ( $left['byte_offset'] <=> $right['byte_offset'] )
+		);
+
+		return $matches;
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function listPointers( string $showId = '' ): array {
+		$showId  = $this->stringValue( $showId );
+		$matches = array();
+
+		foreach ( $this->readJsonLines( $this->pointerIndexPath() ) as $row ) {
+			$normalized = $this->normalizePointerRow( $row );
+			if ( '' !== $showId && $showId !== $normalized['show_id'] ) {
+				continue;
+			}
+
+			$matches[] = $normalized;
+		}
+
+		usort(
+			$matches,
+			static function ( array $left, array $right ): int {
+				$pathCompare = strcmp( (string) $left['segment_name'], (string) $right['segment_name'] );
+				if ( 0 !== $pathCompare ) {
+					return $pathCompare;
+				}
+
+				return $left['byte_offset'] <=> $right['byte_offset'];
+			}
 		);
 
 		return $matches;
@@ -129,11 +185,73 @@ final class BinarySaleStreamWriter {
 		$dictionary = $this->loadDictionary();
 
 		return array(
-			'dictionary_count' => count( $dictionary['entries'] ?? array() ),
-			'pointer_count'    => $this->countJsonLines( $this->pointerIndexPath() ),
-			'exception_count'  => $this->countJsonLines( $this->exceptionPath() ),
-			'segment_path'     => $this->segmentPath(),
-			'segment_bytes'    => file_exists( $this->segmentPath() ) ? (int) filesize( $this->segmentPath() ) : 0,
+			'dictionary_count'    => count( $dictionary['entries'] ?? array() ),
+			'pointer_count'       => $this->countJsonLines( $this->pointerIndexPath() ),
+			'exception_count'     => $this->countJsonLines( $this->exceptionPath() ),
+			'segment_path'        => $this->segmentPath(),
+			'segment_bytes'       => file_exists( $this->segmentPath() ) ? (int) filesize( $this->segmentPath() ) : 0,
+			'pending_packet_count'=> count( $this->pendingPackets ),
+			'pending_bytes'       => $this->pendingBytes,
+			'flush_packet_limit'  => $this->flushPacketLimit,
+			'flush_byte_limit'    => $this->flushByteLimit,
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function flushPending(): array {
+		if ( array() === $this->pendingPackets ) {
+			return array(
+				'status'               => 'idle',
+				'flushed_packet_count' => 0,
+				'flushed_bytes'        => 0,
+				'pending_packet_count' => 0,
+				'pending_bytes'        => 0,
+			);
+		}
+
+		$this->ensureRootPath();
+
+		$packetPayloads = array();
+		$pointerRows    = array();
+
+		foreach ( $this->pendingPackets as $pending ) {
+			$segmentPath = (string) ( $pending['segment_path'] ?? '' );
+			$packet      = (string) ( $pending['packet'] ?? '' );
+			$pointerRow  = (array) ( $pending['pointer_row'] ?? array() );
+
+			if ( '' === $segmentPath || '' === $packet ) {
+				continue;
+			}
+
+			if ( ! isset( $packetPayloads[ $segmentPath ] ) ) {
+				$packetPayloads[ $segmentPath ] = '';
+			}
+
+			$packetPayloads[ $segmentPath ] .= $packet;
+			$pointerRows[] = $pointerRow;
+		}
+
+		foreach ( $packetPayloads as $segmentPath => $payload ) {
+			file_put_contents( $segmentPath, $payload, FILE_APPEND | LOCK_EX );
+		}
+
+		foreach ( $pointerRows as $pointerRow ) {
+			$this->appendJsonLine( $this->pointerIndexPath(), $pointerRow );
+		}
+
+		$flushedPacketCount = count( $this->pendingPackets );
+		$flushedBytes       = $this->pendingBytes;
+		$this->pendingPackets = array();
+		$this->pendingBytes   = 0;
+
+		return array(
+			'status'               => 'written',
+			'flushed_packet_count' => $flushedPacketCount,
+			'flushed_bytes'        => $flushedBytes,
+			'pending_packet_count' => 0,
+			'pending_bytes'        => 0,
 		);
 	}
 
@@ -360,6 +478,48 @@ final class BinarySaleStreamWriter {
 
 	private function countJsonLines( string $path ): int {
 		return count( $this->readJsonLines( $path ) );
+	}
+
+	private function nextByteOffsetForSegment( string $segmentPath ): int {
+		$offset = file_exists( $segmentPath ) ? (int) filesize( $segmentPath ) : 0;
+
+		foreach ( $this->pendingPackets as $pending ) {
+			if ( $segmentPath !== (string) ( $pending['segment_path'] ?? '' ) ) {
+				continue;
+			}
+
+			$offset += strlen( (string) ( $pending['packet'] ?? '' ) );
+		}
+
+		return $offset;
+	}
+
+	private function shouldFlushPending(): bool {
+		return count( $this->pendingPackets ) >= $this->flushPacketLimit || $this->pendingBytes >= $this->flushByteLimit;
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @return array<string, mixed>
+	 */
+	private function normalizePointerRow( array $row ): array {
+		return array(
+			'reference_pointer_id' => (int) ( $row['reference_pointer_id'] ?? 0 ),
+			'reference_type'       => (string) ( $row['reference_type'] ?? '' ),
+			'reference_id'         => (string) ( $row['reference_id'] ?? '' ),
+			'show_id'              => (string) ( $row['show_id'] ?? '' ),
+			'segment_name'         => (string) ( $row['segment_name'] ?? '' ),
+			'segment_path'         => (string) ( $row['segment_path'] ?? '' ),
+			'byte_offset'          => (int) ( $row['byte_offset'] ?? 0 ),
+			'byte_length'          => (int) ( $row['byte_length'] ?? 0 ),
+			'packet_count'         => (int) ( $row['packet_count'] ?? 0 ),
+			'sku'                  => (string) ( $row['sku'] ?? '' ),
+			'price_cents'          => (int) ( $row['price_cents'] ?? 0 ),
+			'tax_cents'            => (int) ( $row['tax_cents'] ?? 0 ),
+			'timestamp'            => (int) ( $row['timestamp'] ?? 0 ),
+			'event_id'             => (int) ( $row['event_id'] ?? 0 ),
+			'created_at'           => (string) ( $row['created_at'] ?? '' ),
+		);
 	}
 
 	private function dictionaryKey( string $referenceType, string $referenceId ): string {

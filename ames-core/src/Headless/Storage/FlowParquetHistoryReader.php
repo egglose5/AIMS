@@ -124,6 +124,22 @@ final class FlowParquetHistoryReader {
 			return false;
 		}
 
+		foreach ( array( 'sku', 'movement_type', 'reference_type', 'reference_id' ) as $key ) {
+			$filterValue = trim( (string) ( $filters[ $key ] ?? '' ) );
+			if ( '' === $filterValue ) {
+				continue;
+			}
+
+			if ( trim( (string) ( $row[ $key ] ?? '' ) ) !== $filterValue ) {
+				return false;
+			}
+		}
+
+		$eventId = isset( $filters['event_id'] ) ? (int) $filters['event_id'] : 0;
+		if ( $eventId > 0 && (int) ( $row['event_id'] ?? 0 ) !== $eventId ) {
+			return false;
+		}
+
 		return $this->timestampWithinWindow(
 			(string) ( $row['timestamp'] ?? $row['created_at'] ?? $row['updated_at'] ?? '' ),
 			$filters

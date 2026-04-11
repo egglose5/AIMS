@@ -20,7 +20,9 @@ final class ArchiveService {
 		$this->vaultRoot = rtrim( $vaultRoot, DIRECTORY_SEPARATOR );
 		$this->options   = array_merge(
 			array(
-				'max_rows_per_file' => 25000,
+				'max_rows_per_file'  => 25000,
+				'hot_retention_days' => 30,
+				'vault_retention_days' => 365,
 			),
 			$options
 		);
@@ -50,6 +52,7 @@ final class ArchiveService {
 		$chunks        = $this->chunkRows( $rows );
 		$totalSegments = count( $chunks );
 		$segments      = array();
+		$binaryShadow  = $this->resolveBinaryShadowMetadata( $showId );
 
 		foreach ( $chunks as $index => $chunk ) {
 			$target = $this->buildTargetPath( $year, $showId, $chunk, $index + 1, $totalSegments );
@@ -67,7 +70,8 @@ final class ArchiveService {
 			);
 		}
 
-		$manifestPath = $this->writeManifest( $showId, $year, $rows, $segments );
+		$retention    = $this->retentionMetadata();
+		$manifestPath = $this->writeManifest( $showId, $year, $rows, $segments, $binaryShadow, $retention );
 		$this->sink->truncateHotRows( $showId );
 
 		return array(
@@ -80,6 +84,8 @@ final class ArchiveService {
 			'active_from'   => (string) ( $segments[0]['from_timestamp'] ?? '' ),
 			'active_to'     => (string) ( $segments[ count( $segments ) - 1 ]['to_timestamp'] ?? '' ),
 			'manifest_path' => $manifestPath,
+			'binary_shadow' => $binaryShadow,
+			'retention'     => $retention,
 		);
 	}
 
@@ -188,8 +194,10 @@ final class ArchiveService {
 	/**
 	 * @param array<int, array<string, mixed>> $rows
 	 * @param array<int, array<string, mixed>> $segments
+	 * @param array<string, mixed> $binaryShadow
+	 * @param array<string, mixed> $retention
 	 */
-	private function writeManifest( string $showId, int $year, array $rows, array $segments ): string {
+	private function writeManifest( string $showId, int $year, array $rows, array $segments, array $binaryShadow = array(), array $retention = array() ): string {
 		$range        = $this->resolveDateRange( $rows );
 		$manifestPath = $this->vaultRoot . DIRECTORY_SEPARATOR . $year . DIRECTORY_SEPARATOR . $showId . '-archive-manifest.json';
 		$this->ensureDirectory( dirname( $manifestPath ) );
@@ -207,6 +215,8 @@ final class ArchiveService {
 					'max_rows_per_file' => max( 1, (int) ( $this->options['max_rows_per_file'] ?? 25000 ) ),
 					'exported_at'       => gmdate( 'c' ),
 					'segments'          => $segments,
+					'binary_shadow'     => $binaryShadow,
+					'retention'         => $retention,
 				),
 				JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
 			)
@@ -226,6 +236,28 @@ final class ArchiveService {
 		);
 
 		return $rows;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function retentionMetadata(): array {
+		return array(
+			'hot_retention_days'   => max( 1, (int) ( $this->options['hot_retention_days'] ?? 30 ) ),
+			'vault_retention_days' => max( 1, (int) ( $this->options['vault_retention_days'] ?? 365 ) ),
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function resolveBinaryShadowMetadata( string $showId ): array {
+		if ( ! method_exists( $this->sink, 'binaryShadowArchiveSummary' ) ) {
+			return array();
+		}
+
+		$summary = $this->sink->binaryShadowArchiveSummary( $showId );
+		return is_array( $summary ) ? $summary : array();
 	}
 
 	private function timestampSlug( string $value ): string {

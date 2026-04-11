@@ -105,6 +105,8 @@ final class SquareThinClientSyncServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertStringContainsString( '/internal/square/pull', $requests[0]['url'] );
 		$this->assertStringContainsString( 'location_ids%5B0%5D=LOC-1', $requests[0]['url'] );
 		$this->assertCount( 1, $import->ingested );
+		$this->assertSame( 44, $import->ingested[0]['sync_run_id'] ?? 0 );
+		$this->assertSame( 44, $import->persisted[0]['payload']['sync_run_id'] ?? 0 );
 		$this->assertCount( 1, $runs->finished );
 		$this->assertSame( '2026-04-02T10:15:00Z', $runs->finished[0]['data']['sync_watermark'] );
 	}

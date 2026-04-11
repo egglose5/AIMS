@@ -129,6 +129,10 @@ class AIMS_Admin_Menu {
 			'success' => false,
 			'json'    => array(),
 		);
+		$binary_history = array(
+			'success' => false,
+			'json'    => array(),
+		);
 		$availability_query = $this->get_fifo_availability_query();
 		$notice             = $this->get_notice();
 		$hot_db_health      = $this->hot_db_health_service->get_dashboard_snapshot();
@@ -142,6 +146,12 @@ class AIMS_Admin_Menu {
 			$history = $client->get_history(
 				array(
 					'source' => 'vault',
+					'limit'  => 5,
+				)
+			);
+			$binary_history = $client->get_history(
+				array(
+					'source' => 'binary',
 					'limit'  => 5,
 				)
 			);
@@ -167,6 +177,11 @@ class AIMS_Admin_Menu {
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Hot Data Pressure</h2>';
 		$this->render_hot_db_health( $hot_db_health );
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>Binary Shadow Status</h2>';
+		$this->render_binary_shadow_status( $binary_history );
 		echo '</div>';
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
@@ -659,8 +674,8 @@ class AIMS_Admin_Menu {
 			return;
 		}
 
-		$json      = is_array( $history['json'] ?? null ) ? $history['json'] : array();
-		$manifests = is_array( $json['archive_manifests'] ?? null ) ? $json['archive_manifests'] : array();
+		$meta      = $this->extract_history_meta( $history );
+		$manifests = is_array( $meta['archive_manifests'] ?? null ) ? $meta['archive_manifests'] : array();
 
 		if ( empty( $manifests ) ) {
 			echo '<p>No archive manifests are visible yet. Once hot rows are snapped to Parquet, the latest archive windows will show up here.</p>';
@@ -692,6 +707,63 @@ class AIMS_Admin_Menu {
 		}
 		echo '</tbody></table>';
 		echo '</div>';
+	}
+
+	private function render_binary_shadow_status( array $history ): void {
+		if ( empty( $history['success'] ) ) {
+			echo '<p><strong>Binary shadow:</strong> ' . esc_html( (string) ( $history['message'] ?? 'Binary shadow telemetry is not currently available from AIMS Core.' ) ) . '</p>';
+			return;
+		}
+
+		$meta   = $this->extract_history_meta( $history );
+		$rows   = $this->extract_history_rows( $history );
+		$shadow = is_array( $meta['binary_shadow'] ?? null ) ? $meta['binary_shadow'] : array();
+
+		if ( empty( $shadow ) ) {
+			echo '<p>No binary shadow packets are visible yet. Once sale-side shadow writes land, the packet counters and exception lane will appear here.</p>';
+			return;
+		}
+
+		$pointerCount   = (int) ( $shadow['pointer_count'] ?? 0 );
+		$exceptionCount = (int) ( $shadow['exception_count'] ?? 0 );
+		$segmentCount   = (int) ( $shadow['segment_count'] ?? 0 );
+		$activeFrom     = (string) ( $shadow['active_from'] ?? '' );
+		$activeTo       = (string) ( $shadow['active_to'] ?? '' );
+		$segments       = is_array( $shadow['segments'] ?? null ) ? $shadow['segments'] : array();
+
+		echo '<p><strong>Pointers:</strong> ' . esc_html( number_format( $pointerCount ) ) . ' pointer(s)<br />';
+		echo '<strong>Exceptions:</strong> ' . esc_html( number_format( $exceptionCount ) ) . ' exception(s)<br />';
+		echo '<strong>Segments:</strong> ' . esc_html( number_format( $segmentCount ) ) . ' segment(s)</p>';
+
+		if ( '' !== $activeFrom || '' !== $activeTo ) {
+			echo '<p><strong>Observed Window:</strong> ' . esc_html( trim( $activeFrom . ' to ' . $activeTo ) ) . '</p>';
+		}
+
+		if ( ! empty( $segments ) ) {
+			echo '<p><strong>Active Segment Files:</strong> ' . esc_html( implode( ', ', array_map( 'strval', $segments ) ) ) . '</p>';
+		}
+
+		if ( empty( $rows ) ) {
+			echo '<p>No rehydrated packet rows matched the current lookup window.</p>';
+			return;
+		}
+
+		echo '<table class="widefat striped" style="max-width:920px;"><thead><tr><th>Reference</th><th>SKU</th><th>Price</th><th>Tax</th><th>Event</th><th>Offset</th></tr></thead><tbody>';
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			echo '<tr>';
+			echo '<td><strong>' . esc_html( (string) ( $row['reference_id'] ?? 'n/a' ) ) . '</strong><br /><span style="color:#646970;">' . esc_html( (string) ( $row['reference_type'] ?? '' ) ) . '</span></td>';
+			echo '<td>' . esc_html( (string) ( $row['sku'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( number_format( (int) ( $row['price_cents'] ?? 0 ) ) ) . '¢</td>';
+			echo '<td>' . esc_html( number_format( (int) ( $row['tax_cents'] ?? 0 ) ) ) . '¢</td>';
+			echo '<td>' . esc_html( number_format( (int) ( $row['event_id'] ?? 0 ) ) ) . '</td>';
+			echo '<td>' . esc_html( number_format( (int) ( $row['byte_offset'] ?? 0 ) ) ) . '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
 	}
 
 	private function render_hot_db_health( array $snapshot ): void {
@@ -734,6 +806,26 @@ class AIMS_Admin_Menu {
 		if ( '' !== $message ) {
 			echo '<p style="margin-top:12px;">' . esc_html( $message ) . '</p>';
 		}
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function extract_history_meta( array $history ): array {
+		$json = is_array( $history['json'] ?? null ) ? $history['json'] : array();
+		$meta = is_array( $json['meta'] ?? null ) ? $json['meta'] : array();
+
+		return array_merge( $json, $meta );
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function extract_history_rows( array $history ): array {
+		$json = is_array( $history['json'] ?? null ) ? $history['json'] : array();
+		$rows = $json['rows'] ?? array();
+
+		return is_array( $rows ) ? $rows : array();
 	}
 
 	private function render_notice( string $notice ): void {

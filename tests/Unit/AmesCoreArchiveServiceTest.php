@@ -254,4 +254,95 @@ final class AmesCoreArchiveServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertCount( 1, $rows );
 		$this->assertSame( 'SKU-202', $rows[0]['sku'] ?? '' );
 	}
+
+	public function testArchiveServiceManifestIncludesBinaryShadowMetadataWhenSinkProvidesIt(): void {
+		$vaultRoot = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-vault-' . uniqid( '', true );
+
+		$sink = new class() implements ArchiveSinkInterface {
+			public function fetchHotRows( string $showId ): array {
+				return array(
+					array(
+						'id' => 1,
+						'show_id' => $showId,
+						'sku' => 'SKU-101',
+						'timestamp' => '2026-04-01T09:15:00Z',
+					),
+				);
+			}
+
+			public function truncateHotRows( string $showId ): void {
+				unset( $showId );
+			}
+
+			public function binaryShadowArchiveSummary( string $showId ): array {
+				return array(
+					'show_id' => $showId,
+					'pointer_count' => 3,
+					'exception_count' => 1,
+					'segments' => array( 'sales-shadow-20260411.bin' ),
+				);
+			}
+		};
+
+		$writer = new class() implements ParquetWriterInterface {
+			public function write( array $rows, string $targetPath ): void {
+				file_put_contents( $targetPath, (string) wp_json_encode( $rows ) );
+			}
+		};
+
+		$service = new ArchiveService( $sink, $writer, $vaultRoot );
+		$result = $service->archiveShow( 'SHOW-42', 2026 );
+
+		$this->assertSame( 3, $result['binary_shadow']['pointer_count'] );
+		$this->assertSame( 1, $result['binary_shadow']['exception_count'] );
+
+		$manifest = json_decode( (string) file_get_contents( $result['manifest_path'] ), true );
+		$this->assertSame( 3, $manifest['binary_shadow']['pointer_count'] );
+		$this->assertSame( array( 'sales-shadow-20260411.bin' ), $manifest['binary_shadow']['segments'] );
+	}
+
+	public function testArchiveServiceManifestIncludesRetentionMetadataFromOptions(): void {
+		$vaultRoot = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-vault-' . uniqid( '', true );
+
+		$sink = new class() implements ArchiveSinkInterface {
+			public function fetchHotRows( string $showId ): array {
+				return array(
+					array(
+						'id' => 1,
+						'show_id' => $showId,
+						'sku' => 'SKU-101',
+						'timestamp' => '2026-04-01T09:15:00Z',
+					),
+				);
+			}
+
+			public function truncateHotRows( string $showId ): void {
+				unset( $showId );
+			}
+		};
+
+		$writer = new class() implements ParquetWriterInterface {
+			public function write( array $rows, string $targetPath ): void {
+				file_put_contents( $targetPath, (string) wp_json_encode( $rows ) );
+			}
+		};
+
+		$service = new ArchiveService(
+			$sink,
+			$writer,
+			$vaultRoot,
+			array(
+				'hot_retention_days' => 30,
+				'vault_retention_days' => 365,
+			)
+		);
+
+		$result = $service->archiveShow( 'SHOW-42', 2026 );
+		$manifest = json_decode( (string) file_get_contents( $result['manifest_path'] ), true );
+
+		$this->assertSame( 30, $result['retention']['hot_retention_days'] );
+		$this->assertSame( 365, $result['retention']['vault_retention_days'] );
+		$this->assertSame( 30, $manifest['retention']['hot_retention_days'] );
+		$this->assertSame( 365, $manifest['retention']['vault_retention_days'] );
+	}
 }
