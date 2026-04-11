@@ -397,4 +397,249 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertCount( 1, $model['authorized_events'] );
 		$this->assertTrue( $model['authorized_events'][0]['can_checkin'] );
 	}
+
+	public function testNavModelShowsJoinableUpcomingPublicEvents(): void {
+		TestState::set_current_user_id( 42 );
+		TestState::set_current_time( '2026-03-26 10:00:00' );
+		TestState::set_user(
+			42,
+			(object) array(
+				'ID'         => 42,
+				'roles'      => array( 'aims_test_vendor_portal_user' ),
+				'user_email' => 'vendor1@example.com',
+			)
+		);
+
+		$vendor_service = new class() extends \AIMS_Vendor_Service {
+			public function __construct() {}
+
+			public function list_vendors( string $status = '' ): array {
+				return array(
+					array(
+						'user_id'     => 42,
+						'vendor_name' => 'Vendor One',
+					),
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function __construct() {}
+
+			public function get_for_vendor( int $vendor_id ): array {
+				if ( 42 !== $vendor_id ) {
+					return array();
+				}
+
+				return array(
+					array(
+						'id'        => 101,
+						'event_id'  => 10,
+						'vendor_id' => 42,
+					),
+				);
+			}
+		};
+
+		$public_event_catalog = new class() extends \AIMS_Public_Event_Catalog_Repository {
+			public function get_public_events( array $filters = array() ): array {
+				return array(
+					array(
+						'event_id'         => 10,
+						'event_name'       => 'Already Joined Show',
+						'start_date'       => '2026-03-28 10:00:00',
+						'end_date'         => '2026-03-28 16:00:00',
+						'location_name'    => 'Convention Center',
+						'public_summary'   => 'Assigned already',
+					),
+					array(
+						'event_id'         => 20,
+						'event_name'       => 'Summer Show',
+						'start_date'       => '2026-04-10 10:00:00',
+						'end_date'         => '2026-04-12 18:00:00',
+						'location_name'    => 'Expo Hall',
+						'public_summary'   => 'Joinable event',
+					),
+					array(
+						'event_id'         => 30,
+						'event_name'       => 'Past Show',
+						'start_date'       => '2026-03-01 10:00:00',
+						'end_date'         => '2026-03-01 16:00:00',
+						'location_name'    => 'Old Venue',
+						'public_summary'   => 'Past event',
+					),
+				);
+			}
+		};
+
+		$service = new AIMS_Vendor_Portal_Navigation_Service(
+			$vendor_service,
+			$vendor_event_assignments,
+			null,
+			null,
+			null,
+			$public_event_catalog
+		);
+		$model   = $service->get_nav_model();
+
+		$this->assertArrayHasKey( 'available_events', $model );
+		$this->assertCount( 1, $model['available_events'] );
+		$this->assertSame( 20, $model['available_events'][0]['event_id'] );
+		$this->assertSame( 'Summer Show', $model['available_events'][0]['event_name'] );
+		$this->assertTrue( $model['available_events'][0]['can_join'] );
+	}
+
+	public function testJoinShowCreatesAssignmentForUpcomingEvent(): void {
+		TestState::set_current_user_id( 42 );
+		TestState::set_current_time( '2026-03-26 10:00:00' );
+		TestState::set_user(
+			42,
+			(object) array(
+				'ID'         => 42,
+				'roles'      => array( 'aims_test_vendor_portal_user' ),
+				'user_email' => 'vendor1@example.com',
+			)
+		);
+
+		$vendor_service = new class() extends \AIMS_Vendor_Service {
+			public function __construct() {}
+
+			public function list_vendors( string $status = '' ): array {
+				return array(
+					array(
+						'user_id'     => 42,
+						'vendor_name' => 'Vendor One',
+					),
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public array $saved_payloads = array();
+
+			public function __construct() {}
+
+			public function get_for_vendor( int $vendor_id ): array {
+				return array();
+			}
+
+			public function save( array $data, int $assignment_id = 0 ): int {
+				$this->saved_payloads[] = $data;
+				return 555;
+			}
+		};
+
+		$public_event_catalog = new class() extends \AIMS_Public_Event_Catalog_Repository {
+			public function get_public_events( array $filters = array() ): array {
+				return array(
+					array(
+						'event_id'       => 20,
+						'event_name'     => 'Summer Show',
+						'start_date'     => '2026-04-10 10:00:00',
+						'end_date'       => '2026-04-12 18:00:00',
+						'location_name'  => 'Expo Hall',
+						'public_summary' => 'Joinable event',
+					),
+				);
+			}
+		};
+
+		$service = new AIMS_Vendor_Portal_Navigation_Service(
+			$vendor_service,
+			$vendor_event_assignments,
+			null,
+			null,
+			null,
+			$public_event_catalog
+		);
+
+		$result = $service->join_show(
+			array(
+				'event_id'  => 20,
+				'vendor_id' => 42,
+			)
+		);
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 555, $result['assignment_id'] );
+		$this->assertCount( 1, $vendor_event_assignments->saved_payloads );
+		$this->assertSame( 20, $vendor_event_assignments->saved_payloads[0]['event_id'] );
+		$this->assertSame( 42, $vendor_event_assignments->saved_payloads[0]['vendor_id'] );
+	}
+
+	public function testJoinShowRejectsAlreadyAssignedEvent(): void {
+		TestState::set_current_user_id( 42 );
+		TestState::set_current_time( '2026-03-26 10:00:00' );
+		TestState::set_user(
+			42,
+			(object) array(
+				'ID'         => 42,
+				'roles'      => array( 'aims_test_vendor_portal_user' ),
+				'user_email' => 'vendor1@example.com',
+			)
+		);
+
+		$vendor_service = new class() extends \AIMS_Vendor_Service {
+			public function __construct() {}
+
+			public function list_vendors( string $status = '' ): array {
+				return array(
+					array(
+						'user_id'     => 42,
+						'vendor_name' => 'Vendor One',
+					),
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public int $save_calls = 0;
+
+			public function __construct() {}
+
+			public function get_for_vendor( int $vendor_id ): array {
+				return array(
+					array(
+						'id'        => 101,
+						'event_id'  => 20,
+						'vendor_id' => 42,
+					),
+				);
+			}
+
+			public function save( array $data, int $assignment_id = 0 ): int {
+				++$this->save_calls;
+				return 0;
+			}
+		};
+
+		$public_event_catalog = new class() extends \AIMS_Public_Event_Catalog_Repository {
+			public function get_public_events( array $filters = array() ): array {
+				return array(
+					array(
+						'event_id'       => 20,
+						'event_name'     => 'Summer Show',
+						'start_date'     => '2026-04-10 10:00:00',
+						'end_date'       => '2026-04-12 18:00:00',
+						'location_name'  => 'Expo Hall',
+						'public_summary' => 'Joinable event',
+					),
+				);
+			}
+		};
+
+		$service = new AIMS_Vendor_Portal_Navigation_Service(
+			$vendor_service,
+			$vendor_event_assignments,
+			null,
+			null,
+			null,
+			$public_event_catalog
+		);
+
+		$result = $service->join_show( array( 'event_id' => 20 ) );
+
+		$this->assertFalse( $result['success'] );
+		$this->assertSame( 0, $vendor_event_assignments->save_calls );
+	}
 }

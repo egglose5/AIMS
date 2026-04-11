@@ -11,7 +11,7 @@ class AIMS_Vendor_Portal_Navigation_Widget extends WP_Widget {
 		parent::__construct(
 			'aims_vendor_portal_nav',
 			__( 'AIMS Vendor Portal Navigation', 'ai-man-sys' ),
-			array( 'description' => __( 'Displays vendor portal navigation with assigned events and check-in links.', 'ai-man-sys' ) )
+			array( 'description' => __( 'Displays vendor portal navigation with assigned events, upcoming shows, and join links.', 'ai-man-sys' ) )
 		);
 		$this->service = $service ?: new AIMS_Vendor_Portal_Navigation_Service();
 	}
