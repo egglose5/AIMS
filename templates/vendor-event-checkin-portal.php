@@ -19,6 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		.aims-vendor-checkin-portal .portal-event.is-selected { border-color: #2271b1; box-shadow: 0 0 0 1px #2271b1 inset; }
 		.aims-vendor-checkin-portal label { display: block; font-weight: 600; margin-bottom: 6px; }
 		.aims-vendor-checkin-portal input[type="text"],
+		.aims-vendor-checkin-portal input[type="number"],
 		.aims-vendor-checkin-portal input[type="file"],
 		.aims-vendor-checkin-portal select,
 		.aims-vendor-checkin-portal textarea,
@@ -53,7 +54,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 			<?php if ( empty( $portal_model['authorized_events'] ) ) : ?>
 				<div class="portal-status">
-					<p><?php esc_html_e( 'No assigned vendor events are available for mobile check-in yet.', 'ai-man-sys' ); ?></p>
+					<p><?php echo esc_html( sprintf( 'No assigned vendor events are available for mobile access yet. This portal opens %d days before the event start date.', (int) ( $portal_model['window_open_days'] ?? 7 ) ) ); ?></p>
 				</div>
 			<?php else : ?>
 				<div class="portal-card">
@@ -81,9 +82,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 					</div>
 				</div>
 
-				<?php if ( ! empty( $portal_model['selected_event'] ) && ! empty( $portal_model['can_submit'] ) ) : ?>
+				<?php if ( ! empty( $portal_model['selected_event'] ) ) : ?>
 					<?php $selected_event = (array) $portal_model['selected_event']; ?>
 					<?php $selected_assignment = (array) ( $portal_model['selected_vendor_event_assignment'] ?? array() ); ?>
+					<?php if ( ! empty( $portal_model['can_submit'] ) ) : ?>
 					<div class="portal-card">
 						<h2><?php esc_html_e( 'Check In', 'ai-man-sys' ); ?></h2>
 						<p class="portal-muted">
@@ -154,6 +156,61 @@ if ( ! defined( 'ABSPATH' ) ) {
 						</form>
 					</div>
 
+					<?php endif; ?>
+
+					<?php if ( ! empty( $portal_model['can_submit_expense'] ) ) : ?>
+						<div class="portal-card">
+							<h2><?php esc_html_e( 'Log Expense', 'ai-man-sys' ); ?></h2>
+							<p class="portal-muted"><?php esc_html_e( 'Capture field expenses while onsite and attach a receipt from your phone.', 'ai-man-sys' ); ?></p>
+
+							<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">
+								<input type="hidden" name="action" value="aims_vendor_event_expense_submit" />
+								<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) ( $selected_event['id'] ?? 0 ) ); ?>" />
+								<input type="hidden" name="_aims_return_url" value="<?php echo esc_attr( $portal_model['return_url'] ); ?>" />
+								<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'aims_vendor_event_expense_submit', '_aims_vendor_expense_nonce' ); } ?>
+
+								<div class="portal-actions">
+									<p>
+										<label for="aims-vendor-expense-type"><?php esc_html_e( 'Expense Type', 'ai-man-sys' ); ?></label>
+										<select id="aims-vendor-expense-type" name="expense_type" required>
+											<option value="travel"><?php esc_html_e( 'Travel', 'ai-man-sys' ); ?></option>
+											<option value="parking"><?php esc_html_e( 'Parking', 'ai-man-sys' ); ?></option>
+											<option value="lodging"><?php esc_html_e( 'Lodging', 'ai-man-sys' ); ?></option>
+											<option value="meals"><?php esc_html_e( 'Meals', 'ai-man-sys' ); ?></option>
+											<option value="supplies"><?php esc_html_e( 'Supplies', 'ai-man-sys' ); ?></option>
+											<option value="shipping"><?php esc_html_e( 'Shipping', 'ai-man-sys' ); ?></option>
+											<option value="other"><?php esc_html_e( 'Other', 'ai-man-sys' ); ?></option>
+										</select>
+									</p>
+									<p>
+										<label for="aims-vendor-expense-amount"><?php esc_html_e( 'Amount', 'ai-man-sys' ); ?></label>
+										<input id="aims-vendor-expense-amount" type="number" name="expense_amount" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required />
+									</p>
+								</div>
+
+								<p>
+									<label for="aims-vendor-expense-justification"><?php esc_html_e( 'Short Justification', 'ai-man-sys' ); ?></label>
+									<textarea id="aims-vendor-expense-justification" name="expense_justification" maxlength="280" required placeholder="<?php esc_attr_e( 'What was purchased and why was it needed onsite?', 'ai-man-sys' ); ?>"></textarea>
+								</p>
+
+								<p>
+									<label for="aims-vendor-expense-receipt"><?php esc_html_e( 'Receipt Photo / PDF', 'ai-man-sys' ); ?></label>
+									<input id="aims-vendor-expense-receipt" type="file" name="expense_receipt" accept="image/*,application/pdf" capture="environment" />
+								</p>
+
+								<p class="portal-muted"><?php esc_html_e( 'Use your phone camera to capture a paper receipt while you are still in the field.', 'ai-man-sys' ); ?></p>
+
+								<p>
+									<button type="submit" class="button button-secondary"><?php echo esc_html( $portal_expense_button_label ?? 'Log Expense' ); ?></button>
+								</p>
+							</form>
+						</div>
+					<?php elseif ( ! empty( $portal_model['selected_event'] ) ) : ?>
+						<div class="portal-status">
+							<p><?php echo esc_html( sprintf( 'This event is not yet within the vendor mobile access window. Access opens %d days before the start date.', (int) ( $portal_model['window_open_days'] ?? 7 ) ) ); ?></p>
+						</div>
+					<?php endif; ?>
+
 					<div class="portal-card">
 						<h2><?php esc_html_e( 'Recent Updates', 'ai-man-sys' ); ?></h2>
 						<?php if ( empty( $portal_model['recent_updates'] ) ) : ?>
@@ -175,10 +232,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 								<?php endforeach; ?>
 							</ul>
 						<?php endif; ?>
-					</div>
-				<?php elseif ( ! empty( $portal_model['selected_event'] ) ) : ?>
-					<div class="portal-status">
-						<p><?php esc_html_e( 'This event is not yet within the vendor check-in window or does not have an eligible bucket assignment.', 'ai-man-sys' ); ?></p>
 					</div>
 				<?php endif; ?>
 			<?php endif; ?>

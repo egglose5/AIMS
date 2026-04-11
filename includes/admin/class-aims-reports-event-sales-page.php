@@ -15,10 +15,15 @@ class AIMS_Reports_Event_Sales_Page {
 		$event_id = isset( $_GET['event_id'] ) ? max( 0, (int) wp_unslash( $_GET['event_id'] ) ) : 0;
 		$rows     = $this->data_provider->get_rows( $event_id );
 		$events   = $this->data_provider->get_event_options();
+		$totals   = $this->data_provider->get_summary_totals( $event_id );
 
 		echo '<h2>Event Sales and Attribution</h2>';
-		echo '<p>Compare sales and attribution totals by event using `event_id` as the shared operational key.</p>';
+		echo '<p>Compare sales, payouts, expenses, and <strong>Total Show Profit</strong> by event using <code>event_id</code> as the shared operational key.</p>';
 		$this->render_filter_form( $events, $event_id );
+
+		if ( ! empty( $rows ) ) {
+			$this->render_summary_cards( $totals );
+		}
 
 		if ( empty( $rows ) ) {
 			echo '<div class="notice notice-info inline"><p>No report rows match the selected filter.</p></div>';
@@ -27,7 +32,7 @@ class AIMS_Reports_Event_Sales_Page {
 
 		echo '<table class="widefat fixed striped">';
 		echo '<thead><tr>';
-		echo '<th>Event</th><th>Status</th><th>Sales Rows</th><th>Gross</th><th>Net</th><th>Discount</th><th>Tip</th><th>Attribution Rows</th><th>Commission</th><th>Payout</th>';
+		echo '<th>Event</th><th>Status</th><th>Sales Rows</th><th>Gross</th><th>Net</th><th>Discount</th><th>Tip</th><th>Attribution Rows</th><th>Commission</th><th>Payout</th><th>Expenses</th><th>Total Show Profit</th>';
 		echo '</tr></thead><tbody>';
 
 		foreach ( $rows as $row ) {
@@ -42,10 +47,50 @@ class AIMS_Reports_Event_Sales_Page {
 			echo '<td>' . esc_html( (string) ( $row['attribution_count'] ?? '0' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->format_money( $row['commission_total'] ?? 0 ) ) . '</td>';
 			echo '<td>' . esc_html( $this->format_money( $row['payout_total'] ?? 0 ) ) . '</td>';
+			echo '<td>' . esc_html( $this->format_money( $row['expense_total'] ?? 0 ) ) . '</td>';
+			echo '<td>' . $this->format_profit_markup( $row['profit_total'] ?? 0 ) . '</td>';
 			echo '</tr>';
 		}
 
-		echo '</tbody></table>';
+		echo '</tbody>';
+		echo '<tfoot><tr>';
+		echo '<th colspan="2">Filtered Totals</th>';
+		echo '<th>' . esc_html( (string) ( $totals['sales_count'] ?? 0 ) ) . '</th>';
+		echo '<th>' . esc_html( $this->format_money( $totals['gross_total'] ?? 0 ) ) . '</th>';
+		echo '<th>' . esc_html( $this->format_money( $totals['net_total'] ?? 0 ) ) . '</th>';
+		echo '<th>' . esc_html( $this->format_money( $totals['discount_total'] ?? 0 ) ) . '</th>';
+		echo '<th>' . esc_html( $this->format_money( $totals['tip_total'] ?? 0 ) ) . '</th>';
+		echo '<th>' . esc_html( (string) ( $totals['attribution_count'] ?? 0 ) ) . '</th>';
+		echo '<th>' . esc_html( $this->format_money( $totals['commission_total'] ?? 0 ) ) . '</th>';
+		echo '<th>' . esc_html( $this->format_money( $totals['payout_total'] ?? 0 ) ) . '</th>';
+		echo '<th>' . esc_html( $this->format_money( $totals['expense_total'] ?? 0 ) ) . '</th>';
+		echo '<th>' . $this->format_profit_markup( $totals['profit_total'] ?? 0 ) . '</th>';
+		echo '</tr></tfoot>';
+		echo '</table>';
+	}
+
+	private function render_summary_cards( array $totals ): void {
+		$cards = array(
+			'Gross Sales'       => (float) ( $totals['gross_total'] ?? 0 ),
+			'Net Sales'         => (float) ( $totals['net_total'] ?? 0 ),
+			'Vendor Payout'     => (float) ( $totals['payout_total'] ?? 0 ),
+			'Expenses'          => (float) ( $totals['expense_total'] ?? 0 ),
+			'Total Show Profit' => (float) ( $totals['profit_total'] ?? 0 ),
+		);
+
+		echo '<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin: 0 0 16px 0;">';
+		foreach ( $cards as $label => $value ) {
+			$is_profit = 'Total Show Profit' === $label;
+			$style     = $is_profit && $value < 0
+				? 'border-left:4px solid #d63638;background:#fff5f5;'
+				: 'border-left:4px solid #2271b1;background:#fff;';
+
+			echo '<div style="padding:12px;border:1px solid #dcdcde;border-radius:4px;' . esc_attr( $style ) . '">';
+			echo '<div style="font-size:12px;color:#50575e;text-transform:uppercase;letter-spacing:.03em;">' . esc_html( $label ) . '</div>';
+			echo '<div style="font-size:20px;font-weight:600;margin-top:6px;">' . esc_html( $this->format_money( $value ) ) . '</div>';
+			echo '</div>';
+		}
+		echo '</div>';
 	}
 
 	private function render_filter_form( array $events, int $event_id ): void {
@@ -73,6 +118,13 @@ class AIMS_Reports_Event_Sales_Page {
 
 	private function format_money( $value ): string {
 		return '$' . number_format( (float) $value, 2, '.', ',' );
+	}
+
+	private function format_profit_markup( $value ): string {
+		$amount = (float) $value;
+		$style  = $amount < 0 ? 'color:#b32d2e;font-weight:700;' : 'color:#135e2b;font-weight:700;';
+
+		return '<span style="' . esc_attr( $style ) . '">' . esc_html( $this->format_money( $amount ) ) . '</span>';
 	}
 }
 

@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Vendor_Event_Checkin_Portal_Service {
-	private const CHECKIN_WINDOW_DAYS = 3;
+	private const CHECKIN_WINDOW_DAYS = 7;
 
 	private $access_service;
 	private $events;
@@ -20,6 +20,8 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 	private $auth_service;
 	private $vendor_service;
 	private $person_identity;
+	private $expenses;
+	private $financial_service;
 
 	public function __construct(
 		AIMS_Event_Planning_Access_Service $access_service = null,
@@ -34,7 +36,9 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		$physical_buckets = null,
 		AIMS_Responsibility_Authorization_Service $auth_service = null,
 		AIMS_Vendor_Service $vendor_service = null,
-		AIMS_Person_Identity_Service $person_identity = null
+		AIMS_Person_Identity_Service $person_identity = null,
+		AIMS_Event_Expense_Repository $expenses = null,
+		AIMS_Event_Financial_Service $financial_service = null
 	) {
 		if ( is_callable( $person_identity ) && ! $person_identity instanceof AIMS_Person_Identity_Service ) {
 			$uploader        = $person_identity;
@@ -57,6 +61,8 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		$this->auth_service             = $auth_service ?: new AIMS_Responsibility_Authorization_Service();
 		$this->vendor_service           = $vendor_service ?: new AIMS_Vendor_Service();
 		$this->person_identity          = $person_identity ?: new AIMS_Person_Identity_Service();
+		$this->expenses                 = $expenses ?: new AIMS_Event_Expense_Repository();
+		$this->financial_service        = $financial_service ?: $this->build_financial_service();
 	}
 
 	public function get_page_model( array $request = array() ): array {
@@ -68,6 +74,7 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		$selected_assignment = $this->resolve_vendor_event_assignment( $selected_event_id, $vendor_ids );
 		$bucket_options      = $this->get_bucket_options_for_event( $selected_event_id, (int) ( $selected_assignment['vendor_id'] ?? 0 ) );
 		$recent_updates      = $this->get_recent_public_updates( $selected_event_id );
+		$event_is_available  = ! empty( $selected_event ) ? $this->is_event_available_now( $selected_event ) : false;
 		$is_first_checkin    = ! empty( $selected_event ) && ! empty( $selected_assignment )
 			? $this->checkins->is_first_checkin( $selected_event_id, (int) ( $selected_assignment['vendor_id'] ?? 0 ) )
 			: false;
@@ -81,9 +88,11 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 			'selected_vendor_event_assignment' => $selected_assignment,
 			'bucket_options'                   => $bucket_options,
 			'recent_updates'                   => $recent_updates,
-			'can_submit'                       => ! empty( $selected_event ) && ! empty( $selected_assignment ) && ! empty( $bucket_options ),
+			'can_submit'                       => $event_is_available && ! empty( $selected_event ) && ! empty( $selected_assignment ) && ! empty( $bucket_options ),
+			'can_submit_expense'               => $event_is_available && ! empty( $selected_event ) && ! empty( $selected_assignment ),
 			'is_first_checkin'                 => $is_first_checkin,
 			'status_message'                   => $this->get_status_message( $request ),
+			'window_open_days'                 => self::CHECKIN_WINDOW_DAYS,
 			'return_url'                       => $this->get_current_url(),
 			'login_url'                        => function_exists( 'wp_login_url' ) ? wp_login_url( $this->get_current_url() ) : '',
 		);
@@ -112,7 +121,7 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		}
 
 		if ( ! $this->is_event_available_now( $event ) ) {
-			return $this->failure_response( 'Vendor check-in is available starting three days before event start.' );
+			return $this->failure_response( sprintf( 'Vendor check-in is available starting %s before event start.', $this->get_window_open_days_label() ) );
 		}
 
 		if ( empty( $vendor_assignment ) ) {
@@ -255,6 +264,98 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 			'update_id'             => $public_update_id,
 			'is_first_checkin'      => $is_first_checkin,
 			'square_inventory_sync' => $square_inventory_sync,
+		);
+	}
+
+	public function submit_expense( array $request, array $files = array() ): array {
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		if ( $user_id <= 0 ) {
+			return $this->failure_response( 'You must be logged in to log vendor expenses.' );
+		}
+
+		$event_id      = (int) ( $request['event_id'] ?? 0 );
+		$vendor_ids    = $this->get_authorized_vendor_ids( $user_id );
+		$assignment    = $this->resolve_vendor_event_assignment( $event_id, $vendor_ids );
+		$event         = $this->find_event_by_id( $event_id );
+		$vendor_id     = (int) ( $assignment['vendor_id'] ?? 0 );
+		$expense_type  = sanitize_key( (string) ( $request['expense_type'] ?? 'other' ) );
+		$amount_input  = str_replace( ',', '', sanitize_text_field( (string) ( $request['expense_amount'] ?? '0' ) ) );
+		$amount        = (float) $amount_input;
+		$justification = sanitize_textarea_field( (string) ( $request['expense_justification'] ?? '' ) );
+
+		if ( $event_id <= 0 || empty( $event ) ) {
+			return $this->failure_response( 'A valid event is required for vendor expenses.' );
+		}
+
+		if ( ! $this->is_event_available_now( $event ) ) {
+			return $this->failure_response( sprintf( 'Vendor expense logging is available starting %s before event start.', $this->get_window_open_days_label() ) );
+		}
+
+		if ( empty( $assignment ) || $vendor_id <= 0 ) {
+			return $this->failure_response( 'This account is not assigned to the selected event.' );
+		}
+
+		if ( $amount <= 0 ) {
+			return $this->failure_response( 'Enter a valid expense amount greater than zero.' );
+		}
+
+		if ( '' === trim( $justification ) ) {
+			return $this->failure_response( 'A short justification is required for vendor expenses.' );
+		}
+
+		$receipt_upload = $this->upload_optional_file_from_request( $files, 'expense_receipt' );
+		if ( is_wp_error( $receipt_upload ) ) {
+			return $this->failure_response( $receipt_upload->get_error_message() );
+		}
+
+		$expense_id = is_object( $this->expenses ) && method_exists( $this->expenses, 'save' )
+			? (int) $this->expenses->save(
+				array(
+					'event_id'     => $event_id,
+					'vendor_id'    => $vendor_id,
+					'expense_type' => '' !== $expense_type ? $expense_type : 'other',
+					'amount'       => $amount,
+					'note'         => $justification,
+					'incurred_at'  => current_time( 'mysql' ),
+				)
+			)
+			: 0;
+
+		if ( $expense_id <= 0 ) {
+			return $this->failure_response( 'Vendor expense could not be saved.' );
+		}
+
+		$receipt_captured = false;
+		if ( ! empty( $receipt_upload['file_url'] ) && is_object( $this->checkin_media ) && method_exists( $this->checkin_media, 'save' ) ) {
+			$this->checkin_media->save(
+				array(
+					'checkin_id'        => 0,
+					'event_id'          => $event_id,
+					'vendor_id'         => $vendor_id,
+					'media_type'        => 'document',
+					'media_source'      => 'mobile_upload',
+					'media_reference'   => 'expense_receipt',
+					'media_url'         => (string) $receipt_upload['file_url'],
+					'attachment_id'     => (int) ( $receipt_upload['attachment_id'] ?? 0 ),
+					'caption'           => $justification,
+					'alt_text'          => 'Vendor expense receipt',
+					'visibility_status' => 'internal',
+					'is_primary'        => 0,
+					'sort_order'        => 0,
+					'uploaded_at'       => current_time( 'mysql' ),
+				)
+			);
+			$receipt_captured = true;
+		}
+
+		$this->recalculate_event_financials( $event_id );
+
+		return array(
+			'success'          => true,
+			'message'          => $receipt_captured ? 'Expense and receipt logged.' : 'Expense logged.',
+			'expense_id'       => $expense_id,
+			'event_id'         => $event_id,
+			'receipt_captured' => $receipt_captured,
 		);
 	}
 
@@ -563,6 +664,18 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		return $start_date;
 	}
 
+	private function get_window_open_days_label(): string {
+		if ( 7 === self::CHECKIN_WINDOW_DAYS ) {
+			return 'seven days';
+		}
+
+		if ( 1 === self::CHECKIN_WINDOW_DAYS ) {
+			return 'one day';
+		}
+
+		return self::CHECKIN_WINDOW_DAYS . ' days';
+	}
+
 	private function build_media_records(
 		int $checkin_id,
 		int $event_id,
@@ -746,6 +859,19 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		return $this->upload_file( $file, $field_name );
 	}
 
+	private function upload_optional_file_from_request( array $files, string $field_name ) {
+		if ( empty( $files[ $field_name ] ) || ! is_array( $files[ $field_name ] ) ) {
+			return array();
+		}
+
+		$file = $files[ $field_name ];
+		if ( empty( $file['name'] ) ) {
+			return array();
+		}
+
+		return $this->upload_file( $file, $field_name );
+	}
+
 	private function upload_multiple_files_from_request( array $files, string $field_name ): array {
 		if ( empty( $files[ $field_name ] ) ) {
 			return array();
@@ -810,6 +936,33 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 			'file_url'      => (string) $upload['url'],
 			'attachment_id' => 0,
 		);
+	}
+
+	private function build_financial_service() {
+		if ( ! class_exists( 'AIMS_Event_Financial_Service' ) || ! class_exists( 'AIMS_Square_Sale_Repository' ) || ! class_exists( 'AIMS_Product_Cost_Service' ) || ! class_exists( 'AIMS_Product_Cost_Rule_Repository' ) ) {
+			return null;
+		}
+
+		try {
+			return new AIMS_Event_Financial_Service(
+				new AIMS_Event_Repository(),
+				new AIMS_Square_Sale_Repository(),
+				new AIMS_Event_Expense_Repository(),
+				new AIMS_Vendor_Event_Assignment_Repository(),
+				new AIMS_Product_Cost_Service( new AIMS_Product_Cost_Rule_Repository() ),
+				class_exists( 'AIMS_Vendor_Sales_Attribution_Repository' ) ? new AIMS_Vendor_Sales_Attribution_Repository() : null
+			);
+		} catch ( \Throwable $throwable ) {
+			return null;
+		}
+	}
+
+	private function recalculate_event_financials( int $event_id ): void {
+		if ( $event_id <= 0 || ! is_object( $this->financial_service ) || ! method_exists( $this->financial_service, 'recalculate_event' ) ) {
+			return;
+		}
+
+		$this->financial_service->recalculate_event( $event_id );
 	}
 
 	private function get_current_url(): string {

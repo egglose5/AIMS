@@ -381,7 +381,7 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 
 	public function testCheckInWindowIsEnforcedBeforeUploadsRun(): void {
 		TestState::set_current_user_id( 77 );
-		TestState::set_current_time( '2026-03-20 08:00:00' );
+		TestState::set_current_time( '2026-03-17 08:00:00' );
 		TestState::set_user(
 			77,
 			(object) array(
@@ -462,7 +462,77 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 		);
 
 		$this->assertFalse( $result['success'] );
-		$this->assertSame( 'Vendor check-in is available starting three days before event start.', $result['message'] );
+		$this->assertSame( 'Vendor check-in is available starting seven days before event start.', $result['message'] );
+	}
+
+	public function testPageModelIncludesAssignedEventWithinSevenDayWindow(): void {
+		TestState::set_current_user_id( 77 );
+		TestState::set_current_time( '2026-03-19 12:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID'    => 77,
+				'roles' => array( 'aims_test_vendor_checkin_user' ),
+			)
+		);
+
+		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
+			new class() extends \AIMS_Event_Planning_Access_Service {
+				public function __construct() {}
+
+				public function get_authorized_vendor_ids( int $user_id = 0 ): array {
+					return array( 5 );
+				}
+			},
+			new class() extends \AIMS_Event_Repository {
+				public function find( int $event_id ): ?array {
+					return 10 === $event_id ? array(
+						'id'            => 10,
+						'event_name'    => 'Spring Show',
+						'start_date'    => '2026-03-25',
+						'end_date'      => '2026-03-27',
+						'location_name' => 'Main Hall',
+						'status'        => 'published',
+					) : null;
+				}
+
+				public function all(): array {
+					return array( $this->find( 10 ) );
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+				public function get_for_event( int $event_id ): array {
+					return 10 === $event_id ? array(
+						array(
+							'id'        => 91,
+							'event_id'  => 10,
+							'vendor_id' => 5,
+						),
+					) : array();
+				}
+			},
+			new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+				public function get_active_for_event( int $event_id ): array {
+					return array();
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Checkin_Repository {},
+			new class() extends \AIMS_Vendor_Event_Checkin_Media_Repository {},
+			new class() extends \AIMS_Event_Execution_Service {
+				public function __construct() {}
+			},
+			new class() extends \AIMS_Public_Event_Projection_Service {
+				public function __construct() {}
+				public function get_public_event_updates( int $event_id, array $args = array() ): array {
+					return array();
+				}
+			}
+		);
+
+		$model = $service->get_page_model();
+
+		$this->assertCount( 1, $model['authorized_events'] );
+		$this->assertSame( 10, (int) $model['authorized_events'][0]['id'] );
 	}
 
 	public function testFirstCheckInRejectsBucketAssignedToDifferentVendor(): void {
@@ -649,6 +719,201 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 400, $model['bucket_options'][0]['assignment_id'] );
 	}
 
+	public function testExpenseSubmissionSavesExpenseReceiptAndRecalculatesFinancials(): void {
+		TestState::set_current_user_id( 77 );
+		TestState::set_current_time( '2026-03-23 12:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID'    => 77,
+				'roles' => array( 'aims_test_vendor_checkin_user' ),
+			)
+		);
+
+		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
+			new class() extends \AIMS_Event_Planning_Access_Service {
+				public function __construct() {}
+
+				public function get_authorized_vendor_ids( int $user_id = 0 ): array {
+					return array( 5 );
+				}
+			},
+			new class() extends \AIMS_Event_Repository {
+				public function find( int $event_id ): ?array {
+					return 10 === $event_id ? array(
+						'id'            => 10,
+						'event_name'    => 'Spring Show',
+						'start_date'    => '2026-03-25',
+						'end_date'      => '2026-03-27',
+						'location_name' => 'Main Hall',
+						'status'        => 'published',
+					) : null;
+				}
+
+				public function all(): array {
+					return array( $this->find( 10 ) );
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+				public function get_for_event( int $event_id ): array {
+					return 10 === $event_id ? array(
+						array(
+							'id'        => 91,
+							'event_id'  => 10,
+							'vendor_id' => 5,
+						),
+					) : array();
+				}
+			},
+			new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+				public function get_active_for_event( int $event_id ): array {
+					return array();
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Checkin_Repository {},
+			new class() extends \AIMS_Vendor_Event_Checkin_Media_Repository {
+				public array $saved = array();
+
+				public function save( array $data, int $media_id = 0 ): int {
+					$this->saved[] = $data;
+					return 801;
+				}
+			},
+			new class() extends \AIMS_Event_Execution_Service {
+				public function __construct() {}
+			},
+			new class() extends \AIMS_Public_Event_Projection_Service {
+				public function __construct() {}
+			},
+			static function ( array $file, string $field_name ): array {
+				return array(
+					'file_url'      => 'https://cdn.example.test/' . $field_name . '/' . rawurlencode( (string) $file['name'] ),
+					'attachment_id' => 44,
+				);
+			},
+			null,
+			null,
+			null,
+			null,
+			new class() extends \AIMS_Event_Expense_Repository {
+				public array $saved = array();
+
+				public function save( array $data, int $expense_id = 0 ): int {
+					$this->saved[] = $data;
+					return 601;
+				}
+			},
+			new class() extends \AIMS_Event_Financial_Service {
+				public array $calls = array();
+
+				public function __construct() {}
+
+				public function recalculate_event( int $event_id ): array {
+					$this->calls[] = $event_id;
+					return array( 'profit_total' => 99.99 );
+				}
+			}
+		);
+
+		$result = $service->submit_expense(
+			array(
+				'event_id'               => 10,
+				'expense_type'           => 'travel',
+				'expense_amount'         => '42.50',
+				'expense_justification'  => 'Parking near the venue for setup access.',
+			),
+			$this->buildExpenseReceiptFiles()
+		);
+
+		/** @var object $expenses */
+		$expenses = $this->readProperty( $service, 'expenses' );
+		/** @var object $media */
+		$media = $this->readProperty( $service, 'checkin_media' );
+		/** @var object $financial */
+		$financial = $this->readProperty( $service, 'financial_service' );
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 601, $result['expense_id'] );
+		$this->assertCount( 1, $expenses->saved );
+		$this->assertSame( 10, $expenses->saved[0]['event_id'] );
+		$this->assertSame( 5, $expenses->saved[0]['vendor_id'] );
+		$this->assertSame( 'travel', $expenses->saved[0]['expense_type'] );
+		$this->assertSame( 'Parking near the venue for setup access.', $expenses->saved[0]['note'] );
+		$this->assertCount( 1, $media->saved );
+		$this->assertSame( 'expense_receipt', $media->saved[0]['media_reference'] );
+		$this->assertSame( 'internal', $media->saved[0]['visibility_status'] );
+		$this->assertSame( array( 10 ), $financial->calls );
+	}
+
+	public function testExpenseSubmissionRequiresShortJustification(): void {
+		TestState::set_current_user_id( 77 );
+		TestState::set_current_time( '2026-03-23 12:00:00' );
+		TestState::set_user(
+			77,
+			(object) array(
+				'ID'    => 77,
+				'roles' => array( 'aims_test_vendor_checkin_user' ),
+			)
+		);
+
+		$service = new \AIMS_Vendor_Event_Checkin_Portal_Service(
+			new class() extends \AIMS_Event_Planning_Access_Service {
+				public function __construct() {}
+
+				public function get_authorized_vendor_ids( int $user_id = 0 ): array {
+					return array( 5 );
+				}
+			},
+			new class() extends \AIMS_Event_Repository {
+				public function find( int $event_id ): ?array {
+					return 10 === $event_id ? array(
+						'id'         => 10,
+						'event_name' => 'Spring Show',
+						'start_date' => '2026-03-25',
+						'end_date'   => '2026-03-27',
+					) : null;
+				}
+
+				public function all(): array {
+					return array( $this->find( 10 ) );
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+				public function get_for_event( int $event_id ): array {
+					return array(
+						array( 'id' => 91, 'event_id' => 10, 'vendor_id' => 5 ),
+					);
+				}
+			},
+			new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+				public function get_active_for_event( int $event_id ): array {
+					return array();
+				}
+			},
+			new class() extends \AIMS_Vendor_Event_Checkin_Repository {},
+			new class() extends \AIMS_Vendor_Event_Checkin_Media_Repository {},
+			new class() extends \AIMS_Event_Execution_Service {
+				public function __construct() {}
+			},
+			new class() extends \AIMS_Public_Event_Projection_Service {
+				public function __construct() {}
+			}
+		);
+
+		$result = $service->submit_expense(
+			array(
+				'event_id'              => 10,
+				'expense_type'          => 'travel',
+				'expense_amount'        => '18.50',
+				'expense_justification' => '',
+			),
+			array()
+		);
+
+		$this->assertFalse( $result['success'] );
+		$this->assertSame( 'A short justification is required for vendor expenses.', $result['message'] );
+	}
+
 	private function buildUploadFiles(): array {
 		return array(
 			'selfie_photo' => array(
@@ -664,6 +929,18 @@ final class VendorPortalCheckInServiceTest extends \AIMS\Tests\TestCase {
 				'tmp_name' => array( 'C:\\temp\\booth.jpg' ),
 				'error'    => array( 0 ),
 				'size'     => array( 100 ),
+			),
+		);
+	}
+
+	private function buildExpenseReceiptFiles(): array {
+		return array(
+			'expense_receipt' => array(
+				'name'     => 'receipt.jpg',
+				'type'     => 'image/jpeg',
+				'tmp_name' => 'C:\\temp\\receipt.jpg',
+				'error'    => 0,
+				'size'     => 100,
 			),
 		);
 	}

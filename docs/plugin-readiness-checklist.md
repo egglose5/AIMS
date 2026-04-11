@@ -67,10 +67,12 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Prefer a dynamic sidebar widget, block, or shortcode for OceanWP so vendor navigation lives inside the existing frontend sidebar and mobile layout.
 - [x] Show vendor portal links conditionally based on login state, vendor assignment, and event timing.
 - [x] Surface `Event Check-In` only when the vendor has an assigned event inside the allowed pre-event window.
+- [x] Extend the same mobile portal with onsite expense logging, short justification, and receipt capture for assigned vendors.
 - [x] Cover vendor portal navigation authorization and timing behavior with unit tests.
   - Frontend nav entry points: `includes/modules/vendor-manage/class-aims-vendor-portal-navigation-controller.php`, `includes/modules/vendor-manage/class-aims-vendor-portal-navigation-widget.php`, and `templates/vendor-portal-navigation.php`.
+  - Mobile vendor action surface: `includes/modules/vendor-manage/class-aims-vendor-event-checkin-portal-controller.php`, `includes/modules/vendor-manage/class-aims-vendor-event-checkin-portal-service.php`, and `templates/vendor-event-checkin-portal.php`.
   - Authorization and timing logic: `includes/modules/vendor-manage/class-aims-vendor-portal-navigation-service.php` and `includes/repositories/class-aims-vendor-event-assignment-repository.php`.
-  - Test coverage: `tests/Unit/VendorPortalNavigationServiceTest.php` (check-in window opens at the event start-time boundary three days before the event).
+  - Test coverage: `tests/Unit/VendorPortalNavigationServiceTest.php` and `tests/Unit/VendorPortalCheckInServiceTest.php` (vendor access opens at the event start-time boundary seven days before the event, and mobile expense submission/receipt capture are covered).
 
 ## Next Milestone - Inventory Transfers v1 (Distributed Custody)
 

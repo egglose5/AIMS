@@ -247,6 +247,76 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertFalse( $model['authorized_events'][0]['is_past'] );
 	}
 
+	public function testNavModelAllowsCheckInSixDaysBeforeStartUnderSevenDayWindow(): void {
+		TestState::set_current_user_id( 42 );
+		TestState::set_current_time( '2026-03-22 10:00:00' );
+		TestState::set_user(
+			42,
+			(object) array(
+				'ID'         => 42,
+				'roles'      => array( 'aims_test_vendor_portal_user' ),
+				'user_email' => 'vendor1@example.com',
+			)
+		);
+
+		$vendor_service = new class() extends \AIMS_Vendor_Service {
+			public function __construct() {}
+
+			public function list_vendors( string $status = '' ): array {
+				return array(
+					array(
+						'user_id'     => 42,
+						'vendor_name' => 'Vendor One',
+					),
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function __construct() {}
+
+			public function get_for_vendor( int $vendor_id ): array {
+				return 42 === $vendor_id ? array(
+					array(
+						'id'        => 101,
+						'event_id'  => 10,
+						'vendor_id' => 1,
+					),
+				) : array();
+			}
+		};
+
+		$events_repository = new class() extends \AIMS_Event_Repository {
+			public function find( int $event_id ): ?array {
+				return 10 === $event_id ? array(
+					'id'               => 10,
+					'event_name'       => 'Spring Show',
+					'event_start_date' => '2026-03-28 10:00:00',
+					'location_name'    => 'Convention Center',
+				) : null;
+			}
+		};
+
+		$auth_service = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+
+			public function can_submit_vendor_checkin( int $user_id = 0 ): bool {
+				return 42 === $user_id;
+			}
+		};
+
+		$service = new AIMS_Vendor_Portal_Navigation_Service(
+			$vendor_service,
+			$vendor_event_assignments,
+			$events_repository,
+			$auth_service
+		);
+		$model   = $service->get_nav_model();
+
+		$this->assertCount( 1, $model['authorized_events'] );
+		$this->assertTrue( $model['authorized_events'][0]['can_checkin'] );
+	}
+
 	public function testNavModelHidesPastEvents(): void {
 		TestState::set_current_user_id( 42 );
 		TestState::set_current_time( '2026-03-29 12:00:00' );
@@ -393,7 +463,7 @@ final class VendorPortalNavigationServiceTest extends \AIMS\Tests\TestCase {
 		);
 		$model   = $service->get_nav_model();
 
-		// This is safely within the three-day vendor check-in window.
+		// This is safely within the seven-day vendor check-in window.
 		$this->assertCount( 1, $model['authorized_events'] );
 		$this->assertTrue( $model['authorized_events'][0]['can_checkin'] );
 	}

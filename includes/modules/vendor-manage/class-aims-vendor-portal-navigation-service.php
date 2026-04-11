@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Vendor_Portal_Navigation_Service {
 	private const UPCOMING_EVENTS_LIMIT = 100;
+	private const CHECKIN_WINDOW_DAYS   = 7;
 
 	private $vendor_service;
 	private $vendor_event_assignments;
@@ -162,7 +163,7 @@ class AIMS_Vendor_Portal_Navigation_Service {
 
 		$authorized_events     = array();
 		$now_timestamp         = $this->resolve_now_timestamp();
-		$pre_event_window_days = 3;
+		$pre_event_window_days = self::CHECKIN_WINDOW_DAYS;
 
 		foreach ( $assigned_vendors as $vendor ) {
 			$vendor_id = (int) ( $vendor['user_id'] ?? 0 );

@@ -42,7 +42,9 @@ Current architecture note: WordPress is the default control console, but the lon
 * Added planning guidance for capability-first AIMS roles where built-in roles act as templates and custom roles can replace them at runtime.
 * Added node-centric inventory transfer workflow foundation with source and target custody endpoints.
 * Added transfer dispatch and receipt operational flow in Inventory workspace with custody movement authority.
-* Updated repository documentation to reflect distributed custody transfer implementation status and next endpoint hardening milestones.
+* Added vendor mobile field expense logging with short justification, optional receipt capture, and a seven-day pre-event access window.
+* Expanded reporting visibility to include event expenses and operator-facing **Total Show Profit** rollups.
+* Updated repository documentation to reflect distributed custody transfer implementation status, vendor mobile workflows, and current reporting/profitability coverage.
 
 = 1.0.0 =
 * Production release with module-boot parity for vendor, event, square sync, and reports.

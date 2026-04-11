@@ -38,7 +38,9 @@ The repository currently provides:
 - standalone `ames-core` router with token-authenticated routes for movement, buckets, FIFO, custody, manifest build/push, history, archive, OAuth, and encrypted provider secrets
 - WordPress/Woo thin-client bridge through [class-aims-headless-api-client.php](C:/Users/sided/source/repos/AIMS%20Local%20Repo/includes/core/class-aims-headless-api-client.php) and the AIMS cockpit
 - bucket-first physical truth with current seal state, current Square location context, custody movement, FIFO receive, FIFO availability, and FIFO pick
-- event planning and execution workspace in WordPress, including staged bucket prep, temporary release, dock-safe seal checks, check-in, and return flows
+- event planning and execution workspace in WordPress, including staged bucket prep, temporary release, dock-safe seal checks, check-in, return flows, and show profitability rollups
+- vendor-facing portal tools for upcoming shows, mobile event check-in, and mobile field expense logging with short justification and receipt capture
+- a seven-day pre-event mobile access window so assigned vendors can prepare, check in, and log show expenses before the event opens
 - execution-side mirroring of real event movements into headless AIMS so standalone positional truth is fed by actual physical actions
 - structured WP-side audit logs for operator actions instead of hot-path audit table bloat
 - hot-data health gauge in the cockpit with small-business-safe pressure bands
@@ -141,8 +143,9 @@ The direction is clear even if the cutover is not 100% complete yet:
 5. AIMS should also give planners a clear place to note event-specific materials like signage, tape, table setup items, and check-in supplies so they stop living only in side spreadsheets or memory.
 6. The planner manually assigns buckets to the event (single or bulk, with optional delegation to subordinate planners).
 7. AIMS writes planning assignment records and optional warehouse telemetry timestamps, but not inventory movement records.
-8. Inventory movement records are created only when physical actions occur: `loaded`/`in_transit` (departure), `vendor_event_checkin` (stock-at-event), and `event_return` (return flows).
-9. Age-band metrics (Staged > 24h, Open > 8h) are informational analytics only — planners may keep stock staged for days or weeks; the metric records that fact without implying a violation.
+8. Assigned vendors can use the frontend mobile portal beginning seven days before show start to complete event check-in, post live updates, and log field expenses with a short justification and receipt attachment.
+9. Inventory movement records are created only when physical actions occur: `loaded`/`in_transit` (departure), `vendor_event_checkin` (stock-at-event), and `event_return` (return flows).
+10. Age-band metrics (Staged > 24h, Open > 8h) are informational analytics only — planners may keep stock staged for days or weeks; the metric records that fact without implying a violation.
 
 ## Square Thin-Client Model
 
@@ -207,10 +210,10 @@ AIMS now uses a ledger-first inventory design:
 - stock changes should be applied through movement services (`AIMS_Inventory_Service` and execution flows that delegate to `AIMS_Bucket_Movement_Service`).
 - apply-once protection is enforced by the unique movement reference key.
 - `aims_customers` and `aims_customer_addresses` store Square customer and address data.
-- `aims_events` now carries event-level financial summary fields for gross sales, net sales, vendor payouts, expenses, and profit.
+- `aims_events` now carries event-level financial summary fields for gross sales, net sales, vendor payouts, expenses, and profit, which drive the operator-facing **Total Show Profit** reporting view.
 - in-person discounts are stored per sale and rolled up into event-level discount totals.
 - Square-integrated tips are stored separately from sales net and rolled up into event tip totals for staff gratuity reporting.
-- `aims_event_expenses` stores tax and profitability expenses like booth fees, hotel, mileage, shipping, and other show costs.
+- `aims_event_expenses` stores tax and profitability expenses like booth fees, hotel, mileage, shipping, and other show costs, including new vendor-entered field expenses submitted from the mobile portal.
 - `aims_product_cost_rules` stores per-product and per-category cost mappings for COGS and profitability calculations.
 - `aims_sale_fulfillment_allocations` stores event-stock and warehouse-backorder allocations.
 - Square sales are intended to land in `aims_square_sales` before any optional WooCommerce projection.

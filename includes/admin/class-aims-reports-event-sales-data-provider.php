@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Reports_Event_Sales_Data_Provider {
 	public function get_event_options(): array {
-		$events = ( new AIMS_Event_Repository() )->all();
+		$events  = ( new AIMS_Event_Repository() )->all();
 		$options = array();
 
 		foreach ( $events as $event ) {
@@ -17,6 +17,38 @@ class AIMS_Reports_Event_Sales_Data_Provider {
 		}
 
 		return $options;
+	}
+
+	public function get_summary_totals( int $event_id = 0 ): array {
+		$rows   = $this->get_rows( $event_id );
+		$totals = array(
+			'event_count'        => count( $rows ),
+			'sales_count'        => 0,
+			'gross_total'        => 0.0,
+			'net_total'          => 0.0,
+			'discount_total'     => 0.0,
+			'tip_total'          => 0.0,
+			'attribution_count'  => 0,
+			'commission_total'   => 0.0,
+			'payout_total'       => 0.0,
+			'expense_total'      => 0.0,
+			'profit_total'       => 0.0,
+		);
+
+		foreach ( $rows as $row ) {
+			$totals['sales_count']       += (int) ( $row['sales_count'] ?? 0 );
+			$totals['gross_total']       += (float) ( $row['gross_total'] ?? 0 );
+			$totals['net_total']         += (float) ( $row['net_total'] ?? 0 );
+			$totals['discount_total']    += (float) ( $row['discount_total'] ?? 0 );
+			$totals['tip_total']         += (float) ( $row['tip_total'] ?? 0 );
+			$totals['attribution_count'] += (int) ( $row['attribution_count'] ?? 0 );
+			$totals['commission_total']  += (float) ( $row['commission_total'] ?? 0 );
+			$totals['payout_total']      += (float) ( $row['payout_total'] ?? 0 );
+			$totals['expense_total']     += (float) ( $row['expense_total'] ?? 0 );
+			$totals['profit_total']      += (float) ( $row['profit_total'] ?? 0 );
+		}
+
+		return $totals;
 	}
 
 	public function get_rows( int $event_id = 0 ): array {
@@ -42,7 +74,9 @@ class AIMS_Reports_Event_Sales_Data_Provider {
 				COALESCE(sales.tip_total, 0) AS tip_total,
 				COALESCE(attr.attribution_count, 0) AS attribution_count,
 				COALESCE(attr.commission_total, 0) AS commission_total,
-				COALESCE(attr.payout_total, 0) AS payout_total
+				COALESCE(attr.payout_total, 0) AS payout_total,
+				COALESCE(e.expense_total, 0) AS expense_total,
+				COALESCE(e.profit_total, 0) AS profit_total
 			FROM {$wpdb->prefix}aims_events e
 			LEFT JOIN (
 				SELECT
