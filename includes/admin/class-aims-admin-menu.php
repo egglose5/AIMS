@@ -125,6 +125,10 @@ class AIMS_Admin_Menu {
 			'success' => false,
 			'json'    => array(),
 		);
+		$history = array(
+			'success' => false,
+			'json'    => array(),
+		);
 		$availability_query = $this->get_fifo_availability_query();
 		$notice             = $this->get_notice();
 		$hot_db_health      = $this->hot_db_health_service->get_dashboard_snapshot();
@@ -132,6 +136,15 @@ class AIMS_Admin_Menu {
 
 		if ( $client->is_configured() && '' !== (string) ( $availability_query['sku'] ?? '' ) ) {
 			$availability = $client->get_fifo_availability( $availability_query );
+		}
+
+		if ( $client->is_configured() ) {
+			$history = $client->get_history(
+				array(
+					'source' => 'vault',
+					'limit'  => 5,
+				)
+			);
 		}
 
 		echo '<div class="wrap aims-headless-dashboard">';
@@ -199,6 +212,7 @@ class AIMS_Admin_Menu {
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Cold Storage</h2>';
 		$this->render_remote_archive_form();
+		$this->render_cold_storage_status( $history );
 		echo '</div>';
 
 		if ( isset( $_GET['aims_archive_result'] ) ) {
@@ -633,6 +647,51 @@ class AIMS_Admin_Menu {
 		echo '<p><strong>Generated:</strong> ' . esc_html( (string) ( $json['generated_at'] ?? 'n/a' ) ) . '</p>';
 		echo '<p><strong>Items:</strong> ' . esc_html( (string) ( $json['summary']['merged_items'] ?? 0 ) ) . '</p>';
 		echo '<pre style="max-height:320px;overflow:auto;background:#fff;padding:12px;border:1px solid #dcdcde;">' . esc_html( wp_json_encode( $json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ) . '</pre>';
+	}
+
+	private function render_cold_storage_status( array $history ): void {
+		echo '<div style="margin-top:16px;">';
+		echo '<h3>Recent Cold Archive Windows</h3>';
+
+		if ( empty( $history['success'] ) ) {
+			echo '<p><strong>Archive visibility:</strong> ' . esc_html( (string) ( $history['message'] ?? 'Archive history is not currently available from AIMS Core.' ) ) . '</p>';
+			echo '</div>';
+			return;
+		}
+
+		$json      = is_array( $history['json'] ?? null ) ? $history['json'] : array();
+		$manifests = is_array( $json['archive_manifests'] ?? null ) ? $json['archive_manifests'] : array();
+
+		if ( empty( $manifests ) ) {
+			echo '<p>No archive manifests are visible yet. Once hot rows are snapped to Parquet, the latest archive windows will show up here.</p>';
+			echo '</div>';
+			return;
+		}
+
+		echo '<table class="widefat striped" style="max-width:860px;"><thead><tr><th>Show</th><th>Window</th><th>Rows</th><th>Segments</th></tr></thead><tbody>';
+		foreach ( $manifests as $manifest ) {
+			if ( ! is_array( $manifest ) ) {
+				continue;
+			}
+
+			$show_id       = (string) ( $manifest['show_id'] ?? 'n/a' );
+			$active_from   = (string) ( $manifest['active_from'] ?? '' );
+			$active_to     = (string) ( $manifest['active_to'] ?? '' );
+			$row_count     = (int) ( $manifest['row_count'] ?? 0 );
+			$segment_count = (int) ( $manifest['segment_count'] ?? 0 );
+			$window_label  = '' !== $active_from || '' !== $active_to
+				? trim( $active_from . ' to ' . $active_to )
+				: 'Unknown range';
+
+			echo '<tr>';
+			echo '<td><strong>' . esc_html( $show_id ) . '</strong></td>';
+			echo '<td>' . esc_html( $window_label ) . '</td>';
+			echo '<td>' . esc_html( number_format( $row_count ) ) . ' row(s)</td>';
+			echo '<td>' . esc_html( number_format( $segment_count ) ) . ' segment(s)</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
+		echo '</div>';
 	}
 
 	private function render_hot_db_health( array $snapshot ): void {

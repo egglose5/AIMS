@@ -296,6 +296,24 @@ class AIMS_Responsibility_Authorization_Service {
 		return array_values( array_unique( array_filter( array_map( 'intval', $event_ids ) ) ) );
 	}
 
+	public function has_event_scope_restrictions( int $user_id = 0 ): bool {
+		$user_id = $this->resolve_user_id( $user_id );
+
+		if ( $user_id <= 0 || $this->can_view_all_events( $user_id ) ) {
+			return false;
+		}
+
+		foreach ( array( self::RESP_EVENT_PLANNING_ACCESS, self::RESP_EVENT_PLANNING_MUTATE ) as $responsibility_key ) {
+			foreach ( array( AIMS_Responsibility_Assignment_Repository::SCOPE_EVENT, AIMS_Responsibility_Assignment_Repository::SCOPE_VENDOR ) as $scope_type ) {
+				if ( ! empty( $this->get_scope_ref_ids_for_user( $user_id, $responsibility_key, $scope_type ) ) ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 	private function resolve_user_id( int $user_id ): int {
 		if ( $user_id > 0 ) {
 			return $user_id;

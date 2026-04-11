@@ -108,6 +108,12 @@ class AIMS_Headless_Api_Client {
 		) );
 	}
 
+	public function get_history( array $query = array() ): array {
+		return $this->request( 'GET', '/history', array(
+			'query' => $query,
+		) );
+	}
+
 	public function get_laser_batches( array $query = array() ): array {
 		return $this->request( 'GET', '/internal/laser/batches', array(
 			'query' => $query,

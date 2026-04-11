@@ -70,7 +70,24 @@ class AIMS_Event_Planning_Access_Service {
 			return $this->get_all_event_ids();
 		}
 
-		return is_object( $this->responsibility_auth ) ? $this->responsibility_auth->get_authorized_event_ids( $user_id ) : array();
+		if ( ! is_object( $this->responsibility_auth ) ) {
+			return array();
+		}
+
+		$event_ids = $this->responsibility_auth->get_authorized_event_ids( $user_id );
+		if ( ! empty( $event_ids ) ) {
+			return $event_ids;
+		}
+
+		$has_scope_restrictions = method_exists( $this->responsibility_auth, 'has_event_scope_restrictions' )
+			? (bool) $this->responsibility_auth->has_event_scope_restrictions( $user_id )
+			: false;
+
+		if ( ! $has_scope_restrictions && $this->responsibility_auth->can_manage_event_planning( $user_id ) ) {
+			return $this->get_all_event_ids();
+		}
+
+		return array();
 	}
 
 	public function get_authorized_events( int $user_id = 0 ): array {
@@ -81,6 +98,10 @@ class AIMS_Event_Planning_Access_Service {
 		}
 
 		if ( $this->can_view_all_events( $user_id ) ) {
+			return $this->events->all();
+		}
+
+		if ( ! $this->has_event_scope_restrictions( $user_id ) ) {
 			return $this->events->all();
 		}
 
@@ -163,6 +184,16 @@ class AIMS_Event_Planning_Access_Service {
 		}
 
 		return $contexts;
+	}
+
+	private function has_event_scope_restrictions( int $user_id ): bool {
+		if ( $user_id <= 0 || ! is_object( $this->responsibility_auth ) ) {
+			return false;
+		}
+
+		return method_exists( $this->responsibility_auth, 'has_event_scope_restrictions' )
+			? (bool) $this->responsibility_auth->has_event_scope_restrictions( $user_id )
+			: false;
 	}
 
 	private function get_all_event_ids(): array {

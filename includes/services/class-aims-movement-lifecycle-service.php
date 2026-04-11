@@ -55,6 +55,7 @@ class AIMS_Movement_Lifecycle_Service {
 			$lines = array();
 		}
 
+		$active_window = $this->calculate_active_window( $lines );
 		$payload = array(
 			'batch_uuid'      => (string) ( $batch['batch_uuid'] ?? '' ),
 			'batch_type'      => (string) ( $batch['batch_type'] ?? '' ),
@@ -63,11 +64,14 @@ class AIMS_Movement_Lifecycle_Service {
 			'movement_type'   => (string) ( $batch['movement_type'] ?? '' ),
 			'lifecycle_status'=> 'archivable',
 			'line_count'      => count( $lines ),
+			'active_from'     => $active_window['from'],
+			'active_to'       => $active_window['to'],
+			'segment_month'   => $active_window['month'],
 			'lines'           => $lines,
 		);
 
 		$payload_json = wp_json_encode( $payload );
-		$archive_key  = sanitize_key( (string) ( $batch['movement_type'] ?? 'movement' ) ) . '-' . (int) $batch_id . '-' . gmdate( 'YmdHis' );
+		$archive_key  = sanitize_key( (string) ( $batch['movement_type'] ?? 'movement' ) ) . '-' . (int) $batch_id . '-' . preg_replace( '/[^0-9]/', '', (string) $active_window['month'] ) . '-' . gmdate( 'YmdHis' );
 
 		$archive_id = $this->archives->create(
 			array(
@@ -84,6 +88,9 @@ class AIMS_Movement_Lifecycle_Service {
 					'reference_type' => $batch['reference_type'] ?? '',
 					'reference_id'   => $batch['reference_id'] ?? '',
 					'movement_type'  => $batch['movement_type'] ?? '',
+					'active_from'    => $active_window['from'],
+					'active_to'      => $active_window['to'],
+					'segment_month'  => $active_window['month'],
 				),
 				'payload_json'      => $payload,
 				'exported_at'       => current_time( 'mysql' ),
@@ -106,6 +113,43 @@ class AIMS_Movement_Lifecycle_Service {
 			'stitch_job_id' => (int) ( $data['stitch_job_id'] ?? 0 ),
 			'bucket_id'     => (int) ( $data['bucket_id'] ?? 0 ),
 			'bucket_code'   => sanitize_text_field( (string) ( $data['bucket_code'] ?? '' ) ),
+		);
+	}
+
+	private function calculate_active_window( array $lines ): array {
+		$timestamps = array();
+
+		foreach ( $lines as $line ) {
+			if ( ! is_array( $line ) ) {
+				continue;
+			}
+
+			foreach ( array( 'created_at', 'recorded_at' ) as $key ) {
+				$value = trim( (string) ( $line[ $key ] ?? '' ) );
+				if ( '' !== $value ) {
+					$timestamps[] = $value;
+					break;
+				}
+			}
+		}
+
+		if ( empty( $timestamps ) ) {
+			$now = current_time( 'mysql' );
+			return array(
+				'from'  => $now,
+				'to'    => $now,
+				'month' => substr( $now, 0, 7 ),
+			);
+		}
+
+		sort( $timestamps, SORT_STRING );
+		$from = (string) $timestamps[0];
+		$to   = (string) $timestamps[ count( $timestamps ) - 1 ];
+
+		return array(
+			'from'  => $from,
+			'to'    => $to,
+			'month' => substr( $from, 0, 7 ),
 		);
 	}
 

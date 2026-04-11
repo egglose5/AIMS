@@ -27,6 +27,13 @@ final class MovementLifecycleServiceTest extends \AIMS\Tests\TestCase {
 								'movement_id'    => 77,
 								'product_id'     => 501,
 								'quantity_delta' => '-4.0000',
+								'created_at'     => '2026-04-01 09:15:00',
+							),
+							array(
+								'movement_id'    => 78,
+								'product_id'     => 502,
+								'quantity_delta' => '1.0000',
+								'created_at'     => '2026-04-10 16:45:00',
 							),
 						)
 					),
@@ -63,7 +70,10 @@ final class MovementLifecycleServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertCount( 1, $archives->created );
 		$this->assertSame( 'local_wp', $archives->created[0]['storage_backend'] );
 		$this->assertSame( 'gzip', $archives->created[0]['compression_codec'] );
-		$this->assertSame( 1, $archives->created[0]['line_count'] );
+		$this->assertSame( 2, $archives->created[0]['line_count'] );
+		$this->assertSame( '2026-04-01 09:15:00', $archives->created[0]['manifest_json']['active_from'] );
+		$this->assertSame( '2026-04-10 16:45:00', $archives->created[0]['manifest_json']['active_to'] );
+		$this->assertSame( '2026-04', $archives->created[0]['manifest_json']['segment_month'] );
 		$this->assertSame( 42, $batches->bound[0]['batch_id'] );
 		$this->assertSame( 'archivable', $batches->bound[0]['lifecycle_status'] );
 	}

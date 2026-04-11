@@ -12,6 +12,7 @@ class AIMS_Square_Replay_Service {
 	private $normalization;
 	private $effects;
 	private $exceptions;
+	private $fulfillment;
 
 	public function __construct(
 		AIMS_Square_Raw_Event_Repository $raw_events = null,
@@ -20,15 +21,17 @@ class AIMS_Square_Replay_Service {
 		AIMS_Vendor_Sales_Attribution_Service $attribution = null,
 		AIMS_Square_Normalization_Service $normalization = null,
 		AIMS_Sync_Effect_Repository $effects = null,
-		AIMS_Square_Exception_Service $exceptions = null
+		AIMS_Square_Exception_Service $exceptions = null,
+		AIMS_Fulfillment_Service $fulfillment = null
 	) {
-		$this->raw_events      = $raw_events;
+		$this->raw_events       = $raw_events;
 		$this->normalized_sales = $normalized_sales;
-		$this->assignments     = $assignments;
-		$this->attribution     = $attribution;
-		$this->normalization   = $normalization ? $normalization : new AIMS_Square_Normalization_Service();
-		$this->effects         = $effects;
-		$this->exceptions      = $exceptions;
+		$this->assignments      = $assignments;
+		$this->attribution      = $attribution;
+		$this->normalization    = $normalization ? $normalization : new AIMS_Square_Normalization_Service();
+		$this->effects          = $effects;
+		$this->exceptions       = $exceptions;
+		$this->fulfillment      = $fulfillment;
 	}
 
 	public function replay_by_raw_event_id( int $raw_event_id, array $context = array() ): array {
@@ -85,6 +88,7 @@ class AIMS_Square_Replay_Service {
 		$normalized_rows = array();
 		$attributions    = array();
 		$effects         = array();
+		$fulfillment     = array();
 		$line_items      = (array) ( $payload['line_items'] ?? array() );
 
 		if ( empty( $line_items ) ) {
@@ -106,18 +110,24 @@ class AIMS_Square_Replay_Service {
 			);
 			$sale_record = $this->normalization->normalize_sale_record( $payload, $line_item, $analysis, $sale_context );
 
-			if ( null !== $this->normalized_sales && method_exists( $this->normalized_sales, 'save' ) ) {
-				$sale_record['normalized_sale_id'] = (int) $this->normalized_sales->save( $sale_record );
-			}
-
-			$normalized_rows[] = $sale_record;
-
 			$assignment_decision = array();
 			if ( null !== $this->assignments ) {
 				$assignment_decision = $this->assignments->resolve_sale_assignment( $sale_record, array() );
 			}
 
 			$resolved_assignment = (array) ( $assignment_decision['assignment_window']['selected_assignment'] ?? array() );
+			if ( ! empty( $resolved_assignment ) ) {
+				$sale_context['vendor_id'] = (int) ( $resolved_assignment['vendor_id'] ?? $sale_context['vendor_id'] ?? 0 );
+				$sale_context['event_id']  = (int) ( $resolved_assignment['event_id'] ?? $sale_context['event_id'] ?? 0 );
+				$sale_record               = $this->normalization->normalize_sale_record( $payload, $line_item, $analysis, $sale_context );
+			}
+
+			if ( null !== $this->normalized_sales && method_exists( $this->normalized_sales, 'save' ) ) {
+				$sale_record['normalized_sale_id'] = (int) $this->normalized_sales->save( $sale_record );
+			}
+
+			$normalized_rows[] = $sale_record;
+
 			$attribution_record = null !== $this->attribution
 				? $this->attribution->attribute_sale( $sale_record, $resolved_assignment, array_merge( $context, array( 'raw_event_id' => (int) ( $raw_event['id'] ?? 0 ) ) ) )
 				: array();
@@ -126,7 +136,12 @@ class AIMS_Square_Replay_Service {
 				$attributions[] = $attribution_record;
 			}
 
-			$effect_record = $this->build_effect_record( $raw_event, $sale_record, $attribution_record, $context );
+			$fulfillment_records = $this->create_fulfillment_allocations_for_sale( $sale_record, $payload, $line_item, $analysis, $sale_context );
+			if ( ! empty( $fulfillment_records ) ) {
+				$fulfillment = array_merge( $fulfillment, $fulfillment_records );
+			}
+
+			$effect_record = $this->build_effect_record( $raw_event, $sale_record, $attribution_record, $fulfillment_records, $context );
 
 			if ( null !== $this->effects && method_exists( $this->effects, 'save' ) ) {
 				$effect_record['id'] = (int) $this->effects->save( $effect_record );
@@ -141,6 +156,7 @@ class AIMS_Square_Replay_Service {
 			'analysis'        => $analysis,
 			'normalized_rows' => $normalized_rows,
 			'attributions'    => $attributions,
+			'fulfillment'     => $fulfillment,
 			'effects'         => $effects,
 		);
 	}
@@ -179,7 +195,7 @@ class AIMS_Square_Replay_Service {
 		return is_array( $payload ) ? $payload : array();
 	}
 
-	private function build_effect_record( array $raw_event, array $sale_record, array $attribution_record, array $context ): array {
+	private function build_effect_record( array $raw_event, array $sale_record, array $attribution_record, array $fulfillment_records, array $context ): array {
 		return array(
 			'sync_run_id'        => (int) ( $context['sync_run_id'] ?? 0 ),
 			'sync_action_id'     => (int) ( $context['sync_action_id'] ?? 0 ),
@@ -194,10 +210,50 @@ class AIMS_Square_Replay_Service {
 					'raw_event_id' => (int) ( $raw_event['id'] ?? 0 ),
 					'sale_id'      => (int) ( $sale_record['normalized_sale_id'] ?? 0 ),
 					'attribution'  => $attribution_record,
+					'fulfillment'  => $fulfillment_records,
 				)
 			),
 			'created_at'         => current_time( 'mysql' ),
 			'updated_at'         => current_time( 'mysql' ),
 		);
+	}
+
+	private function create_fulfillment_allocations_for_sale(
+		array $sale_record,
+		array $payload,
+		array $line_item,
+		array $analysis,
+		array $line_context
+	): array {
+		if ( null === $this->fulfillment ) {
+			return array();
+		}
+
+		$created = array();
+
+		foreach ( $this->normalization->prepare_fulfillment_allocation_inputs(
+			$line_item,
+			(array) ( $analysis['shipping_marker'] ?? array() ),
+			(array) ( $analysis['validation'] ?? array() ),
+			$line_context
+		) as $allocation_data ) {
+			$allocation_data['square_sale_id']  = (int) ( $sale_record['normalized_sale_id'] ?? 0 );
+			$allocation_data['square_order_id'] = (string) ( $payload['id'] ?? $sale_record['square_order_id'] ?? '' );
+			$allocation_id                      = (int) $this->fulfillment->create_allocation( $allocation_data );
+
+			$created[] = array(
+				'allocation_id'     => $allocation_id,
+				'square_sale_id'    => (int) ( $allocation_data['square_sale_id'] ?? 0 ),
+				'square_order_id'   => (string) ( $allocation_data['square_order_id'] ?? '' ),
+				'product_id'        => (int) ( $allocation_data['product_id'] ?? 0 ),
+				'vendor_id'         => (int) ( $allocation_data['vendor_id'] ?? 0 ),
+				'event_id'          => (int) ( $allocation_data['event_id'] ?? 0 ),
+				'allocation_type'   => (string) ( $allocation_data['allocation_type'] ?? '' ),
+				'allocation_status' => (string) ( $allocation_data['allocation_status'] ?? '' ),
+				'quantity'          => (float) ( $allocation_data['quantity'] ?? 0 ),
+			);
+		}
+
+		return $created;
 	}
 }

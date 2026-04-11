@@ -33,6 +33,47 @@ See `docs/ames-binary-stream-spec.md` for the packet layout, validation rules, i
 
 The current standalone `ames-core` build should be treated as an `IONOS-style` or filesystem-capable shared-host deployment profile, not as a universally safe profile for every WordPress host. It currently assumes writable local directories, standalone PHP routing, and host support for the storage/runtime path used by the headless core. See `docs/headless-deployment-profiles.md` for the portability boundary and planned fork point.
 
+## Manual Install (Current Recommended Path)
+
+Use this path for a first manual install on the current filesystem-capable shared-host profile.
+
+1. **Confirm the host fits the current profile**
+   - WordPress `6.0+`
+   - PHP `7.4+`
+   - writable directories for `ames-core/sink`, `ames-core/vault`, `ames-core/logs`, and `ames-core/config`
+   - `pdo_sqlite` available for the active headless storage path
+   - ability to expose `ames-core/index.php` at a stable URL or subpath
+2. **Back up before touching production**
+   - export the database
+   - snapshot the current `wp-content/plugins/ai-man-sys` directory if it already exists
+   - prefer staging first
+3. **Upload the plugin manually**
+   - copy this plugin into `wp-content/plugins/ai-man-sys`
+   - keep the bundled `vendor/` directory with it
+   - do not activate until the headless side is reachable
+4. **Deploy the headless `ames-core` directory**
+   - place `ames-core/` in a filesystem-capable location reachable over HTTP, for example `https://example.com/ames-core/`
+   - ensure `sink/`, `vault/`, `logs/`, and `config/` are writable by PHP
+   - make sure the host honors the included `.htaccess` and/or `web.config` protections where applicable
+5. **Configure the headless environment**
+   - copy or mirror `ames-core/.env.example`
+   - set a strong `AIMS_SHARED_SECRET`
+   - set `AIMS_ARCHIVE_SECRET` (it may match the shared secret if you do not want a separate archive secret)
+   - set `AIMS_ENCRYPTION_KEY`
+   - optionally set `AIMS_SINK_PATH`, `AIMS_VAULT_PATH`, `AIMS_CONFIG_PATH`, `AIMS_LOG_PATH`, `AIMS_SQLITE_PATH`, `AIMS_WOO_URL`, and Square values for your environment
+6. **Activate and connect WordPress**
+   - activate the `AIMS` plugin in wp-admin
+   - open `AIMS > Settings`
+   - set **AIMS API URL** to the base URL for your deployed `ames-core`
+   - set **AIMS Token** to the same value as `AIMS_SHARED_SECRET`
+7. **Run a first connection check**
+   - open `AIMS > Dashboard`
+   - confirm **Core Status** loads without a connection error
+   - confirm the **Hot Data Pressure** card renders
+   - only then try a safe manual action such as the archive request or a test movement in a non-production environment
+
+For rollout, rollback, and post-install checks, follow `docs/upgrade-path.md`.
+
 ## Current build status
 
 The repository currently provides:

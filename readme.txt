@@ -32,8 +32,18 @@ Current architecture note: WordPress is the default control console, but the lon
 
 == Installation ==
 
-1. Upload the plugin folder to `/wp-content/plugins/`.
-2. Activate the plugin through the "Plugins" menu in WordPress.
+Manual install for the current filesystem-capable profile:
+
+1. Confirm the host supports WordPress 6.0+, PHP 7.4+, writable local directories, and `pdo_sqlite` for the active headless path.
+2. Back up the database and the existing `wp-content/plugins/ai-man-sys` directory before changing a live site.
+3. Upload this plugin to `/wp-content/plugins/ai-man-sys/`, including the bundled `vendor/` directory.
+4. Deploy the `ames-core/` directory to a stable URL or subpath such as `https://example.com/ames-core/` and ensure `sink/`, `vault/`, `logs/`, and `config/` are writable by PHP.
+5. Copy or mirror `ames-core/.env.example` and set at least `AIMS_SHARED_SECRET`, `AIMS_ARCHIVE_SECRET`, and `AIMS_ENCRYPTION_KEY`.
+6. Activate the plugin through the "Plugins" menu in WordPress.
+7. Open `AIMS > Settings`, set **AIMS API URL** to the deployed `ames-core` base URL, and set **AIMS Token** to the same value as `AIMS_SHARED_SECRET`.
+8. Open `AIMS > Dashboard` and confirm the core status card loads before using live operational actions.
+
+For rollout, rollback, and post-install verification, follow `docs/upgrade-path.md`.
 
 == Changelog ==
 

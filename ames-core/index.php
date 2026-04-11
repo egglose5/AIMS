@@ -333,8 +333,11 @@ try {
 		$showId   = trim( (string) ( $query['show_id'] ?? '' ) );
 		$source   = strtolower( trim( (string) ( $query['source'] ?? 'all' ) ) );
 		$limit    = max( 1, min( 2000, (int) ( $query['limit'] ?? 500 ) ) );
+		$from     = trim( (string) ( $query['from'] ?? $query['from_timestamp'] ?? '' ) );
+		$to       = trim( (string) ( $query['to'] ?? $query['to_timestamp'] ?? '' ) );
 		$warnings = array();
 		$rows     = array();
+		$archiveManifests = array();
 
 		if ( 'all' === $source || 'hot' === $source ) {
 			$rows = array_merge( $rows, $ledger->movementHistory( $showId, $limit ) );
@@ -342,10 +345,30 @@ try {
 
 		if ( 'all' === $source || 'vault' === $source ) {
 			try {
-				foreach ( $history->readVault( $config->vaultPath(), $showId ) as $row ) {
-					$rows[] = $row;
-					if ( count( $rows ) >= $limit ) {
-						break;
+				$archiveManifests = $history->listManifests(
+					$config->vaultPath(),
+					$showId,
+					array(
+						'from' => $from,
+						'to'   => $to,
+					)
+				);
+
+				$remainingLimit = max( 0, $limit - count( $rows ) );
+				if ( $remainingLimit > 0 ) {
+					foreach ( $history->readVault(
+						$config->vaultPath(),
+						$showId,
+						array(
+							'from'  => $from,
+							'to'    => $to,
+							'limit' => $remainingLimit,
+						)
+					) as $row ) {
+						$rows[] = $row;
+						if ( count( $rows ) >= $limit ) {
+							break;
+						}
 					}
 				}
 			} catch ( Throwable $exception ) {
@@ -355,10 +378,13 @@ try {
 
 		stream_json_rows(
 			array(
-				'ok'       => true,
-				'show_id'  => '' !== $showId ? $showId : null,
-				'source'   => $source,
-				'warnings' => $warnings,
+				'ok'                => true,
+				'show_id'           => '' !== $showId ? $showId : null,
+				'source'            => $source,
+				'from'              => '' !== $from ? $from : null,
+				'to'                => '' !== $to ? $to : null,
+				'archive_manifests' => $archiveManifests,
+				'warnings'          => $warnings,
 			),
 			$rows
 		);

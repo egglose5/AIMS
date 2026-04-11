@@ -223,6 +223,48 @@ final class EventPlanningAdminMenuTest extends \AIMS\Tests\TestCase {
 		$this->assertStringContainsString( 'Red at 250,000 and above', $output );
 	}
 
+	public function testRenderDashboardShowsRecentColdStorageSummary(): void {
+		TestState::set_current_user_id( 89 );
+		TestState::set_user_capabilities( 89, array( \AIMS_Capabilities::CAP_MANAGE ) );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_URL, 'https://aims-core.test' );
+		TestState::update_option( \AIMS_Plugin::OPTION_API_TOKEN, 'secret-token' );
+		TestState::set_remote_response(
+			array(
+				'code' => 200,
+				'body' => wp_json_encode(
+					array(
+						'manifest_uuid' => 'manifest-archive',
+						'generated_at'  => '2026-04-11T12:00:00Z',
+						'summary'       => array(
+							'merged_items' => 5,
+						),
+						'buckets'       => array(),
+						'archive_manifests' => array(
+							array(
+								'show_id'       => 'SHOW-42',
+								'row_count'     => 12,
+								'segment_count' => 2,
+								'active_from'   => '2026-04-01T09:15:00Z',
+								'active_to'     => '2026-04-10T16:45:00Z',
+							),
+						),
+					)
+				),
+			)
+		);
+
+		$menu = new \AIMS_Admin_Menu( null, new \AIMS_Audit_Log_Service( sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-dashboard-cold-' . uniqid( '', true ) ) );
+
+		ob_start();
+		$menu->render_dashboard();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Recent Cold Archive Windows', $output );
+		$this->assertStringContainsString( 'SHOW-42', $output );
+		$this->assertStringContainsString( '2026-04-01T09:15:00Z to 2026-04-10T16:45:00Z', $output );
+		$this->assertStringContainsString( '2 segment(s)', $output );
+	}
+
 	public function testHandleSyncRemoteManifestBlocksDuringLiveEventWindow(): void {
 		TestState::set_current_user_id( 91 );
 		TestState::set_user_capabilities( 91, array( \AIMS_Capabilities::CAP_MANAGE ) );

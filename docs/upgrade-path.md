@@ -23,6 +23,17 @@ The current headless `ames-core` path should be treated as an `IONOS-style` or f
 4. Stage the upgrade in a non-production environment first.
 5. Confirm scheduler/cron is healthy before running sync-related workflows.
 
+## First-Time Manual Install
+
+If this is a first manual install rather than an upgrade, use the current filesystem-capable shared-host path:
+
+1. Upload the plugin to `wp-content/plugins/ai-man-sys`.
+2. Deploy `ames-core/` to a reachable URL or subpath and ensure `sink/`, `vault/`, `logs/`, and `config/` are writable.
+3. Copy or mirror `ames-core/.env.example` and set `AIMS_SHARED_SECRET`, `AIMS_ARCHIVE_SECRET`, and `AIMS_ENCRYPTION_KEY` before activation.
+4. Activate the plugin in wp-admin.
+5. Open `AIMS > Settings` and point the plugin at the deployed headless URL, using the same shared secret as the `AIMS Token` value.
+6. Open `AIMS > Dashboard` and verify the core connection before any live movement, sync, or archive action.
+
 ## Upgrade Steps
 
 1. Put the site in maintenance mode.
