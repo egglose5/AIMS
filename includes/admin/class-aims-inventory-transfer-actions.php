@@ -37,32 +37,52 @@ class AIMS_Inventory_Transfer_Actions {
 
 		check_admin_referer( self::ACTION_CREATE_DRAFT, self::NONCE_CREATE_DRAFT );
 
-		$source_selection = $this->parse_endpoint_selection( sanitize_text_field( $_POST['source_endpoint_selection'] ?? '' ) );
-		$target_selection = $this->parse_endpoint_selection( sanitize_text_field( $_POST['target_endpoint_selection'] ?? '' ) );
-		$source_node_id = (int) ( $source_selection['node_id'] ?? ( $_POST['source_node_id'] ?? ( $_POST['source_vendor_id'] ?? 0 ) ) );
-		$target_node_id = (int) ( $target_selection['node_id'] ?? ( $_POST['target_node_id'] ?? ( $_POST['target_vendor_id'] ?? 0 ) ) );
-		$transfer_type   = sanitize_text_field( $_POST['transfer_type'] ?? 'standard' );
+		$source_selection = $this->resolve_posted_endpoint_selection( 'source_endpoint_selection', 'source_node_type', 'source_node_id', 'source_vendor_id', 'vendor' );
+		$target_selection = $this->resolve_posted_endpoint_selection( 'target_endpoint_selection', 'target_node_type', 'target_node_id', 'target_vendor_id', 'vendor' );
+		$source_node_id   = (int) ( $source_selection['node_id'] ?? 0 );
+		$target_node_id   = (int) ( $target_selection['node_id'] ?? 0 );
+		$source_node_type = sanitize_key( (string) ( $source_selection['node_type'] ?? '' ) );
+		$target_node_type = sanitize_key( (string) ( $target_selection['node_type'] ?? '' ) );
+		$transfer_type    = sanitize_key( (string) ( $_POST['transfer_type'] ?? 'standard' ) );
 
-		if ( $source_node_id > 0 && $target_node_id > 0 && '' !== (string) ( $source_selection['node_type'] ?? '' ) && '' !== (string) ( $target_selection['node_type'] ?? '' ) ) {
-			if ( ! $this->authorization->can_manage_transfer_nodes( get_current_user_id(), (string) $source_selection['node_type'], $source_node_id, (string) $target_selection['node_type'], $target_node_id, $transfer_type ) ) {
-				wp_die( esc_html__( 'You do not have custody access to one or more selected transfer nodes.', 'ai-man-sys' ) );
-			}
+		if ( ! empty( $source_selection['invalid'] ) ) {
+			wp_die( esc_html__( 'Invalid source endpoint selection. Choose a valid custody endpoint.', 'ai-man-sys' ) );
+		}
+
+		if ( ! empty( $target_selection['invalid'] ) ) {
+			wp_die( esc_html__( 'Invalid target endpoint selection. Choose a valid custody endpoint.', 'ai-man-sys' ) );
+		}
+
+		if ( $source_node_id <= 0 || $target_node_id <= 0 ) {
+			wp_die( esc_html__( 'Both source and target endpoints are required.', 'ai-man-sys' ) );
+		}
+
+		if ( '' === $source_node_type || '' === $target_node_type ) {
+			wp_die( esc_html__( 'The selected transfer route could not be resolved to custody endpoints.', 'ai-man-sys' ) );
+		}
+
+		if ( $source_node_id === $target_node_id && $source_node_type === $target_node_type ) {
+			wp_die( esc_html__( 'Source and target endpoints must be different.', 'ai-man-sys' ) );
+		}
+
+		if ( ! $this->authorization->can_manage_transfer_nodes( get_current_user_id(), $source_node_type, $source_node_id, $target_node_type, $target_node_id, $transfer_type ) ) {
+			wp_die( esc_html__( 'You do not have custody access to one or more selected transfer nodes.', 'ai-man-sys' ) );
 		}
 
 		$result = $this->service->create_draft(
 			$source_node_id,
 			$target_node_id,
 			array(
-				'source_node_type' => sanitize_key( (string) ( $source_selection['node_type'] ?? ( $_POST['source_node_type'] ?? 'vendor' ) ) ),
-				'target_node_type' => sanitize_key( (string) ( $target_selection['node_type'] ?? ( $_POST['target_node_type'] ?? 'vendor' ) ) ),
+				'source_node_type' => $source_node_type,
+				'target_node_type' => $target_node_type,
 				'transfer_type'    => $transfer_type,
 				'override_route'   => ! empty( $_POST['override_route'] ),
-				'override_reason'  => isset( $_POST['override_reason'] ) ? sanitize_textarea_field( $_POST['override_reason'] ) : null,
-				'route_guidance'   => isset( $_POST['route_guidance'] ) ? sanitize_text_field( $_POST['route_guidance'] ) : null,
+				'override_reason'  => isset( $_POST['override_reason'] ) ? sanitize_textarea_field( wp_unslash( $_POST['override_reason'] ) ) : null,
+				'route_guidance'   => $this->resolve_route_guidance( $source_selection, $target_selection ),
 				'initiated_by'     => get_current_user_id(),
-				'reference_type'   => sanitize_key( $_POST['reference_type'] ?? '' ),
-				'reference_id'     => sanitize_text_field( $_POST['reference_id'] ?? '' ),
-				'notes'            => isset( $_POST['notes'] ) ? sanitize_textarea_field( $_POST['notes'] ) : null,
+				'reference_type'   => sanitize_key( (string) ( $_POST['reference_type'] ?? '' ) ),
+				'reference_id'     => sanitize_text_field( wp_unslash( $_POST['reference_id'] ?? '' ) ),
+				'notes'            => isset( $_POST['notes'] ) ? sanitize_textarea_field( wp_unslash( $_POST['notes'] ) ) : null,
 			)
 		);
 
@@ -187,6 +207,48 @@ class AIMS_Inventory_Transfer_Actions {
 		exit;
 	}
 
+	private function resolve_posted_endpoint_selection( string $selection_field, string $fallback_type_field, string $fallback_id_field, string $legacy_id_field = '', string $default_node_type = 'vendor' ): array {
+		$raw_selection = isset( $_POST[ $selection_field ] ) ? sanitize_text_field( wp_unslash( $_POST[ $selection_field ] ) ) : '';
+		$selection     = $this->parse_endpoint_selection( $raw_selection );
+		$invalid       = '' !== $raw_selection && empty( $selection );
+
+		$node_type = sanitize_key( (string) ( $selection['node_type'] ?? ( $_POST[ $fallback_type_field ] ?? $default_node_type ) ) );
+		$node_id   = (int) ( $selection['node_id'] ?? ( $_POST[ $fallback_id_field ] ?? ( '' !== $legacy_id_field ? ( $_POST[ $legacy_id_field ] ?? 0 ) : 0 ) ) );
+
+		return array(
+			'node_type' => $node_type,
+			'node_id'   => max( 0, $node_id ),
+			'invalid'   => $invalid || $node_id <= 0,
+		);
+	}
+
+	private function resolve_route_guidance( array $source_selection, array $target_selection ): ?string {
+		$posted_guidance = isset( $_POST['route_guidance'] ) ? sanitize_text_field( wp_unslash( $_POST['route_guidance'] ) ) : '';
+		if ( '' !== $posted_guidance ) {
+			return $posted_guidance;
+		}
+
+		$source_label = $this->format_endpoint_audit_label( (string) ( $source_selection['node_type'] ?? '' ), (int) ( $source_selection['node_id'] ?? 0 ) );
+		$target_label = $this->format_endpoint_audit_label( (string) ( $target_selection['node_type'] ?? '' ), (int) ( $target_selection['node_id'] ?? 0 ) );
+
+		if ( '' === $source_label || '' === $target_label ) {
+			return null;
+		}
+
+		return sprintf( '%s -> %s', $source_label, $target_label );
+	}
+
+	private function format_endpoint_audit_label( string $node_type, int $node_id ): string {
+		$node_type = sanitize_key( $node_type );
+		$node_id   = max( 0, $node_id );
+
+		if ( '' === $node_type || $node_id <= 0 ) {
+			return '';
+		}
+
+		return sprintf( '%s #%d', ucwords( str_replace( '_', ' ', $node_type ) ), $node_id );
+	}
+
 	private function parse_endpoint_selection( string $selection ): array {
 		$selection = trim( $selection );
 		if ( '' === $selection || false === strpos( $selection, ':' ) ) {
@@ -194,10 +256,16 @@ class AIMS_Inventory_Transfer_Actions {
 		}
 
 		list( $node_type, $node_id ) = array_pad( explode( ':', $selection, 2 ), 2, '' );
+		$node_type = sanitize_key( $node_type );
+		$node_id   = max( 0, (int) $node_id );
+
+		if ( '' === $node_type || $node_id <= 0 ) {
+			return array();
+		}
 
 		return array(
-			'node_type' => sanitize_key( $node_type ),
-			'node_id'   => max( 0, (int) $node_id ),
+			'node_type' => $node_type,
+			'node_id'   => $node_id,
 		);
 	}
 }

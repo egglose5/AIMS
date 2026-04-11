@@ -99,26 +99,17 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 	}
 
 	public function can_manage_transfer_nodes( int $user_id = 0, string $source_node_type = '', int $source_node_id = 0, string $target_node_type = '', int $target_node_id = 0, string $transfer_type = self::TRANSFER_TYPE_STANDARD ): bool {
-		$user_id          = $this->resolve_user_id( $user_id );
-		$source_node_type = sanitize_key( $source_node_type );
-		$target_node_type = sanitize_key( $target_node_type );
-		$source_node_id   = (int) $source_node_id;
-		$target_node_id   = (int) $target_node_id;
-		$transfer_type    = $this->normalize_transfer_type( $transfer_type );
+		return $this->can_manage_transfer_route( $user_id, $source_node_type, $source_node_id, $target_node_type, $target_node_id, $transfer_type, self::NODE_CONTEXT_CREATE );
+	}
 
-		if ( ! $this->can_manage_inventory_transfers( $user_id ) ) {
-			return false;
-		}
+	public function can_dispatch_transfer( int $user_id = 0, string $source_node_type = '', int $source_node_id = 0, string $target_node_type = '', int $target_node_id = 0, string $transfer_type = self::TRANSFER_TYPE_STANDARD ): bool {
+		return $this->can_manage_transfer_route( $user_id, $source_node_type, $source_node_id, $target_node_type, $target_node_id, $transfer_type, self::NODE_CONTEXT_DISPATCH )
+			|| $this->can_manage_transfer_nodes( $user_id, $source_node_type, $source_node_id, $target_node_type, $target_node_id, $transfer_type );
+	}
 
-		if ( ! $this->can_act_on_custody_node( $user_id, $source_node_type, $source_node_id, self::NODE_CONTEXT_CREATE ) ) {
-			return false;
-		}
-
-		if ( ! $this->can_act_on_custody_node( $user_id, $target_node_type, $target_node_id, self::NODE_CONTEXT_CREATE ) ) {
-			return false;
-		}
-
-		return true;
+	public function can_confirm_transfer_receipt( int $user_id = 0, string $source_node_type = '', int $source_node_id = 0, string $target_node_type = '', int $target_node_id = 0, string $transfer_type = self::TRANSFER_TYPE_STANDARD ): bool {
+		return $this->can_manage_transfer_route( $user_id, $source_node_type, $source_node_id, $target_node_type, $target_node_id, $transfer_type, self::NODE_CONTEXT_RECEIPT )
+			|| $this->can_manage_transfer_nodes( $user_id, $source_node_type, $source_node_id, $target_node_type, $target_node_id, $transfer_type );
 	}
 
 	public function is_exceptional_transfer_type( string $transfer_type ): bool {
@@ -146,6 +137,39 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 		);
 
 		return in_array( $transfer_type, $allowed, true ) ? $transfer_type : self::TRANSFER_TYPE_STANDARD;
+	}
+
+	private function can_manage_transfer_route( int $user_id, string $source_node_type, int $source_node_id, string $target_node_type, int $target_node_id, string $transfer_type, string $context ): bool {
+		$user_id          = $this->resolve_user_id( $user_id );
+		$source_node_type = sanitize_key( $source_node_type );
+		$target_node_type = sanitize_key( $target_node_type );
+		$source_node_id   = (int) $source_node_id;
+		$target_node_id   = (int) $target_node_id;
+		$transfer_type    = $this->normalize_transfer_type( $transfer_type );
+		$context          = sanitize_key( $context );
+
+		if ( ! $this->can_manage_inventory_transfers( $user_id ) ) {
+			return false;
+		}
+
+		if ( ! $this->has_valid_node_reference( $source_node_type, $source_node_id ) || ! $this->has_valid_node_reference( $target_node_type, $target_node_id ) ) {
+			return false;
+		}
+
+		if ( self::NODE_CONTEXT_DISPATCH === $context ) {
+			return $this->can_act_on_custody_node( $user_id, $source_node_type, $source_node_id, self::NODE_CONTEXT_DISPATCH );
+		}
+
+		if ( self::NODE_CONTEXT_RECEIPT === $context ) {
+			return $this->can_act_on_custody_node( $user_id, $target_node_type, $target_node_id, self::NODE_CONTEXT_RECEIPT );
+		}
+
+		return $this->can_act_on_custody_node( $user_id, $source_node_type, $source_node_id, self::NODE_CONTEXT_CREATE )
+			&& $this->can_act_on_custody_node( $user_id, $target_node_type, $target_node_id, self::NODE_CONTEXT_CREATE );
+	}
+
+	private function has_valid_node_reference( string $node_type, int $node_id ): bool {
+		return '' !== sanitize_key( $node_type ) && $node_id > 0;
 	}
 
 	private function resolve_user_id( int $user_id ): int {

@@ -46,6 +46,7 @@ class AIMS_Event_Planning_Workspace_Page {
 		$this->render_workspace_summary_panel( (array) ( $workspace['summary'] ?? array() ) );
 		$this->render_team_activity_panel( (array) ( $workspace['team_activity'] ?? array() ) );
 		$this->render_assignment_timeline_panel( (array) ( $workspace['assignment_timeline'] ?? array() ) );
+		$this->render_execution_exceptions_panel( (array) ( $workspace['execution_exceptions'] ?? array() ), (array) ( $workspace['summary'] ?? array() ) );
 		$this->render_demand_panel( (array) ( $workspace['demand_rows'] ?? array() ) );
 		$this->render_assigned_buckets_panel( $selected_event_id, (array) ( $workspace['assigned_buckets'] ?? array() ), $team_context, $filter_state );
 		$this->render_available_buckets_panel( $selected_event_id, (array) ( $workspace['available_buckets'] ?? array() ), $team_context, $filter_state );
@@ -217,6 +218,18 @@ class AIMS_Event_Planning_Workspace_Page {
 				'label' => 'Pool Available Qty',
 				'value' => $this->format_quantity( (float) ( $summary['available_pool_quantity'] ?? 0 ) ),
 			),
+			array(
+				'label' => 'Execution Exceptions',
+				'value' => (string) (int) ( $summary['execution_exception_count'] ?? 0 ),
+			),
+			array(
+				'label' => 'Check-In Alerts',
+				'value' => (string) (int) ( $summary['checkin_exception_count'] ?? 0 ),
+			),
+			array(
+				'label' => 'Return Anomalies',
+				'value' => (string) (int) ( $summary['return_anomaly_count'] ?? 0 ),
+			),
 		);
 
 		echo '<h2>Planning Summary</h2>';
@@ -307,6 +320,51 @@ class AIMS_Event_Planning_Workspace_Page {
 			echo '<td>' . esc_html( (string) ( $row['assigned_by_label'] ?? '' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->format_quantity( (float) ( $row['age_hours'] ?? 0 ) ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $row['age_band'] ?? '' ) ) . '</td>';
+			echo '</tr>';
+		}
+
+		echo '</tbody></table>';
+	}
+
+	private function render_execution_exceptions_panel( array $rows, array $summary = array() ): void {
+		echo '<h2>Execution Exceptions</h2>';
+
+		$count = (int) ( $summary['execution_exception_count'] ?? count( $rows ) );
+		if ( $count <= 0 || empty( $rows ) ) {
+			echo '<div class="notice notice-info inline"><p>No pending check-in failures or return anomalies are currently visible for this event.</p></div>';
+			return;
+		}
+
+		echo '<p>These alerts are visibility-only and help operators intervene before planning or reconciliation drift gets buried.</p>';
+		echo '<table class="widefat fixed striped">';
+		echo '<thead><tr>';
+		echo '<th>Severity</th>';
+		echo '<th>Type</th>';
+		echo '<th>Bucket</th>';
+		echo '<th>Status</th>';
+		echo '<th>Details</th>';
+		echo '<th>Occurred</th>';
+		echo '</tr></thead>';
+		echo '<tbody>';
+
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$notes = trim( (string) ( $row['notes'] ?? '' ) );
+			$details = (string) ( $row['message'] ?? '' );
+			if ( '' !== $notes && false === strpos( $details, $notes ) ) {
+				$details .= ' Notes: ' . $notes;
+			}
+
+			echo '<tr>';
+			echo '<td><strong>' . esc_html( ucfirst( (string) ( $row['severity'] ?? 'info' ) ) ) . '</strong></td>';
+			echo '<td>' . esc_html( (string) ( $row['title'] ?? ucfirst( str_replace( '_', ' ', (string) ( $row['exception_type'] ?? '' ) ) ) ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['bucket_label'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( ucfirst( str_replace( '_', ' ', (string) ( $row['status'] ?? '' ) ) ) ) . '</td>';
+			echo '<td>' . esc_html( trim( $details ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['occurred_at'] ?? '' ) ) . '</td>';
 			echo '</tr>';
 		}
 

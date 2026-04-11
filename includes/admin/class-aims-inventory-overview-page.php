@@ -158,12 +158,17 @@ class AIMS_Inventory_Overview_Page {
 		$endpoints    = (array) $this->data_provider->get_runtime_endpoint_directory();
 		$can_override = ! empty( $route_model['can_override_route'] );
 		$current_key  = (string) ( $operator['endpoint_key'] ?? '' );
+		$route_guidance = trim( implode( ' | ', array_filter( array(
+			(string) ( $route_model['suggested_route_label'] ?? '' ),
+			(string) ( $route_model['suggested_route_note'] ?? '' ),
+		) ) ) );
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?action=aims_inventory_transfer_create_draft' ) ); ?>" style="background:#f5f5f5;padding:16px;border:1px solid #ddd;border-radius:4px;max-width:920px;">
 			<?php wp_nonce_field( 'aims_inventory_transfer_create_draft', '_aims_inventory_transfer_create_draft_nonce' ); ?>
 			<input type="hidden" name="transfer_context" value="<?php echo esc_attr( $context ); ?>" />
 			<input type="hidden" name="source_node_type" value="<?php echo esc_attr( (string) ( $operator['node_type'] ?? 'vendor' ) ); ?>" />
 			<input type="hidden" name="source_node_id" value="<?php echo esc_attr( (string) ( $operator['node_id'] ?? 0 ) ); ?>" />
+			<input type="hidden" name="route_guidance" value="<?php echo esc_attr( $route_guidance ); ?>" />
 			<table class="form-table">
 				<tbody>
 					<tr>

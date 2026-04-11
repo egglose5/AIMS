@@ -15,6 +15,7 @@ class AIMS_Event_Planning_Workspace_Service {
 	private $access_service;
 	private $bucket_availability_service;
 	private $event_bucket_materials;
+	private $vendor_event_checkins;
 	private $event_context_map = array();
 
 	public function __construct(
@@ -27,7 +28,8 @@ class AIMS_Event_Planning_Workspace_Service {
 		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
 		$access_service = null,
 		$bucket_availability_service = null,
-		AIMS_Event_Bucket_Material_Repository $event_bucket_materials = null
+		AIMS_Event_Bucket_Material_Repository $event_bucket_materials = null,
+		AIMS_Vendor_Event_Checkin_Repository $vendor_event_checkins = null
 	) {
 		$this->events                    = $events ?: new AIMS_Event_Repository();
 		$this->demand_planning           = $demand_planning ?: new AIMS_Event_Demand_Planning_Service( new AIMS_Event_Customer_Request_Item_Repository() );
@@ -39,6 +41,7 @@ class AIMS_Event_Planning_Workspace_Service {
 		$this->access_service            = $access_service ?: ( class_exists( 'AIMS_Event_Planning_Access_Service' ) ? new AIMS_Event_Planning_Access_Service() : null );
 		$this->bucket_availability_service = $bucket_availability_service;
 		$this->event_bucket_materials    = $event_bucket_materials ?: new AIMS_Event_Bucket_Material_Repository();
+		$this->vendor_event_checkins     = $vendor_event_checkins ?: ( class_exists( 'AIMS_Vendor_Event_Checkin_Repository' ) ? new AIMS_Vendor_Event_Checkin_Repository() : null );
 	}
 
 	public function get_page_model( array $request = array() ): array {
@@ -139,7 +142,8 @@ class AIMS_Event_Planning_Workspace_Service {
 		$assigned      = $this->filter_assigned_rows_by_planner( $assigned, (int) ( $filter_state['planner_user_id'] ?? 0 ) );
 		$assigned      = $this->filter_bucket_rows_by_search( $assigned, (string) ( $filter_state['bucket_search'] ?? '' ) );
 		$available     = $this->filter_bucket_rows_by_search( $available, (string) ( $filter_state['bucket_search'] ?? '' ) );
-		$summary       = $this->build_workspace_summary( $demand_rows, $assigned, $available );
+		$execution_exceptions = $this->build_execution_exception_rows( $event_id, $assigned );
+		$summary       = $this->build_workspace_summary( $demand_rows, $assigned, $available, $execution_exceptions );
 		$team_activity = $this->build_team_activity_rows( $assigned );
 		$timeline_rows = $this->build_assignment_timeline_rows( $assigned );
 
@@ -152,10 +156,11 @@ class AIMS_Event_Planning_Workspace_Service {
 			'summary'         => $summary,
 			'team_activity'   => $team_activity,
 			'assignment_timeline' => $timeline_rows,
+			'execution_exceptions' => $execution_exceptions,
 		);
 	}
 
-	private function build_workspace_summary( array $demand_rows, array $assigned_rows, array $available_rows ): array {
+	private function build_workspace_summary( array $demand_rows, array $assigned_rows, array $available_rows, array $execution_exceptions = array() ): array {
 		$requested_quantity = 0.0;
 		$open_quantity      = 0.0;
 		$assigned_available = 0.0;
@@ -164,6 +169,8 @@ class AIMS_Event_Planning_Workspace_Service {
 		$at_event_count        = 0;
 		$staged_over_24h_count = 0;
 		$open_over_8h_count    = 0;
+		$checkin_exception_count = 0;
+		$return_anomaly_count    = 0;
 
 		foreach ( $demand_rows as $demand_row ) {
 			if ( ! is_array( $demand_row ) ) {
@@ -209,6 +216,21 @@ class AIMS_Event_Planning_Workspace_Service {
 			$available_pool += (float) ( $summary['total_available_quantity'] ?? 0 );
 		}
 
+		foreach ( $execution_exceptions as $exception_row ) {
+			if ( ! is_array( $exception_row ) ) {
+				continue;
+			}
+
+			$exception_type = sanitize_key( (string) ( $exception_row['exception_type'] ?? '' ) );
+			if ( 'checkin_pending' === $exception_type || 'checkin_review' === $exception_type || 'checkin_void' === $exception_type ) {
+				++$checkin_exception_count;
+			}
+
+			if ( 'return_anomaly' === $exception_type ) {
+				++$return_anomaly_count;
+			}
+		}
+
 		return array(
 			'demand_requested_quantity'      => $requested_quantity,
 			'demand_open_quantity'           => $open_quantity,
@@ -220,6 +242,9 @@ class AIMS_Event_Planning_Workspace_Service {
 			'available_bucket_count'         => count( $available_rows ),
 			'assigned_available_quantity'    => $assigned_available,
 			'available_pool_quantity'        => $available_pool,
+			'execution_exception_count'      => count( $execution_exceptions ),
+			'checkin_exception_count'        => $checkin_exception_count,
+			'return_anomaly_count'           => $return_anomaly_count,
 		);
 	}
 
@@ -328,6 +353,185 @@ class AIMS_Event_Planning_Workspace_Service {
 		);
 
 		return array_slice( $rows, 0, 25 );
+	}
+
+	private function build_execution_exception_rows( int $event_id, array $assigned_rows ): array {
+		$rows = array_merge(
+			$this->build_checkin_exception_rows( $event_id, $assigned_rows ),
+			$this->build_return_anomaly_rows( $assigned_rows )
+		);
+
+		usort(
+			$rows,
+			array( $this, 'sort_execution_exceptions' )
+		);
+
+		return array_slice( $rows, 0, 25 );
+	}
+
+	private function build_checkin_exception_rows( int $event_id, array $assigned_rows ): array {
+		if ( $event_id <= 0 || ! is_object( $this->vendor_event_checkins ) || ! method_exists( $this->vendor_event_checkins, 'get_for_event' ) ) {
+			return array();
+		}
+
+		$bucket_labels = array();
+		foreach ( $assigned_rows as $assigned_row ) {
+			if ( ! is_array( $assigned_row ) ) {
+				continue;
+			}
+
+			$bucket_labels[ (int) ( $assigned_row['physical_bucket_id'] ?? 0 ) ] = $this->build_bucket_exception_label( $assigned_row );
+		}
+
+		$rows = array();
+		foreach ( (array) $this->vendor_event_checkins->get_for_event( $event_id ) as $checkin ) {
+			if ( ! is_array( $checkin ) ) {
+				continue;
+			}
+
+			$status           = sanitize_key( (string) ( $checkin['checkin_status'] ?? '' ) );
+			$movement_applied = ! empty( $checkin['movement_applied'] );
+			$bucket_id        = (int) ( $checkin['physical_bucket_id'] ?? 0 );
+			$bucket_label     = $bucket_labels[ $bucket_id ] ?? ( $bucket_id > 0 ? 'Bucket #' . $bucket_id : 'Event bucket' );
+			$note_excerpt     = trim( implode( ' | ', array_filter( array(
+				(string) ( $checkin['checkin_notes'] ?? '' ),
+				(string) ( $checkin['checkin_comment'] ?? '' ),
+			) ) ) );
+
+			if ( 'archived' === $status ) {
+				continue;
+			}
+
+			if ( 'void' === $status ) {
+				$rows[] = $this->build_execution_exception_row(
+					'checkin_void',
+					'warning',
+					'Check-in requires operator review',
+					$bucket_label,
+					'Check-in was voided and should be reviewed before planning proceeds.',
+					(string) ( $checkin['checked_in_at'] ?? '' ),
+					$note_excerpt,
+					$status
+				);
+				continue;
+			}
+
+			if ( ! $movement_applied || in_array( $status, array( 'recorded', 'reviewed' ), true ) ) {
+				$rows[] = $this->build_execution_exception_row(
+					'checkin_pending',
+					'warning',
+					'Check-in awaiting execution confirmation',
+					$bucket_label,
+					$movement_applied
+						? 'Vendor check-in is still open and should be completed or cleared by an operator.'
+						: 'Vendor check-in was recorded but movement posting has not been confirmed yet.',
+					(string) ( $checkin['checked_in_at'] ?? '' ),
+					$note_excerpt,
+					$status
+				);
+			}
+		}
+
+		return $rows;
+	}
+
+	private function build_return_anomaly_rows( array $assigned_rows ): array {
+		$rows = array();
+
+		foreach ( $assigned_rows as $assigned_row ) {
+			if ( ! is_array( $assigned_row ) ) {
+				continue;
+			}
+
+			$status = sanitize_key( (string) ( $assigned_row['assignment_status'] ?? '' ) );
+			if ( 'returned' !== $status ) {
+				continue;
+			}
+
+			$issues = array();
+			$current_storage = (array) ( $assigned_row['storage']['current'] ?? array() );
+			$notes = sanitize_textarea_field( (string) ( $assigned_row['notes'] ?? '' ) );
+
+			if ( (int) ( $current_storage['id'] ?? 0 ) <= 0 ) {
+				$issues[] = 'Returned bucket does not have a resolved storage location.';
+			}
+
+			if ( empty( $assigned_row['is_sealed'] ) ) {
+				$issues[] = 'Returned bucket is still unsealed and should be verified before restocking.';
+			}
+
+			if ( '' !== $notes && preg_match( '/anomal|varianc|failed|exception/i', $notes ) ) {
+				$issues[] = $notes;
+			}
+
+			$issues = array_values( array_unique( array_filter( $issues ) ) );
+			if ( empty( $issues ) ) {
+				continue;
+			}
+
+			$rows[] = $this->build_execution_exception_row(
+				'return_anomaly',
+				'warning',
+				'Return anomaly needs review',
+				$this->build_bucket_exception_label( $assigned_row ),
+				implode( ' ', $issues ),
+				(string) ( $assigned_row['released_at'] ?? $assigned_row['assigned_at'] ?? '' ),
+				$notes,
+				$status
+			);
+		}
+
+		return $rows;
+	}
+
+	private function build_execution_exception_row( string $exception_type, string $severity, string $title, string $bucket_label, string $message, string $occurred_at = '', string $notes = '', string $status = '' ): array {
+		return array(
+			'exception_type' => sanitize_key( $exception_type ),
+			'severity'       => sanitize_key( $severity ),
+			'title'          => sanitize_text_field( $title ),
+			'bucket_label'   => sanitize_text_field( $bucket_label ),
+			'message'        => sanitize_textarea_field( $message ),
+			'occurred_at'    => sanitize_text_field( $occurred_at ),
+			'notes'          => sanitize_textarea_field( $notes ),
+			'status'         => sanitize_key( $status ),
+		);
+	}
+
+	private function build_bucket_exception_label( array $row ): string {
+		$label = sanitize_text_field( (string) ( $row['bucket_label'] ?? '' ) );
+		$code  = sanitize_text_field( (string) ( $row['bucket_code'] ?? '' ) );
+
+		if ( '' !== $label && '' !== $code ) {
+			return $label . ' (' . $code . ')';
+		}
+
+		if ( '' !== $label ) {
+			return $label;
+		}
+
+		if ( '' !== $code ) {
+			return $code;
+		}
+
+		$bucket_id = (int) ( $row['physical_bucket_id'] ?? 0 );
+		return $bucket_id > 0 ? 'Bucket #' . $bucket_id : 'Event bucket';
+	}
+
+	private function sort_execution_exceptions( array $left, array $right ): int {
+		$weights = array(
+			'critical' => 3,
+			'error'    => 2,
+			'warning'  => 1,
+			'info'     => 0,
+		);
+
+		$left_weight  = (int) ( $weights[ sanitize_key( (string) ( $left['severity'] ?? 'info' ) ) ] ?? 0 );
+		$right_weight = (int) ( $weights[ sanitize_key( (string) ( $right['severity'] ?? 'info' ) ) ] ?? 0 );
+		if ( $left_weight !== $right_weight ) {
+			return $right_weight <=> $left_weight;
+		}
+
+		return strcmp( (string) ( $right['occurred_at'] ?? '' ), (string) ( $left['occurred_at'] ?? '' ) );
 	}
 
 	private function calculate_assignment_age_hours( string $assigned_at ): float {
@@ -538,6 +742,7 @@ class AIMS_Event_Planning_Workspace_Service {
 				'assigned_by_label' => $this->resolve_user_display_name( (int) ( $assignment['assigned_by'] ?? 0 ) ),
 				'released_by_label' => $this->resolve_user_display_name( (int) ( $assignment['released_by'] ?? 0 ) ),
 				'display_order'    => (int) ( $assignment['display_order'] ?? 0 ),
+				'notes'            => sanitize_textarea_field( (string) ( $assignment['notes'] ?? '' ) ),
 				'contents'         => $contents,
 				'content_summary'  => $summary,
 				'assignment_label' => $this->build_assignment_label( $assignment ),

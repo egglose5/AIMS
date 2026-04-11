@@ -133,6 +133,108 @@ final class InventoryTransferActionsTest extends \AIMS\Tests\TestCase {
 		$this->assertCount( 0, $service->calls );
 	}
 
+	public function testCreateDraftActionRejectsMalformedSourceEndpointSelectionBeforeServiceCall(): void {
+		TestState::set_current_user_id( 16 );
+		TestState::set_user_capabilities(
+			16,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+			)
+		);
+
+		$service = new class() extends \AIMS_Inventory_Transfer_Service {
+			public array $calls = array();
+
+			public function __construct() {}
+
+			public function create_draft( int $source_node_id, int $target_node_id, array $data = array() ): array {
+				$this->calls[] = compact( 'source_node_id', 'target_node_id', 'data' );
+
+				return array(
+					'success'     => true,
+					'transfer_id' => 1001,
+				);
+			}
+		};
+
+		$auth = new class() extends \AIMS_Inventory_Transfer_Authorization_Service {
+			public function __construct() {}
+
+			public function can_manage_inventory_transfers( int $user_id = 0 ): bool {
+				return true;
+			}
+		};
+
+		$handler = new \AIMS_Inventory_Transfer_Actions( $service, $auth );
+		$_POST = array(
+			'source_endpoint_selection' => 'bad-selection',
+			'target_endpoint_selection' => 'warehouse:20',
+			'source_node_type'          => 'vendor',
+			'source_node_id'            => 10,
+			'target_node_type'          => 'warehouse',
+			'target_node_id'            => 20,
+			'transfer_type'             => 'standard',
+		);
+
+		try {
+			$handler->handle_create_draft();
+			$this->fail( 'Expected invalid source endpoint exception was not thrown.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertStringContainsString( 'Invalid source endpoint', $exception->getMessage() );
+		}
+
+		$this->assertCount( 0, $service->calls );
+	}
+
+	public function testCreateDraftActionRejectsSameSourceAndTargetEndpointBeforeServiceCall(): void {
+		TestState::set_current_user_id( 17 );
+		TestState::set_user_capabilities(
+			17,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_INVENTORY,
+			)
+		);
+
+		$service = new class() extends \AIMS_Inventory_Transfer_Service {
+			public array $calls = array();
+
+			public function __construct() {}
+
+			public function create_draft( int $source_node_id, int $target_node_id, array $data = array() ): array {
+				$this->calls[] = compact( 'source_node_id', 'target_node_id', 'data' );
+
+				return array(
+					'success'     => true,
+					'transfer_id' => 1002,
+				);
+			}
+		};
+
+		$auth = new class() extends \AIMS_Inventory_Transfer_Authorization_Service {
+			public function __construct() {}
+
+			public function can_manage_inventory_transfers( int $user_id = 0 ): bool {
+				return true;
+			}
+		};
+
+		$handler = new \AIMS_Inventory_Transfer_Actions( $service, $auth );
+		$_POST = array(
+			'source_endpoint_selection' => 'vendor:10',
+			'target_endpoint_selection' => 'vendor:10',
+			'transfer_type'             => 'standard',
+		);
+
+		try {
+			$handler->handle_create_draft();
+			$this->fail( 'Expected duplicate route exception was not thrown.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertStringContainsString( 'must be different', $exception->getMessage() );
+		}
+
+		$this->assertCount( 0, $service->calls );
+	}
+
 	public function testAddItemActionValidatesInput(): void {
 		// Test that add item action properly validates source/target buckets
 		$service = new class() extends \AIMS_Inventory_Transfer_Service {

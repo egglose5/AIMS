@@ -40,6 +40,7 @@ The current headless `ames-core` path should be treated as an `IONOS-style` or f
 - Confirm authorized users only see/edit authorized events.
 - Confirm assignment action forms submit successfully with nonce checks.
 - Confirm event-specific setup materials such as signage, tape, and check-in supplies remain visible in planning context without mutating stock.
+- Confirm the planning workspace surfaces execution exceptions for pending/void check-ins and return anomalies, and that the counts match the visible rows.
 
 2. Square Sync Safety
 - Open Square Sync and Sync Runs pages.
@@ -55,7 +56,9 @@ The current headless `ames-core` path should be treated as an `IONOS-style` or f
 - Open Inventory workspace and verify outgoing/incoming transfer panels render.
 - Create a transfer draft, add line items, dispatch, and confirm receipt.
 - Confirm transfer records persist with node endpoint fields and status transitions.
+- Confirm malformed endpoint posts and same-source/target drafts are rejected before persistence.
 - Confirm dispatch and receipt create custody movement ledger rows.
+- Confirm route guidance/audit notes reflect the selected source and target custody endpoints.
 
 5. Binary Stream Rollout
 - Review `docs/ames-binary-stream-spec.md` before enabling the binary hot path.
@@ -78,6 +81,7 @@ The current headless `ames-core` path should be treated as an `IONOS-style` or f
 ## Testing Notes For This Phase
 
 - Touched-area unit tests for planning, sync safety/telemetry, and inventory transfers pass.
+- Current operator-hardening coverage includes transfer route validation, stage-specific dispatch/receipt authorization, and planning-side execution exception visibility.
 - Full-suite PHPUnit baseline currently passes in this repository state.
 - Binary stream rollout should remain shadow-only until the spec is implemented and reconciled against live movement data.
 - Binary-stream rollout should first run in shadow mode and compare packet counts, per-event totals, and exception counts before any production cutover.

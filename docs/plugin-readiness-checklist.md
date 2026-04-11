@@ -99,9 +99,12 @@ This checklist maps release tasks to concrete code areas in this repository.
 
 ## Next Milestone - Transfer Endpoint Hardening
 
-- [ ] Create custody endpoint resolver for logged-in user and responsibility-to-endpoint mapping.
-- [ ] Build a real endpoint directory for transfer target selection.
-- [ ] Split source and target bucket queries by resolved endpoint scope.
+- [x] Create custody endpoint resolver for logged-in user and responsibility-to-endpoint mapping.
+  - Transfer authorization is now stage-specific: draft creation validates both route endpoints, dispatch checks the source custody boundary, and receipt checks the target custody boundary.
+- [x] Build a real endpoint directory for transfer target selection.
+  - The inventory workspace now uses explicit endpoint selections, rejects malformed route posts, and blocks same-source/target drafts before persistence.
+- [x] Split source and target bucket queries by resolved endpoint scope.
+  - The transfer workspace keeps source and target pools distinct and carries explicit route guidance into the audit trail instead of relying on implicit UI state.
 
 ## Following Milestone - Execution Telemetry and Exception Visibility
 
@@ -109,7 +112,8 @@ This checklist maps release tasks to concrete code areas in this repository.
   - Schema and index coverage added on `aims_event_bucket_assignments`.
   - Execution transition logic now stamps `loaded_at`/`in_transit_at` when assignment status moves to `in_transit`.
   - Planning workspace timeline now surfaces Assigned, Loaded, and In Transit timestamps for operator visibility.
-- [ ] Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
+- [x] Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
+  - Planning workspace now surfaces `execution_exceptions` plus summary counts for pending/void check-ins and returned-bucket anomalies so operators can intervene without leaving the planning screen.
 - [ ] Expand Square replay and fulfillment wiring after planning/commitment workflow stability under team usage is confirmed.
 - [ ] Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 

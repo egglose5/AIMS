@@ -48,6 +48,9 @@ class AIMS_Inventory_Transfer_Service {
 		$target_node_type = sanitize_key( (string) ( $data['target_node_type'] ?? 'vendor' ) );
 		$transfer_type    = $this->normalize_transfer_type( (string) ( $data['transfer_type'] ?? AIMS_Inventory_Transfer_Authorization_Service::TRANSFER_TYPE_STANDARD ) );
 		$override_route   = ! empty( $data['override_route'] ) || $this->is_exceptional_transfer_type( $transfer_type );
+		if ( '' !== $source_node_type && $source_node_type === $target_node_type && $source_node_id === $target_node_id ) {
+			return $this->error_response( 'Source and target endpoints must be different.', 'same_source_target' );
+		}
 		$override_reason  = isset( $data['override_reason'] ) ? sanitize_textarea_field( (string) $data['override_reason'] ) : '';
 		$route_guidance   = isset( $data['route_guidance'] ) ? sanitize_text_field( (string) $data['route_guidance'] ) : '';
 		$initiated_by     = (int) ( $data['initiated_by'] ?? get_current_user_id() );
@@ -255,7 +258,7 @@ class AIMS_Inventory_Transfer_Service {
 
 		$user_id = (int) ( $data['user_id'] ?? get_current_user_id() );
 
-		if ( ! $this->authorization_service->can_manage_transfer_nodes(
+		if ( ! $this->authorization_service->can_dispatch_transfer(
 			$user_id,
 			(string) ( $transfer['source_node_type'] ?? 'vendor' ),
 			(int) ( $transfer['source_node_id'] ?? 0 ),
@@ -263,7 +266,7 @@ class AIMS_Inventory_Transfer_Service {
 			(int) ( $transfer['target_node_id'] ?? 0 ),
 			(string) ( $transfer['transfer_type'] ?? AIMS_Inventory_Transfer_Authorization_Service::TRANSFER_TYPE_STANDARD )
 		) ) {
-			return $this->error_response( 'You are not authorized to act on the selected custody nodes.', 'transfer_node_access_denied' );
+			return $this->error_response( 'You are not authorized to dispatch from the selected custody route.', 'transfer_node_access_denied' );
 		}
 
 		$items = $this->items_repo->get_for_transfer( $transfer_id );
@@ -358,7 +361,7 @@ class AIMS_Inventory_Transfer_Service {
 
 		$user_id = (int) ( $data['user_id'] ?? get_current_user_id() );
 
-		if ( ! $this->authorization_service->can_manage_transfer_nodes(
+		if ( ! $this->authorization_service->can_confirm_transfer_receipt(
 			$user_id,
 			(string) ( $transfer['source_node_type'] ?? 'vendor' ),
 			(int) ( $transfer['source_node_id'] ?? 0 ),
@@ -366,7 +369,7 @@ class AIMS_Inventory_Transfer_Service {
 			(int) ( $transfer['target_node_id'] ?? 0 ),
 			(string) ( $transfer['transfer_type'] ?? AIMS_Inventory_Transfer_Authorization_Service::TRANSFER_TYPE_STANDARD )
 		) ) {
-			return $this->error_response( 'You are not authorized to act on the selected custody nodes.', 'transfer_node_access_denied' );
+			return $this->error_response( 'You are not authorized to confirm receipt for the selected custody route.', 'transfer_node_access_denied' );
 		}
 
 		$items = $this->items_repo->get_for_transfer( $transfer_id );

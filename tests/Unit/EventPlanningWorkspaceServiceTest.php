@@ -378,6 +378,217 @@ final class EventPlanningWorkspaceServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 1, $model['workspace']['team_activity'][0]['staged_count'] );
 	}
 
+	public function testBuildWorkspaceSurfacesExecutionExceptionsForPlanningReview(): void {
+		TestState::set_current_user_id( 88 );
+		TestState::set_user(
+			88,
+			(object) array(
+				'ID'           => 88,
+				'display_name' => 'Supervisor Two',
+			)
+		);
+
+		$events = new class() extends \AIMS_Event_Repository {
+			public function all(): array {
+				return array(
+					array(
+						'id'                 => 10,
+						'event_name'         => 'Spring Show',
+						'start_date'         => '2026-04-01',
+						'end_date'           => '2026-04-03',
+						'location_name'      => 'Main Hall',
+						'square_location_id' => 'LOC-1',
+						'status'             => 'published',
+					),
+				);
+			}
+		};
+
+		$bucket_assignments = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public function __construct() {}
+
+			public function get_active_buckets_for_event( int $event_id ): array {
+				return array(
+					array(
+						'id'                 => 700,
+						'event_id'           => $event_id,
+						'physical_bucket_id' => 200,
+						'assignment_status'  => 'staged',
+						'assignment_type'    => 'event_stock',
+						'assigned_at'        => '2026-04-10 08:00:00',
+						'assigned_by'        => 88,
+						'is_active'          => 1,
+					),
+					array(
+						'id'                 => 701,
+						'event_id'           => $event_id,
+						'physical_bucket_id' => 201,
+						'assignment_status'  => 'returned',
+						'assignment_type'    => 'returns',
+						'assigned_at'        => '2026-04-09 12:00:00',
+						'assigned_by'        => 88,
+						'is_active'          => 1,
+						'notes'              => 'Return counted with variance and needs shelf review.',
+					),
+				);
+			}
+		};
+
+		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find( int $bucket_id ): ?array {
+				$map = array(
+					200 => array(
+						'id'                        => 200,
+						'bucket_code'               => 'B-200',
+						'bucket_label'              => 'Assigned Bin',
+						'bucket_type'               => 'standard',
+						'status'                    => 'available',
+						'is_sealed'                 => 1,
+						'current_storage_location_id' => 12,
+						'home_storage_location_id'  => 11,
+						'vendor_id'                 => 5,
+					),
+					201 => array(
+						'id'                        => 201,
+						'bucket_code'               => 'B-201',
+						'bucket_label'              => 'Return Bin',
+						'bucket_type'               => 'standard',
+						'status'                    => 'available',
+						'is_sealed'                 => 0,
+						'current_storage_location_id' => 0,
+						'home_storage_location_id'  => 11,
+						'vendor_id'                 => 5,
+					),
+				);
+
+				return $map[ $bucket_id ] ?? null;
+			}
+
+			public function get_for_vendor( int $vendor_id ): array {
+				return array();
+			}
+		};
+
+		$bucket_positions = new class() extends \AIMS_Bucket_Inventory_Position_Repository {
+			public function get_for_bucket( int $bucket_id ): array {
+				return array(
+					array(
+						'id'                => $bucket_id,
+						'bucket_id'         => $bucket_id,
+						'vendor_id'         => 5,
+						'product_id'        => 0,
+						'quantity'          => '2.0000',
+						'reserved_quantity' => '0.0000',
+						'position_status'   => 'active',
+					),
+				);
+			}
+		};
+
+		$storage_locations = new class() extends \AIMS_Storage_Location_Repository {
+			public function find( int $location_id ): ?array {
+				$map = array(
+					11 => array(
+						'id'            => 11,
+						'location_code' => 'WH-A',
+						'location_name' => 'Warehouse A',
+						'location_type' => 'warehouse',
+						'status'        => 'active',
+					),
+					12 => array(
+						'id'            => 12,
+						'location_code' => 'STG-A',
+						'location_name' => 'Staging A',
+						'location_type' => 'staging',
+						'status'        => 'active',
+					),
+				);
+
+				return $map[ $location_id ] ?? null;
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function get_for_event( int $event_id ): array {
+				return array();
+			}
+		};
+
+		$event_bucket_materials = new class() extends \AIMS_Event_Bucket_Material_Repository {
+			public function __construct() {}
+
+			public function get_for_event_bucket( int $event_id, int $physical_bucket_id ): array {
+				return array();
+			}
+		};
+
+		$checkins = new class() extends \AIMS_Vendor_Event_Checkin_Repository {
+			public function __construct() {}
+
+			public function get_for_event( int $event_id ): array {
+				return array(
+					array(
+						'id'                => 51,
+						'event_id'          => $event_id,
+						'vendor_id'         => 5,
+						'physical_bucket_id'=> 200,
+						'checkin_status'    => self::STATUS_RECORDED,
+						'movement_applied'  => 0,
+						'checked_in_at'     => '2026-04-10 11:00:00',
+						'checkin_comment'   => 'Waiting for dock confirmation.',
+					),
+				);
+			}
+		};
+
+		$access_service = new class() {
+			public function get_current_user_authorized_events(): array {
+				return array(
+					array(
+						'id'                 => 10,
+						'event_name'         => 'Spring Show',
+						'start_date'         => '2026-04-01',
+						'end_date'           => '2026-04-03',
+						'location_name'      => 'Main Hall',
+						'square_location_id' => 'LOC-1',
+						'status'             => 'published',
+					),
+				);
+			}
+		};
+
+		$service = new \AIMS_Event_Planning_Workspace_Service(
+			$events,
+			new \AIMS_Event_Demand_Planning_Service( new class() {
+				public function get_demand_summary_for_event( int $event_id ): array {
+					return array();
+				}
+			} ),
+			$bucket_assignments,
+			$physical_buckets,
+			$bucket_positions,
+			$storage_locations,
+			$vendor_event_assignments,
+			$access_service,
+			null,
+			$event_bucket_materials,
+			$checkins
+		);
+
+		$model      = $service->get_page_model( array( 'event_id' => 10 ) );
+		$exceptions = $model['workspace']['execution_exceptions'] ?? array();
+		$types      = array_values( array_filter( array_map( static function ( array $row ): string {
+			return (string) ( $row['exception_type'] ?? '' );
+		}, $exceptions ) ) );
+
+		$this->assertCount( 2, $exceptions );
+		$this->assertSame( 2, $model['workspace']['summary']['execution_exception_count'] );
+		$this->assertSame( 1, $model['workspace']['summary']['checkin_exception_count'] );
+		$this->assertSame( 1, $model['workspace']['summary']['return_anomaly_count'] );
+		$this->assertContains( 'checkin_pending', $types );
+		$this->assertContains( 'return_anomaly', $types );
+	}
+
 	public function testGetAuthorizedEventsUsesPlanningAccessServiceShape(): void {
 		TestState::set_current_user_id( 77 );
 
