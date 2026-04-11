@@ -5,6 +5,95 @@ declare( strict_types=1 );
 namespace AIMS\Tests\Unit;
 
 final class InventoryBucketSourcingServiceTest extends \AIMS\Tests\TestCase {
+	public function testVendorBucketsPreferSquareHoldingsWhenVendorLocationIsLinked(): void {
+		$repo = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function __construct() {}
+
+			public function get_for_vendor( int $vendor_id ): array {
+				return array(
+					array(
+						'id'                    => 701,
+						'bucket_code'           => 'VN-701',
+						'bucket_label'          => 'Vendor Bucket',
+						'bucket_type'           => 'standard',
+						'status'                => 'available',
+						'current_location_type' => 'vendor',
+						'home_location_type'    => 'vendor',
+						'vendor_id'             => $vendor_id,
+					),
+				);
+			}
+		};
+
+		$directory = new class() extends \AIMS_Inventory_Endpoint_Directory_Service {
+			public function __construct() {}
+
+			public function resolve_endpoint_from_node( int $node_id, string $node_type = '', int $user_id = 0 ): array {
+				unset( $node_id, $user_id );
+
+				return array(
+					'endpoint_key'           => 'vendor',
+					'endpoint_label'         => 'Vendor',
+					'node_type'              => '' !== sanitize_key( $node_type ) ? sanitize_key( $node_type ) : 'vendor',
+					'bucket_statuses'        => array( 'available', 'staged' ),
+					'current_location_types' => array( 'vendor', 'staging' ),
+					'suggested_targets'      => array( 'warehouse' ),
+				);
+			}
+		};
+
+		$vendors = new class() extends \AIMS_Vendor_Service {
+			public function __construct() {}
+
+			public function get_vendor( int $vendor_id ): ?array {
+				return array(
+					'id'                 => $vendor_id,
+					'square_location_id' => 'LOC-701',
+				);
+			}
+		};
+
+		$client = new class() extends \AIMS_Headless_Api_Client {
+			public array $queries = array();
+
+			public function __construct() {}
+
+			public function get_square_holdings( array $query = array() ): array {
+				$this->queries[] = $query;
+
+				return array(
+					'success' => true,
+					'counts'  => array(
+						array(
+							'catalog_object_id' => 'CAT-100',
+							'location_id'       => 'LOC-701',
+							'state'             => 'IN_STOCK',
+							'quantity'          => '2.0000',
+						),
+						array(
+							'catalog_object_id' => 'CAT-100',
+							'location_id'       => 'LOC-701',
+							'state'             => 'IN_STOCK',
+							'quantity'          => '1.5000',
+						),
+					),
+				);
+			}
+		};
+
+		$service = new \AIMS_Inventory_Bucket_Sourcing_Service( $repo, $directory, $vendors, $client );
+		$result  = $service->get_source_buckets( 701, 'vendor', array( 'vendor_id' => 701 ) );
+		$context = $service->get_bucket_sourcing_context( 701, 'vendor', array( 'vendor_id' => 701 ) );
+
+		$this->assertCount( 1, $client->queries );
+		$this->assertSame( array( 'LOC-701' ), $client->queries[0]['location_ids'] );
+		$this->assertSame( 'square', $result[0]['inventory_source'] );
+		$this->assertSame( 'LOC-701', $result[0]['square_location_id'] );
+		$this->assertSame( 3.5, $result[0]['square_holdings'][0]['quantity'] );
+		$this->assertSame( 'square', $context['inventory_source'] );
+		$this->assertSame( 'LOC-701', $context['square_location_id'] );
+	}
+
 	public function testSourceAndTargetBucketsUseEndpointSpecificFilters(): void {
 		$repo = new class() extends \AIMS_Physical_Bucket_Repository {
 			public array $calls = array();

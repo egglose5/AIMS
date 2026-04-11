@@ -465,6 +465,112 @@ final class EventExecutionV1Test extends \AIMS\Tests\TestCase {
 		$this->assertSame( \AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT, $assignment_service->transitions[0]['status'] );
 	}
 
+	public function testVendorEventCheckinTriggersVendorSquareBucketSync(): void {
+		$assignment_service = new class() extends \AIMS_Event_Bucket_Assignment_Service {
+			public function __construct() {}
+
+			public function transition_assignment_status( int $assignment_id, string $status, array $data = array() ): bool {
+				return true;
+			}
+		};
+
+		$assignment_repository = new class() extends \AIMS_Event_Bucket_Assignment_Repository {
+			public function find( int $assignment_id ): ?array {
+				return array(
+					'id'                 => $assignment_id,
+					'event_id'           => 77,
+					'physical_bucket_id' => 200,
+					'assignment_status'  => 'staged',
+					'is_active'          => 1,
+				);
+			}
+		};
+
+		$bucket_positions = new class() extends \AIMS_Bucket_Inventory_Position_Repository {
+			public function get_for_bucket( int $bucket_id ): array {
+				return array(
+					array(
+						'product_id' => 901,
+						'vendor_id'  => 5,
+						'quantity'   => 3.0,
+					),
+				);
+			}
+		};
+
+		$bucket_movement_service = new class() extends \AIMS_Bucket_Movement_Service {
+			public function __construct() {}
+
+			public function record_event_load_out( array $data ) {
+				return array(
+					'movement_id'      => 321,
+					'current_quantity' => 7.0,
+				);
+			}
+		};
+
+		$vendor_event_assignments = new class() extends \AIMS_Vendor_Event_Assignment_Repository {
+			public function get_primary_for_event( int $event_id ): ?array {
+				return array( 'vendor_id' => 5 );
+			}
+		};
+
+		$physical_buckets = new class() extends \AIMS_Physical_Bucket_Repository {
+			public function find_with_context( int $bucket_id ): ?array {
+				return array(
+					'id'                   => $bucket_id,
+					'vendor_id'            => 5,
+					'bucket_code'          => 'BIN-77',
+					'square_location_id'   => 'LOC-77',
+					'current_location_code'=> 'WH-A',
+					'home_location_code'   => 'WH-A',
+				);
+			}
+		};
+
+		$square_sync = new class() extends \AIMS_Vendor_Bucket_Square_Sync_Service {
+			public array $calls = array();
+
+			public function __construct() {}
+
+			public function sync_bucket_to_vendor_location( int $bucket_id, int $vendor_id = 0, array $context = array() ): array {
+				$this->calls[] = compact( 'bucket_id', 'vendor_id', 'context' );
+
+				return array(
+					'success'            => true,
+					'attempted'          => true,
+					'square_location_id' => 'LOC-77',
+					'synced_skus'        => 1,
+				);
+			}
+		};
+
+		$execution = new \AIMS_Event_Execution_Service(
+			$assignment_service,
+			$assignment_repository,
+			$bucket_positions,
+			$bucket_movement_service,
+			$vendor_event_assignments,
+			$physical_buckets,
+			null,
+			$square_sync
+		);
+
+		$result = $execution->vendor_event_checkin(
+			array(
+				'assignment_id' => 400,
+				'reference_id'  => 'CHK-400',
+			)
+		);
+
+		$this->assertTrue( $result['success'] );
+		$this->assertCount( 1, $square_sync->calls );
+		$this->assertSame( 200, $square_sync->calls[0]['bucket_id'] );
+		$this->assertSame( 5, $square_sync->calls[0]['vendor_id'] );
+		$this->assertTrue( $result['square_inventory_sync']['success'] );
+		$this->assertSame( 'LOC-77', $result['square_inventory_sync']['square_location_id'] );
+	}
+
 	public function testVendorEventCheckinMirrorsPhysicalExecutionIntoHeadlessCore(): void {
 		TestState::set_product(
 			901,

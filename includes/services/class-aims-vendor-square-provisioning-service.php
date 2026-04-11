@@ -97,6 +97,17 @@ class AIMS_Vendor_Square_Provisioning_Service {
 	private function ensure_square_location( array $vendor ): array {
 		$vendor_id          = (int) ( $vendor['id'] ?? $vendor['user_id'] ?? 0 );
 		$square_location_id = sanitize_text_field( (string) ( $vendor['square_location_id'] ?? '' ) );
+		$existing_mapping   = null;
+
+		if ( '' !== $square_location_id && method_exists( $this->vendors, 'get_sync_mapping_by_square_location' ) ) {
+			$existing_mapping = $this->vendors->get_sync_mapping_by_square_location( $square_location_id );
+			$mapped_vendor_id = (int) ( $existing_mapping['vendor_id'] ?? 0 );
+
+			if ( $mapped_vendor_id > 0 && $mapped_vendor_id !== $vendor_id ) {
+				$square_location_id            = '';
+				$vendor['square_location_id'] = '';
+			}
+		}
 
 		if ( '' !== $square_location_id ) {
 			return array(
@@ -108,8 +119,8 @@ class AIMS_Vendor_Square_Provisioning_Service {
 			);
 		}
 
-		$response          = $this->client->create_square_location( $this->build_square_location_payload( $vendor ) );
-		$location          = $this->extract_location( $response );
+		$response           = $this->client->create_square_location( $this->build_square_location_payload( $vendor ) );
+		$location           = $this->extract_location( $response );
 		$square_location_id = sanitize_text_field( (string) ( $location['id'] ?? $location['location_id'] ?? '' ) );
 
 		if ( empty( $response['success'] ) || '' === $square_location_id ) {

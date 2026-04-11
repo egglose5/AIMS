@@ -139,8 +139,9 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 			return $this->failure_response( 'At least one booth/setup image is required.' );
 		}
 
-		$checkin_id = 0;
-		$media_ids  = array();
+		$checkin_id           = 0;
+		$media_ids            = array();
+		$square_inventory_sync = array();
 
 		if ( $is_first_checkin ) {
 			$checkin_id = (int) $this->checkins->save(
@@ -199,6 +200,10 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 				);
 			}
 
+			$square_inventory_sync = is_array( $movement_result['square_inventory_sync'] ?? null )
+				? $movement_result['square_inventory_sync']
+				: array();
+
 			if ( ! empty( $movement_result['movement_triggered'] ) ) {
 				$this->checkins->mark_movement_applied(
 					$checkin_id,
@@ -224,13 +229,14 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 
 		if ( empty( $public_update['success'] ) || empty( $public_update['update_id'] ) ) {
 			return array(
-				'success'    => true,
-				'message'    => $is_first_checkin
+				'success'               => true,
+				'message'               => $is_first_checkin
 					? 'Vendor check-in recorded, but the public event update could not be published.'
 					: 'Vendor update saved internally, but the public event update could not be published.',
-				'checkin_id' => $checkin_id,
-				'event_id'   => $event_id,
-				'update_id'  => 0,
+				'checkin_id'            => $checkin_id,
+				'event_id'              => $event_id,
+				'update_id'             => 0,
+				'square_inventory_sync' => $square_inventory_sync,
 			);
 		}
 
@@ -242,12 +248,13 @@ class AIMS_Vendor_Event_Checkin_Portal_Service {
 		}
 
 		return array(
-			'success'          => true,
-			'message'          => $is_first_checkin ? 'Vendor check-in recorded and live update published.' : 'Vendor update published.',
-			'checkin_id'       => $checkin_id,
-			'event_id'         => $event_id,
-			'update_id'        => $public_update_id,
-			'is_first_checkin' => $is_first_checkin,
+			'success'               => true,
+			'message'               => $is_first_checkin ? 'Vendor check-in recorded and live update published.' : 'Vendor update published.',
+			'checkin_id'            => $checkin_id,
+			'event_id'              => $event_id,
+			'update_id'             => $public_update_id,
+			'is_first_checkin'      => $is_first_checkin,
+			'square_inventory_sync' => $square_inventory_sync,
 		);
 	}
 

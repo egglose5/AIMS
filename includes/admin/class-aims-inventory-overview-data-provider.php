@@ -433,17 +433,21 @@ class AIMS_Inventory_Overview_Data_Provider {
 			$home_storage    = is_array( $row['home_storage_location'] ?? null ) ? (array) $row['home_storage_location'] : array();
 
 			$normalized[] = array(
-				'id'              => (int) ( $row['id'] ?? 0 ),
-				'bucket_code'     => sanitize_text_field( (string) ( $row['bucket_code'] ?? '' ) ),
-				'bucket_label'    => sanitize_text_field( (string) ( $row['bucket_label'] ?? '' ) ),
-				'bucket_type'     => sanitize_key( (string) ( $row['bucket_type'] ?? '' ) ),
-				'status'          => sanitize_key( (string) ( $row['status'] ?? '' ) ),
-				'pool_key'        => $pool_key,
-				'pool_label'      => $this->resolve_pool_label( $pool_key ),
-				'endpoint_label'   => $this->resolve_bucket_endpoint_label( $row, $pool_key ),
-				'storage_current'  => $current_storage,
-				'storage_home'     => $home_storage,
-				'can_override'     => $this->can_use_route_override(),
+				'id'                   => (int) ( $row['id'] ?? 0 ),
+				'bucket_code'          => sanitize_text_field( (string) ( $row['bucket_code'] ?? '' ) ),
+				'bucket_label'         => sanitize_text_field( (string) ( $row['bucket_label'] ?? '' ) ),
+				'bucket_type'          => sanitize_key( (string) ( $row['bucket_type'] ?? '' ) ),
+				'status'               => sanitize_key( (string) ( $row['status'] ?? '' ) ),
+				'pool_key'             => $pool_key,
+				'pool_label'           => $this->resolve_pool_label( $pool_key ),
+				'endpoint_label'       => $this->resolve_bucket_endpoint_label( $row, $pool_key ),
+				'storage_current'      => $current_storage,
+				'storage_home'         => $home_storage,
+				'can_override'         => $this->can_use_route_override(),
+				'inventory_source'     => sanitize_key( (string) ( $row['inventory_source'] ?? 'local' ) ),
+				'square_location_id'   => sanitize_text_field( (string) ( $row['square_location_id'] ?? '' ) ),
+				'square_holdings'      => is_array( $row['square_holdings'] ?? null ) ? array_values( $row['square_holdings'] ) : array(),
+				'square_holdings_count'=> (int) ( $row['square_holdings_count'] ?? count( (array) ( $row['square_holdings'] ?? array() ) ) ),
 			);
 		}
 

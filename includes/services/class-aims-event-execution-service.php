@@ -12,6 +12,7 @@ class AIMS_Event_Execution_Service {
 	private $vendor_event_assignments;
 	private $physical_buckets;
 	private $headless_execution_mirror;
+	private $vendor_bucket_square_sync;
 
 	public function __construct(
 		AIMS_Event_Bucket_Assignment_Service $assignment_service = null,
@@ -20,7 +21,8 @@ class AIMS_Event_Execution_Service {
 		AIMS_Bucket_Movement_Service $bucket_movement_service = null,
 		AIMS_Vendor_Event_Assignment_Repository $vendor_event_assignments = null,
 		AIMS_Physical_Bucket_Repository $physical_buckets = null,
-		AIMS_Headless_Execution_Mirror_Service $headless_execution_mirror = null
+		AIMS_Headless_Execution_Mirror_Service $headless_execution_mirror = null,
+		AIMS_Vendor_Bucket_Square_Sync_Service $vendor_bucket_square_sync = null
 	) {
 		$this->assignment_service    = $assignment_service ?: new AIMS_Event_Bucket_Assignment_Service( new AIMS_Event_Bucket_Assignment_Repository() );
 		$this->assignment_repository = $assignment_repository ?: new AIMS_Event_Bucket_Assignment_Repository();
@@ -32,6 +34,7 @@ class AIMS_Event_Execution_Service {
 		$this->vendor_event_assignments = $vendor_event_assignments ?: new AIMS_Vendor_Event_Assignment_Repository();
 		$this->physical_buckets         = $physical_buckets ?: new AIMS_Physical_Bucket_Repository();
 		$this->headless_execution_mirror = $headless_execution_mirror ?: new AIMS_Headless_Execution_Mirror_Service();
+		$this->vendor_bucket_square_sync = $vendor_bucket_square_sync ?: ( class_exists( 'AIMS_Vendor_Bucket_Square_Sync_Service' ) ? new AIMS_Vendor_Bucket_Square_Sync_Service() : null );
 	}
 
 	public function get_planning_default_status(): string {
@@ -283,6 +286,18 @@ class AIMS_Event_Execution_Service {
 			$this->update_bucket_sealed_state( $bucket_id, $sealed_state );
 		}
 
+		$square_inventory_sync = $this->sync_bucket_inventory_to_vendor_square_location(
+			$config,
+			$assignment,
+			$bucket_id,
+			$event_id,
+			$reference_id,
+			$applied_by,
+			$note,
+			$square_location_id,
+			$movement_triggered
+		);
+
 		return array(
 			'success'            => true,
 			'message'            => $movement_message,
@@ -294,6 +309,7 @@ class AIMS_Event_Execution_Service {
 			'square_location_id' => $square_location_id,
 			'sealed_state'       => null !== $sealed_state ? ( $sealed_state ? 1 : 0 ) : null,
 			'headless_mirror'    => $headless_mirror,
+			'square_inventory_sync' => $square_inventory_sync,
 			'movements'          => $movements,
 			'movements_applied'  => count(
 				array_filter(
@@ -368,6 +384,68 @@ class AIMS_Event_Execution_Service {
 		}
 
 		return new WP_Error( 'aims_invalid_bucket_movement_service', 'Bucket movement service cannot record execution movements.' );
+	}
+
+	private function sync_bucket_inventory_to_vendor_square_location(
+		array $config,
+		array $assignment,
+		int $bucket_id,
+		int $event_id,
+		string $reference_id,
+		int $applied_by,
+		string $note,
+		string $square_location_id,
+		bool $movement_triggered
+	): array {
+		if ( 'vendor_event_checkin' !== sanitize_key( (string) ( $config['reference_type'] ?? '' ) ) ) {
+			return array(
+				'success'   => false,
+				'attempted' => false,
+				'skipped'   => true,
+				'reason'    => 'not_applicable',
+			);
+		}
+
+		if ( ! $movement_triggered ) {
+			return array(
+				'success'   => false,
+				'attempted' => false,
+				'skipped'   => true,
+				'reason'    => 'movement_not_triggered',
+			);
+		}
+
+		if ( $bucket_id <= 0 || ! is_object( $this->vendor_bucket_square_sync ) || ! method_exists( $this->vendor_bucket_square_sync, 'sync_bucket_to_vendor_location' ) ) {
+			return array(
+				'success'   => false,
+				'attempted' => false,
+				'skipped'   => true,
+				'reason'    => 'square_sync_unavailable',
+			);
+		}
+
+		$vendor_id = $this->get_assignment_vendor_id( $assignment, $bucket_id );
+		if ( $vendor_id <= 0 ) {
+			return array(
+				'success'   => false,
+				'attempted' => false,
+				'skipped'   => true,
+				'reason'    => 'missing_vendor',
+			);
+		}
+
+		return (array) $this->vendor_bucket_square_sync->sync_bucket_to_vendor_location(
+			$bucket_id,
+			$vendor_id,
+			array(
+				'event_id'           => $event_id,
+				'reference_id'       => $reference_id,
+				'reference_type'     => (string) ( $config['reference_type'] ?? '' ),
+				'applied_by'         => $applied_by,
+				'note'               => $note,
+				'square_location_id' => $square_location_id,
+			)
+		);
 	}
 
 	private function resolve_sealed_state( array $data ): ?bool {

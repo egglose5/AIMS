@@ -158,8 +158,20 @@ class AIMS_Vendor_Module implements AIMS_Module {
 		echo '<table class="form-table" role="presentation"><tbody>';
 		$this->render_text_input_row( 'vendor_name', 'Vendor Name', (string) ( $vendor['vendor_name'] ?? '' ), true );
 		$this->render_text_input_row( 'vendor_code', 'Vendor Code', (string) ( $vendor['vendor_code'] ?? '' ), false );
-		$this->render_text_input_row( 'square_location_id', 'Square Location ID', (string) ( $vendor['square_location_id'] ?? '' ), false );
-		$this->render_text_input_row( 'square_team_member_id', 'Square Team Member ID', (string) ( $vendor['square_team_member_id'] ?? '' ), false );
+		$this->render_readonly_value_row(
+			'Square Location ID',
+			(string) ( $vendor['square_location_id'] ?? '' ),
+			$is_edit
+				? 'System-managed. This location is assigned during Square provisioning and cannot be edited here.'
+				: 'System-managed. A vendor-specific Square location will be assigned automatically after creation.'
+		);
+		$this->render_readonly_value_row(
+			'Square Team Member ID',
+			(string) ( $vendor['square_team_member_id'] ?? '' ),
+			$is_edit
+				? 'System-managed. This team member link is assigned during Square provisioning and cannot be edited here.'
+				: 'System-managed. A Square team member will be linked automatically after creation.'
+		);
 		$this->render_text_input_row( 'default_bucket_code', 'Default Bucket Code', (string) ( $vendor['default_bucket_code'] ?? '' ), false );
 		$this->render_text_input_row( 'commission_rate', 'Commission Rate', (string) ( $vendor['commission_rate'] ?? '0.0000' ), false );
 		$this->render_text_input_row( 'email_address', 'Email', (string) ( $vendor['email_address'] ?? '' ), false );
@@ -223,17 +235,30 @@ class AIMS_Vendor_Module implements AIMS_Module {
 		echo '</tr>';
 	}
 
+	private function render_readonly_value_row( string $label, string $value, string $description = '' ): void {
+		$display_value = '' !== trim( $value ) ? $value : 'Assigned automatically';
+
+		echo '<tr>';
+		echo '<th scope="row">' . esc_html( $label ) . '</th>';
+		echo '<td><code>' . esc_html( $display_value ) . '</code>';
+
+		if ( '' !== $description ) {
+			echo '<p class="description">' . esc_html( $description ) . '</p>';
+		}
+
+		echo '</td>';
+		echo '</tr>';
+	}
+
 	private function collect_vendor_payload(): array {
 		return array(
-			'vendor_name'           => sanitize_text_field( wp_unslash( $_POST['vendor_name'] ?? '' ) ),
-			'vendor_code'           => sanitize_key( wp_unslash( $_POST['vendor_code'] ?? '' ) ),
-			'square_location_id'    => sanitize_text_field( wp_unslash( $_POST['square_location_id'] ?? '' ) ),
-			'square_team_member_id' => sanitize_text_field( wp_unslash( $_POST['square_team_member_id'] ?? '' ) ),
-			'default_bucket_code'   => sanitize_text_field( wp_unslash( $_POST['default_bucket_code'] ?? '' ) ),
-			'commission_rate'       => (float) wp_unslash( $_POST['commission_rate'] ?? 0 ),
-			'email_address'         => sanitize_email( wp_unslash( $_POST['email_address'] ?? '' ) ),
-			'phone_number'          => sanitize_text_field( wp_unslash( $_POST['phone_number'] ?? '' ) ),
-			'status'                => 'active',
+			'vendor_name'         => sanitize_text_field( wp_unslash( $_POST['vendor_name'] ?? '' ) ),
+			'vendor_code'         => sanitize_key( wp_unslash( $_POST['vendor_code'] ?? '' ) ),
+			'default_bucket_code' => sanitize_text_field( wp_unslash( $_POST['default_bucket_code'] ?? '' ) ),
+			'commission_rate'     => (float) wp_unslash( $_POST['commission_rate'] ?? 0 ),
+			'email_address'       => sanitize_email( wp_unslash( $_POST['email_address'] ?? '' ) ),
+			'phone_number'        => sanitize_text_field( wp_unslash( $_POST['phone_number'] ?? '' ) ),
+			'status'              => 'active',
 		);
 	}
 
