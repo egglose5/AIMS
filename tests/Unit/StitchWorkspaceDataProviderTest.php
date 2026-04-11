@@ -96,6 +96,76 @@ final class StitchWorkspaceDataProviderTest extends \AIMS\Tests\TestCase {
 		$this->assertFalse( $model['safe_actions_enabled'] );
 	}
 
+	public function testWorkspaceModelBuildsPreStitchLabelPayloadFromJobLines(): void {
+		TestState::set_current_user_id( 22 );
+		TestState::set_user_capabilities(
+			22,
+			array(
+				\AIMS_Capabilities::CAP_MANAGE_PRODUCTION,
+			)
+		);
+
+		$source = new class() {
+			public function list_stitch_jobs(): array {
+				return array(
+					array(
+						'job_id'        => 410,
+						'job_code'      => 'SJ-410',
+						'job_name'      => 'Barcode Prep',
+						'status'        => 'queued',
+						'stitcher_name' => 'Stitcher Four',
+						'line_count'    => 2,
+						'total_quantity'=> 5,
+					),
+				);
+			}
+
+			public function get_stitch_job( int $job_id ): ?array {
+				return array(
+					'job_id'        => $job_id,
+					'job_code'      => 'SJ-410',
+					'job_name'      => 'Barcode Prep',
+					'status'        => 'queued',
+					'stitcher_name' => 'Stitcher Four',
+					'line_count'    => 2,
+					'total_quantity'=> 5,
+				);
+			}
+
+			public function get_stitch_job_lines( int $job_id ): array {
+				return array(
+					array(
+						'line_id'       => 10,
+						'job_id'        => $job_id,
+						'product_name'  => 'Prep Tee',
+						'product_sku'   => 'PREP-TEE',
+						'quantity'      => 3,
+						'completed_quantity' => 0,
+						'status'        => 'queued',
+					),
+					array(
+						'line_id'       => 11,
+						'job_id'        => $job_id,
+						'product_name'  => 'Prep Hoodie',
+						'product_sku'   => 'PREP-HOOD',
+						'quantity'      => 2,
+						'completed_quantity' => 0,
+						'status'        => 'queued',
+					),
+				);
+			}
+		};
+
+		$provider = new \AIMS_Stitch_Workspace_Data_Provider( $source );
+		$model    = $provider->get_page_model( array( 'stitch_job_id' => 410 ) );
+
+		$this->assertCount( 2, $model['pre_handoff_label_items'] );
+		$this->assertSame( 'PREP-TEE', $model['pre_handoff_label_items'][0]['product_sku'] );
+		$this->assertSame( 3, $model['pre_handoff_label_items'][0]['quantity'] );
+		$this->assertStringContainsString( 'PREP-HOOD', $model['pre_handoff_label_items_json'] );
+		$this->assertSame( 5, $model['pre_handoff_label_total'] );
+	}
+
 	public function testWorkspaceModelFallsBackToFirstJobWhenSelectionMissing(): void {
 		TestState::set_current_user_id( 22 );
 		TestState::set_user_capabilities(

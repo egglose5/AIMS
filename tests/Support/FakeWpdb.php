@@ -118,11 +118,12 @@ final class FakeWpdb {
 		return is_array( $col ) ? $col : array();
 	}
 
-	public function insert( string $table, array $data ): bool {
+	public function insert( string $table, array $data, array $format = array() ): bool {
 		$this->insert_id++;
 		$this->inserted[] = array(
-			'table' => $table,
-			'data'  => $data,
+			'table'  => $table,
+			'data'   => $data,
+			'format' => $format,
 		);
 		return true;
 	}

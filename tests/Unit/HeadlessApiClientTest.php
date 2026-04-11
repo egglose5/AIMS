@@ -100,4 +100,41 @@ final class HeadlessApiClientTest extends \AIMS\Tests\TestCase {
 		$payload = json_decode( (string) $requests[0]['args']['body'], true );
 		$this->assertSame( 'LOC-9', $payload['square_location_id'] );
 	}
+
+	public function testPushLaserBatchUsesDedicatedIngressRoute(): void {
+		TestState::set_remote_response(
+			array(
+				'code' => 202,
+				'body' => wp_json_encode(
+					array(
+						'ok'    => true,
+						'batch' => array( 'batch_id' => 'laser-run-42' ),
+					)
+				),
+			)
+		);
+
+		$client = new \AIMS_Headless_Api_Client( 'https://aims-core.test', 'secret-token' );
+		$client->push_laser_batch(
+			array(
+				'batch_id'      => 'laser-run-42',
+				'stitch_job_id' => 991,
+				'items'         => array(
+					array(
+						'sku'      => 'PATCH-RED',
+						'quantity' => 12,
+					),
+				),
+			)
+		);
+
+		$requests = TestState::get_remote_requests();
+		$this->assertCount( 1, $requests );
+		$this->assertSame( 'POST', $requests[0]['method'] );
+		$this->assertStringEndsWith( '/internal/laser/batches', $requests[0]['url'] );
+		$this->assertSame( 'secret-token', $requests[0]['args']['headers']['X-Ames-Token'] );
+		$payload = json_decode( (string) $requests[0]['args']['body'], true );
+		$this->assertSame( 'laser-run-42', $payload['batch_id'] );
+		$this->assertSame( 991, $payload['stitch_job_id'] );
+	}
 }

@@ -515,6 +515,10 @@ class AIMS_Schema {
 				payout_snapshot_source varchar(50) NOT NULL DEFAULT '',
 				payout_snapshot_rule_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				snapshot_taken_at datetime NULL DEFAULT NULL,
+				labels_prepared_at datetime NULL DEFAULT NULL,
+				labels_prepared_by bigint(20) unsigned NOT NULL DEFAULT 0,
+				labels_prepared_quantity decimal(20,4) NOT NULL DEFAULT 0.0000,
+				label_template_key varchar(100) NOT NULL DEFAULT '',
 				assigned_at datetime NULL DEFAULT NULL,
 				completed_at datetime NULL DEFAULT NULL,
 				received_back_at datetime NULL DEFAULT NULL,
@@ -528,6 +532,8 @@ class AIMS_Schema {
 				KEY vendor_id (vendor_id),
 				KEY producer_user_id (producer_user_id),
 				KEY stitcher_user_id (stitcher_user_id),
+				KEY labels_prepared_by (labels_prepared_by),
+				KEY label_template_key (label_template_key),
 				KEY status (status)
 			) {$charset_collate};",
 			"CREATE TABLE {$stitch_job_item_payout_snapshots_table} (
@@ -989,6 +995,7 @@ class AIMS_Schema {
 				created_at datetime NOT NULL,
 				updated_at datetime NOT NULL,
 				PRIMARY KEY  (id),
+				UNIQUE KEY sale_allocation_identity (square_sale_id, square_order_id, product_id, vendor_id, event_id, allocation_type, source_bucket_code),
 				KEY square_sale_id (square_sale_id),
 				KEY square_order_id (square_order_id),
 				KEY product_id (product_id),

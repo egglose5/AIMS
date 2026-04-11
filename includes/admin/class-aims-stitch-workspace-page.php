@@ -62,6 +62,23 @@ class AIMS_Stitch_Workspace_Page {
 			echo '<p><strong>Producer Notes:</strong> ' . esc_html( (string) $selected_job['notes'] ) . '</p>';
 		}
 
+		$pre_handoff_label_items = (array) ( $model['pre_handoff_label_items'] ?? array() );
+		$pre_handoff_label_total = (int) ( $model['pre_handoff_label_total'] ?? 0 );
+		if ( ! empty( $pre_handoff_label_items ) ) {
+			echo '<div class="notice notice-warning inline" style="margin:16px 0 12px;">';
+			echo '<p><strong>Pre-Stitch Label Gate:</strong> Print and apply barcodes before releasing this work to stitcher custody. Stitchers should never receive unlabeled inventory.</p>';
+			echo '</div>';
+			echo '<form method="post" action="' . esc_url( (string) ( $model['label_print_action_url'] ?? admin_url( 'admin-post.php' ) ) ) . '" target="_blank" style="margin:0 0 18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">';
+			if ( function_exists( 'wp_nonce_field' ) ) {
+				wp_nonce_field( 'aims_print_stitch_labels' );
+			}
+			echo '<input type="hidden" name="action" value="aims_print_stitch_labels" />';
+			echo '<input type="hidden" name="label_items_json" value="' . esc_attr( (string) ( $model['pre_handoff_label_items_json'] ?? '[]' ) ) . '" />';
+			echo '<button type="submit" class="button button-secondary">Print Pre-Stitch Barcodes</button>';
+			echo '<span style="color:#50575e;">' . esc_html( sprintf( '%d labels across %d line(s).', $pre_handoff_label_total, count( $pre_handoff_label_items ) ) ) . '</span>';
+			echo '</form>';
+		}
+
 		echo '<table class="widefat striped">';
 		echo '<thead><tr><th>Job Code</th><th>Status</th><th>Total Qty</th><th>Completed</th><th>Remaining</th></tr></thead>';
 		echo '<tbody><tr>';

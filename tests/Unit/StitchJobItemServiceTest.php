@@ -65,14 +65,16 @@ final class StitchJobItemServiceTest extends \AIMS\Tests\TestCase {
 		$service = new \AIMS_Stitch_Job_Item_Service( $item_repo, $payout_service, $producer_auth );
 		$result = $service->assign_job_item(
 			array(
-				'stitch_job_id'    => 991,
-				'line_number'      => 3,
-				'product_id'       => 1501,
-				'vendor_id'        => 44,
-				'producer_user_id' => 201,
-				'stitcher_user_id' => 55,
-				'quantity_requested' => 2.5,
-				'stitch_job_type'  => 'custom_fit',
+				'stitch_job_id'       => 991,
+				'line_number'         => 3,
+				'product_id'          => 1501,
+				'vendor_id'           => 44,
+				'producer_user_id'    => 201,
+				'stitcher_user_id'    => 55,
+				'quantity_requested'  => 2.5,
+				'stitch_job_type'     => 'custom_fit',
+				'labels_prepared'     => 1,
+				'label_template_key'  => \AIMS_Label_Template_Repository::DEFAULT_TEMPLATE_KEY,
 			)
 		);
 
@@ -80,11 +82,59 @@ final class StitchJobItemServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 601, $result['item_id'] );
 		$this->assertSame( \AIMS_Stitch_Job_Item_Repository::STATUS_ASSIGNED, $item_repo->saved[0]['status'] );
 		$this->assertNotEmpty( $item_repo->saved[0]['assigned_at'] );
+		$this->assertNotEmpty( $item_repo->saved[0]['labels_prepared_at'] );
+		$this->assertSame( 201, $item_repo->saved[0]['labels_prepared_by'] );
+		$this->assertSame( \AIMS_Label_Template_Repository::DEFAULT_TEMPLATE_KEY, $item_repo->saved[0]['label_template_key'] );
 		$this->assertSame( 14.75, $result['item']['unit_payout_snapshot'] );
 		$this->assertSame( 'stitcher_specific', $result['snapshot']['snapshot_source'] );
 		$this->assertSame( 'stitcher_specific', $result['item']['snapshot_source'] );
 		$this->assertCount( 1, $item_repo->snapshots );
 		$this->assertSame( 601, $item_repo->snapshots[0]['item_id'] );
+	}
+
+	public function testAssignJobItemRequiresLabelPreparationBeforeSendingInventoryToStitcher(): void {
+		TestState::set_current_user_id( 201 );
+
+		$item_repo = new class() extends \AIMS_Stitch_Job_Item_Repository {
+			public array $saved = array();
+
+			public function __construct() {}
+
+			public function save( array $data, int $item_id = 0 ): int {
+				unset( $item_id );
+				$this->saved[] = $data;
+				return 777;
+			}
+		};
+
+		$service = new \AIMS_Stitch_Job_Item_Service(
+			$item_repo,
+			new class() extends \AIMS_Stitch_Payout_Snapshot_Service {
+				public function __construct() {}
+			},
+			new class() extends \AIMS_Stitch_Producer_Authorization_Service {
+				public function __construct() {}
+
+				public function can_manage_stitch_orders( int $user_id = 0 ): bool {
+					return 201 === $user_id;
+				}
+			}
+		);
+
+		$result = $service->assign_job_item(
+			array(
+				'stitch_job_id'      => 991,
+				'line_number'        => 4,
+				'product_id'         => 1502,
+				'producer_user_id'   => 201,
+				'stitcher_user_id'   => 55,
+				'quantity_requested' => 3,
+			)
+		);
+
+		$this->assertFalse( $result['success'] );
+		$this->assertSame( 'Print and apply item barcodes before releasing this work to stitcher custody.', $result['message'] );
+		$this->assertSame( array(), $item_repo->saved );
 	}
 
 	public function testLifecycleUpdatesCompletedAndReceivedBackQuantities(): void {

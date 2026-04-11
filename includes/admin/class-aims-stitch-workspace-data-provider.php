@@ -22,24 +22,32 @@ class AIMS_Stitch_Workspace_Data_Provider {
 			$selected_job = $jobs[0];
 		}
 
-		$selected_job_id   = (int) ( $selected_job['job_id'] ?? 0 );
-		$lines             = $selected_job_id > 0 ? $this->get_job_lines( $selected_job_id ) : array();
+		$selected_job_id    = (int) ( $selected_job['job_id'] ?? 0 );
+		$lines              = $selected_job_id > 0 ? $this->get_job_lines( $selected_job_id ) : array();
+		$normalized_lines   = $this->normalize_lines( $lines );
 		$assignment_context = $selected_job_id > 0 ? $this->get_assignment_context( $selected_job_id ) : array();
 		$progress_summary   = $selected_job_id > 0 ? $this->get_progress_summary( $selected_job_id ) : array();
+		$label_items        = $this->build_pre_handoff_label_items( $normalized_lines );
 
 		return array(
-			'can_manage'          => $this->can_manage_stitch_jobs(),
-			'jobs'                => $jobs,
-			'selected_job_id'     => $selected_job_id,
-			'selected_job'        => is_array( $selected_job ) ? $selected_job : array(),
-			'lines'               => $this->normalize_lines( $lines ),
-			'assignment_context'   => $assignment_context,
-			'progress_summary'    => $progress_summary,
-			'workspace_summary'   => $this->build_workspace_summary( is_array( $selected_job ) ? $selected_job : array(), $lines, $progress_summary ),
-			'selection_message'   => $this->get_selection_message( $jobs, $selected_job_id ),
-			'empty_message'       => $this->get_empty_message(),
-			'safe_actions_enabled'=> $this->supports_job_actions(),
-			'workspace_url_base'  => admin_url( 'admin.php?page=' . AIMS_Stitch_Jobs_Data_Provider::PAGE_SLUG ),
+			'can_manage'               => $this->can_manage_stitch_jobs(),
+			'jobs'                     => $jobs,
+			'selected_job_id'          => $selected_job_id,
+			'selected_job'             => is_array( $selected_job ) ? $selected_job : array(),
+			'lines'                    => $normalized_lines,
+			'assignment_context'       => $assignment_context,
+			'progress_summary'         => $progress_summary,
+			'workspace_summary'        => $this->build_workspace_summary( is_array( $selected_job ) ? $selected_job : array(), $normalized_lines, $progress_summary ),
+			'selection_message'        => $this->get_selection_message( $jobs, $selected_job_id ),
+			'empty_message'            => $this->get_empty_message(),
+			'safe_actions_enabled'     => $this->supports_job_actions(),
+			'workspace_url_base'       => admin_url( 'admin.php?page=' . AIMS_Stitch_Jobs_Data_Provider::PAGE_SLUG ),
+			'label_print_action_url'   => admin_url( 'admin-post.php' ),
+			'pre_handoff_label_items'  => $label_items,
+			'pre_handoff_label_items_json' => wp_json_encode( $label_items ),
+			'pre_handoff_label_total'  => array_sum( array_map( static function ( array $item ): int {
+				return (int) ( $item['quantity'] ?? 0 );
+			}, $label_items ) ),
 		);
 	}
 
@@ -135,6 +143,38 @@ class AIMS_Stitch_Workspace_Data_Provider {
 		}
 
 		return $normalized;
+	}
+
+	private function build_pre_handoff_label_items( array $lines ): array {
+		$items = array();
+
+		foreach ( $lines as $line ) {
+			if ( ! is_array( $line ) ) {
+				continue;
+			}
+
+			$label_quantity = (int) ceil( max( 0, (float) ( $line['remaining'] ?? 0 ) ) );
+			if ( $label_quantity <= 0 ) {
+				continue;
+			}
+
+			$product_name = sanitize_text_field( (string) ( $line['product_name'] ?? '' ) );
+			$product_sku  = sanitize_text_field( (string) ( $line['product_sku'] ?? '' ) );
+			if ( '' === $product_name && '' === $product_sku ) {
+				continue;
+			}
+
+			$items[] = array(
+				'line_id'       => (int) ( $line['line_id'] ?? 0 ),
+				'job_id'        => (int) ( $line['job_id'] ?? 0 ),
+				'product_name'  => $product_name,
+				'product_sku'   => $product_sku,
+				'quantity'      => $label_quantity,
+				'label_context' => 'pre_stitch_handoff',
+			);
+		}
+
+		return $items;
 	}
 
 	private function build_workspace_summary( array $selected_job, array $lines, array $progress_summary ): array {

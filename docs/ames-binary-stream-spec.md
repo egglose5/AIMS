@@ -67,6 +67,20 @@ Each packet is exactly `64 bytes` and is fixed-width for cache-friendly processi
 - The compact transaction reference must be handled outside the 64-byte packet if the implementation needs one for idempotency or replay.
 - The writer must not silently repair invalid business input.
 
+## Current Implementation Status
+
+As of `2026-04-11`, the first shadow-mode implementation slice is live in `ames-core` through `AmesCore\Headless\Storage\BinarySaleStreamWriter` and its integration with `SqliteLedgerRepository`.
+
+Current behavior:
+
+- sale-side writes can emit the fixed `64-byte` packet in shadow mode
+- a sidecar reference dictionary reuses a stable pointer ID for repeated `reference_type + reference_id` values
+- an append-only pointer index records `segment path + byte offset + packet length + event ID + cents snapshots`
+- invalid hot-path rows are routed to an exception lane instead of poisoning the packet stream
+- the packet, pointer index, and exception lane live under the headless sink path so WordPress page requests do not become the hot write path
+
+This is intentionally a **shadow-write** slice only. The canonical movement ledger remains the source of truth while packet counts, cents totals, and replay behavior are reconciled.
+
 ## Streaming Strategy
 
 - Packets should be assembled in memory first using `php://temp` or an equivalent RAM-backed buffer.
@@ -98,8 +112,8 @@ Exception records should preserve enough context for later correction and audit,
 
 ## Rollout Plan
 
-1. Add the binary stream in shadow mode.
-2. Write binary packets alongside the current ledger path.
+1. ✅ Add the binary stream in shadow mode.
+2. ✅ Write binary packets alongside the current ledger path.
 3. Reconcile packet counts and financial totals against the existing movement flow.
 4. Confirm that no cent drift appears across repeated write/read cycles.
 5. Promote the binary stream only after shadow output stays clean.
@@ -110,6 +124,7 @@ Exception records should preserve enough context for later correction and audit,
 - Use a dedicated sink path for hot binary packets.
 - Store exception logs separately from the packet stream.
 - Push verbose Square metadata to colder storage so the hot ledger stays SKU-first and operationally lean.
+- The current shadow-mode implementation writes beneath the headless sink path as `sink/hot-binary/`, including the packet segment, `reference-dictionary.json`, `pointer-index.jsonl`, and `exception-lane.jsonl`.
 
 ## Operational Note
 

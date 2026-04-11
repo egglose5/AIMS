@@ -15,6 +15,7 @@ class AIMS_Plugin {
 
 	private $admin_menu;
 	private $square_thin_client_sync;
+	private $laser_batch_rest_controller;
 
 	public static function instance(): AIMS_Plugin {
 		if ( null === self::$instance ) {
@@ -99,8 +100,9 @@ class AIMS_Plugin {
 	}
 
 	private function __construct() {
-		$this->admin_menu               = new AIMS_Admin_Menu();
-		$this->square_thin_client_sync  = new AIMS_Square_Thin_Client_Sync_Service();
+		$this->admin_menu                  = new AIMS_Admin_Menu();
+		$this->square_thin_client_sync     = new AIMS_Square_Thin_Client_Sync_Service();
+		$this->laser_batch_rest_controller = new AIMS_Laser_Batch_Rest_Controller();
 	}
 
 	public function boot(): void {
@@ -108,6 +110,9 @@ class AIMS_Plugin {
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
 		if ( is_object( $this->square_thin_client_sync ) && method_exists( $this->square_thin_client_sync, 'boot' ) ) {
 			$this->square_thin_client_sync->boot();
+		}
+		if ( is_object( $this->laser_batch_rest_controller ) && method_exists( $this->laser_batch_rest_controller, 'register' ) ) {
+			$this->laser_batch_rest_controller->register();
 		}
 	}
 

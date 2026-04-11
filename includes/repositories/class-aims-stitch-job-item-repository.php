@@ -87,7 +87,7 @@ class AIMS_Stitch_Job_Item_Repository {
 		return $this->update_item_progress(
 			$item_id,
 			array(
-				'quantity_completed' => $this->normalize_quantity( $quantity_completed ),
+				'quantity_completed' => $this->normalize_decimal( $quantity_completed ),
 				'completed_at'       => $this->normalize_datetime( $data['completed_at'] ?? current_time( 'mysql' ) ),
 				'status'             => $this->normalize_status( (string) ( $data['status'] ?? self::STATUS_COMPLETED ) ),
 				'notes'              => isset( $data['notes'] ) ? wp_kses_post( $data['notes'] ) : null,
@@ -99,10 +99,22 @@ class AIMS_Stitch_Job_Item_Repository {
 		return $this->update_item_progress(
 			$item_id,
 			array(
-				'quantity_received_back' => $this->normalize_quantity( $quantity_received_back ),
+				'quantity_received_back' => $this->normalize_decimal( $quantity_received_back ),
 				'received_back_at'       => $this->normalize_datetime( $data['received_back_at'] ?? current_time( 'mysql' ) ),
 				'status'                 => $this->normalize_status( (string) ( $data['status'] ?? self::STATUS_RECEIVED_BACK ) ),
 				'notes'                  => isset( $data['notes'] ) ? wp_kses_post( $data['notes'] ) : null,
+			)
+		);
+	}
+
+	public function mark_labels_prepared( int $item_id, array $data = array() ): bool {
+		return $this->update_item_progress(
+			$item_id,
+			array(
+				'labels_prepared_at'       => $this->normalize_datetime( $data['labels_prepared_at'] ?? current_time( 'mysql' ) ),
+				'labels_prepared_by'       => (int) ( $data['labels_prepared_by'] ?? 0 ),
+				'labels_prepared_quantity' => $this->normalize_decimal( $data['labels_prepared_quantity'] ?? 0 ),
+				'label_template_key'       => sanitize_key( (string) ( $data['label_template_key'] ?? '' ) ),
 			)
 		);
 	}
@@ -129,26 +141,30 @@ class AIMS_Stitch_Job_Item_Repository {
 
 	private function build_record( array $data ): array {
 		return array(
-			'stitch_job_id'          => (int) ( $data['stitch_job_id'] ?? 0 ),
-			'line_number'            => max( 1, (int) ( $data['line_number'] ?? 1 ) ),
-			'product_id'             => (int) ( $data['product_id'] ?? 0 ),
-			'vendor_id'              => (int) ( $data['vendor_id'] ?? 0 ),
-			'producer_user_id'       => (int) ( $data['producer_user_id'] ?? 0 ),
-			'stitcher_user_id'       => (int) ( $data['stitcher_user_id'] ?? 0 ),
-			'stitch_job_type'        => sanitize_key( $data['stitch_job_type'] ?? '' ),
-			'status'                 => $this->normalize_status( (string) ( $data['status'] ?? self::STATUS_QUEUED ) ),
-			'quantity_requested'     => $this->normalize_decimal( $data['quantity_requested'] ?? 0 ),
-			'quantity_completed'     => $this->normalize_decimal( $data['quantity_completed'] ?? 0 ),
-			'quantity_received_back' => $this->normalize_decimal( $data['quantity_received_back'] ?? 0 ),
-			'unit_payout_snapshot'   => $this->normalize_decimal( $data['unit_payout_snapshot'] ?? 0 ),
-			'payout_snapshot_source' => sanitize_key( $data['payout_snapshot_source'] ?? '' ),
+			'stitch_job_id'           => (int) ( $data['stitch_job_id'] ?? 0 ),
+			'line_number'             => max( 1, (int) ( $data['line_number'] ?? 1 ) ),
+			'product_id'              => (int) ( $data['product_id'] ?? 0 ),
+			'vendor_id'               => (int) ( $data['vendor_id'] ?? 0 ),
+			'producer_user_id'        => (int) ( $data['producer_user_id'] ?? 0 ),
+			'stitcher_user_id'        => (int) ( $data['stitcher_user_id'] ?? 0 ),
+			'stitch_job_type'         => sanitize_key( $data['stitch_job_type'] ?? '' ),
+			'status'                  => $this->normalize_status( (string) ( $data['status'] ?? self::STATUS_QUEUED ) ),
+			'quantity_requested'      => $this->normalize_decimal( $data['quantity_requested'] ?? 0 ),
+			'quantity_completed'      => $this->normalize_decimal( $data['quantity_completed'] ?? 0 ),
+			'quantity_received_back'  => $this->normalize_decimal( $data['quantity_received_back'] ?? 0 ),
+			'unit_payout_snapshot'    => $this->normalize_decimal( $data['unit_payout_snapshot'] ?? 0 ),
+			'payout_snapshot_source'  => sanitize_key( $data['payout_snapshot_source'] ?? '' ),
 			'payout_snapshot_rule_id' => (int) ( $data['payout_snapshot_rule_id'] ?? 0 ),
-			'snapshot_taken_at'      => $this->normalize_datetime( $data['snapshot_taken_at'] ?? null ),
-			'assigned_at'            => $this->normalize_datetime( $data['assigned_at'] ?? null ),
-			'completed_at'           => $this->normalize_datetime( $data['completed_at'] ?? null ),
-			'received_back_at'       => $this->normalize_datetime( $data['received_back_at'] ?? null ),
-			'notes'                  => isset( $data['notes'] ) ? wp_kses_post( $data['notes'] ) : '',
-			'updated_at'             => current_time( 'mysql' ),
+			'snapshot_taken_at'       => $this->normalize_datetime( $data['snapshot_taken_at'] ?? null ),
+			'labels_prepared_at'      => $this->normalize_datetime( $data['labels_prepared_at'] ?? null ),
+			'labels_prepared_by'      => (int) ( $data['labels_prepared_by'] ?? 0 ),
+			'labels_prepared_quantity' => $this->normalize_decimal( $data['labels_prepared_quantity'] ?? 0 ),
+			'label_template_key'      => sanitize_key( (string) ( $data['label_template_key'] ?? '' ) ),
+			'assigned_at'             => $this->normalize_datetime( $data['assigned_at'] ?? null ),
+			'completed_at'            => $this->normalize_datetime( $data['completed_at'] ?? null ),
+			'received_back_at'        => $this->normalize_datetime( $data['received_back_at'] ?? null ),
+			'notes'                   => isset( $data['notes'] ) ? wp_kses_post( $data['notes'] ) : '',
+			'updated_at'              => current_time( 'mysql' ),
 		);
 	}
 
@@ -165,6 +181,7 @@ class AIMS_Stitch_Job_Item_Repository {
 				return null !== $value;
 			}
 		);
+		$record['updated_at'] = current_time( 'mysql' );
 
 		return false !== $wpdb->update(
 			$this->get_table_name(),

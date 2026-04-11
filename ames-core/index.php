@@ -7,6 +7,7 @@ use AmesCore\Core\OAuth\OAuthService;
 use AmesCore\Core\Security\Cryptographer;
 use AmesCore\Core\Security\SecretStore;
 use AmesCore\Headless\CoreConfig;
+use AmesCore\Headless\Laser\LaserBatchInboxService;
 use AmesCore\Headless\Security\TokenAuthenticator;
 use AmesCore\Headless\Storage\SqliteBucketFifoStore;
 use AmesCore\Headless\Storage\FlowParquetArchiveWriter;
@@ -64,6 +65,7 @@ $cryptographer = new Cryptographer( $config->encryptionKey() );
 $secretStore  = new SecretStore( $config->secretStorePath(), $cryptographer );
 $oauth        = new OAuthService( $secretStore );
 $remote       = new RemoteTruthService( $config, $secretStore );
+$laserBatches = new LaserBatchInboxService( $config->sinkPath() );
 $archive = new ArchiveService( $ledger, new FlowParquetArchiveWriter(), $config->vaultPath() );
 $history = new FlowParquetHistoryReader();
 
@@ -88,7 +90,7 @@ try {
 					'flow_php_parquet'  => class_exists( '\Flow\Parquet\Writer' ) && class_exists( '\Flow\Parquet\Reader' ),
 					'openssl'           => function_exists( 'openssl_encrypt' ) && function_exists( 'openssl_decrypt' ),
 				),
-				'routes' => array( 'POST /move', 'GET /manifest', 'POST /manifest/push', 'GET /history', 'GET /internal/archive', 'GET /internal/square/pull', 'POST /internal/square/locations', 'POST /internal/square/team-members', 'GET /internal/square/holdings', 'POST /internal/secrets/{provider}', 'POST /oauth/{provider}/authorize', 'GET /oauth/{provider}/callback', 'GET /oauth/{provider}/status', 'GET /buckets', 'POST /buckets', 'POST /fifo/receive', 'POST /custody/move', 'GET /fifo/availability', 'POST /fifo/pick' ),
+				'routes' => array( 'POST /move', 'GET /manifest', 'POST /manifest/push', 'GET /history', 'GET /internal/archive', 'GET /internal/laser/batches', 'POST /internal/laser/batches', 'GET /internal/square/pull', 'POST /internal/square/locations', 'POST /internal/square/team-members', 'GET /internal/square/holdings', 'POST /internal/secrets/{provider}', 'POST /oauth/{provider}/authorize', 'GET /oauth/{provider}/callback', 'GET /oauth/{provider}/status', 'GET /buckets', 'POST /buckets', 'POST /fifo/receive', 'POST /custody/move', 'GET /fifo/availability', 'POST /fifo/pick' ),
 			)
 		);
 	}
@@ -154,6 +156,39 @@ try {
 	if ( 'GET' === $method && '/manifest' === $path ) {
 		$auth->assertAuthorized( $_SERVER, $query, false );
 		json_response( $remote->buildManifest( $ledger, $query ) );
+	}
+
+	if ( 'GET' === $method && '/internal/laser/batches' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$limit = max( 1, min( 100, (int) ( $query['limit'] ?? 20 ) ) );
+		json_response(
+			array(
+				'ok'         => true,
+				'target_url' => '/internal/laser/batches',
+				'batches'    => $laserBatches->listRecentBatches( $limit ),
+				'message'    => 'Laser batch ingress target is ready.',
+			)
+		);
+	}
+
+	if ( 'POST' === $method && '/internal/laser/batches' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, false );
+		$result = $laserBatches->acceptBatch(
+			json_request_body(),
+			array(
+				'received_from' => resolve_client_ip(),
+				'user_agent'    => (string) ( $_SERVER['HTTP_USER_AGENT'] ?? '' ),
+			)
+		);
+		$logger->info( 'laser.batch.accepted', $result );
+		json_response(
+			array(
+				'ok'      => true,
+				'batch'   => $result,
+				'message' => 'Laser batch accepted into the AIMS sink.',
+			),
+			202
+		);
 	}
 
 	if ( 'POST' === $method && '/manifest/push' === $path ) {
@@ -362,6 +397,24 @@ function resolve_request_path(): string {
 function route_match( string $path, string $pattern, ?array &$matches = null ): bool {
 	$result = preg_match( $pattern, $path, $matches );
 	return 1 === $result;
+}
+
+function resolve_client_ip(): string {
+	foreach ( array( 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' ) as $key ) {
+		$value = trim( (string) ( $_SERVER[ $key ] ?? '' ) );
+		if ( '' === $value ) {
+			continue;
+		}
+
+		if ( str_contains( $value, ',' ) ) {
+			$parts = array_map( 'trim', explode( ',', $value ) );
+			return (string) ( $parts[0] ?? '' );
+		}
+
+		return $value;
+	}
+
+	return '';
 }
 
 /**

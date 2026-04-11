@@ -14,6 +14,7 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 
 	private string $sqlitePath;
 	private ?PDO $connection = null;
+	private ?BinarySaleStreamWriter $binaryWriter = null;
 
 	public function __construct( string $sqlitePath ) {
 		$this->sqlitePath = $sqlitePath;
@@ -117,6 +118,8 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 			throw $exception;
 		}
 
+		$binaryShadow = $this->recordBinaryShadow( $input, $row, $occurredAt, $movementType );
+
 		return array(
 			'movement_uuid'       => $row['movement_uuid'],
 			'sku'                 => $sku,
@@ -127,7 +130,22 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 			'position_snapshot'   => $this->positionsForSku( $sku, $showId ),
 			'positional_quantity' => $this->totalForSku( $sku, $showId ),
 			'occurred_at'         => $occurredAt,
+			'binary_shadow'       => $binaryShadow,
 		);
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function findBinaryPointers( string $referenceType, string $referenceId ): array {
+		return $this->binaryWriter()->findPointers( $referenceType, $referenceId );
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function binaryShadowSummary(): array {
+		return $this->binaryWriter()->summary();
 	}
 
 	/**
@@ -381,6 +399,64 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 		$statement->execute();
 
 		return (float) $statement->fetchColumn();
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 * @param array<string, mixed> $row
+	 * @return array<string, mixed>
+	 */
+	private function recordBinaryShadow( array $input, array $row, string $occurredAt, string $movementType ): array {
+		$priceFieldsPresent = array_key_exists( 'price_cents', $input ) || array_key_exists( 'amount_paid_cents', $input ) || array_key_exists( 'paid_amount_cents', $input );
+		if ( ! $this->isSaleMovementType( $movementType ) && ! $priceFieldsPresent ) {
+			return array( 'status' => 'skipped' );
+		}
+
+		return $this->binaryWriter()->appendPacket(
+			array(
+				'sku'            => (string) ( $row['sku'] ?? '' ),
+				'price_cents'    => $this->resolveMoneyCents( $input, array( 'price_cents', 'amount_paid_cents', 'paid_amount_cents' ) ),
+				'tax_cents'      => $this->resolveMoneyCents( $input, array( 'tax_cents', 'tax_amount_cents' ) ),
+				'timestamp'      => $occurredAt,
+				'event_id'       => $this->intValue( $input['event_id'] ?? 0 ),
+				'reference_type' => $this->stringValue( $input['reference_type'] ?? $movementType ),
+				'reference_id'   => $this->stringValue( $input['reference_id'] ?? $input['square_order_id'] ?? $row['movement_uuid'] ?? '' ),
+			)
+		);
+	}
+
+	private function binaryWriter(): BinarySaleStreamWriter {
+		if ( null !== $this->binaryWriter ) {
+			return $this->binaryWriter;
+		}
+
+		$rootPath = dirname( $this->sqlitePath ) . DIRECTORY_SEPARATOR . 'sink' . DIRECTORY_SEPARATOR . 'hot-binary';
+		$this->binaryWriter = new BinarySaleStreamWriter( $rootPath );
+
+		return $this->binaryWriter;
+	}
+
+	private function isSaleMovementType( string $movementType ): bool {
+		return in_array( $movementType, array( 'square_sale', 'stock_out_sale', 'show_consumption' ), true );
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 * @param array<int, string> $keys
+	 */
+	private function resolveMoneyCents( array $input, array $keys ): ?int {
+		foreach ( $keys as $key ) {
+			if ( ! array_key_exists( $key, $input ) ) {
+				continue;
+			}
+
+			$value = $input[ $key ];
+			if ( is_numeric( $value ) ) {
+				return (int) round( (float) $value );
+			}
+		}
+
+		return null;
 	}
 
 	private function stringValue( mixed $value ): string {

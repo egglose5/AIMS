@@ -483,6 +483,83 @@ if ( ! function_exists( 'add_shortcode' ) ) {
 	}
 }
 
+if ( ! class_exists( 'WP_REST_Request' ) ) {
+	class WP_REST_Request {
+		private string $method;
+		private string $route;
+		private array $params;
+
+		public function __construct( string $method = 'GET', string $route = '/', array $params = array() ) {
+			$this->method = strtoupper( $method );
+			$this->route  = $route;
+			$this->params = $params;
+		}
+
+		public function get_json_params(): array {
+			return $this->params;
+		}
+
+		public function get_params(): array {
+			return $this->params;
+		}
+
+		public function get_param( string $key ) {
+			return $this->params[ $key ] ?? null;
+		}
+
+		public function get_route(): string {
+			return $this->route;
+		}
+
+		public function get_method(): string {
+			return $this->method;
+		}
+	}
+}
+
+if ( ! class_exists( 'WP_REST_Response' ) ) {
+	class WP_REST_Response {
+		private $data;
+		private int $status;
+
+		public function __construct( $data = null, int $status = 200 ) {
+			$this->data   = $data;
+			$this->status = $status;
+		}
+
+		public function get_data() {
+			return $this->data;
+		}
+
+		public function get_status(): int {
+			return $this->status;
+		}
+	}
+}
+
+if ( ! function_exists( 'register_rest_route' ) ) {
+	function register_rest_route( string $namespace, string $route, array $args = array(), bool $override = false ): bool {
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			'register_rest_route',
+			array( $namespace, $route, $args, $override )
+		);
+
+		return true;
+	}
+}
+
+if ( ! function_exists( 'rest_ensure_response' ) ) {
+	function rest_ensure_response( $response ) {
+		return $response instanceof WP_REST_Response ? $response : new WP_REST_Response( $response );
+	}
+}
+
+if ( ! function_exists( '__return_true' ) ) {
+	function __return_true(): bool {
+		return true;
+	}
+}
+
 if ( ! function_exists( 'add_menu_page' ) ) {
 	function add_menu_page( ...$args ) {
 		\AIMS\Tests\Support\TestState::record_hook_call( 'add_menu_page', $args );

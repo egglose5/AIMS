@@ -15,6 +15,11 @@ abstract class TestCase extends BaseTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		TestState::reset();
+
+		if ( isset( $GLOBALS['wpdb'] ) && $GLOBALS['wpdb'] instanceof FakeWpdb ) {
+			$GLOBALS['wpdb']->reset();
+		}
+
 		$this->wpdb = $GLOBALS['wpdb'];
 	}
 

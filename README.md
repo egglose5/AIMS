@@ -23,9 +23,11 @@ AIMS is designed for micro and small businesses that need physical truth before 
 
 ## Binary Stream
 
-AIMS intentionally treats short SKUs as a product rule in its planned binary-stream design. The target hot path uses a fixed 64-byte packet with `SKU` limited to 32 UTF-8 bytes and all financial snapshots stored as integer cents, not floats. AIMS reads Square transactional data at sale time, strips it down to SKU-first operational facts for the hot ledger, and keeps that ledger lean while pushing verbose Square metadata to colder storage. `PRICE_CENT_SNAPSHOT` must record the actual realized sale price at the moment of sale, including event-specific price adjustments, rather than the catalog price. Invalid records are rejected into an exception lane rather than silently truncated, and compact transaction references are retained as idempotency/reconciliation anchors so the lean model is not lossy.
+AIMS intentionally treats short SKUs as a product rule in its binary-stream design. The hot path uses a fixed 64-byte packet with `SKU` limited to 32 UTF-8 bytes and all financial snapshots stored as integer cents, not floats. AIMS reads Square transactional data at sale time, strips it down to SKU-first operational facts for the hot ledger, and keeps that ledger lean while pushing verbose Square metadata to colder storage. `PRICE_CENT_SNAPSHOT` must record the actual realized sale price at the moment of sale, including event-specific price adjustments, rather than the catalog price. Invalid records are rejected into an exception lane rather than silently truncated, and compact transaction references are retained as idempotency/reconciliation anchors so the lean model is not lossy.
 
-See `docs/ames-binary-stream-spec.md` for the packet layout, validation rules, and rollout guidance.
+The first shadow-mode implementation slice is now present in `ames-core`: sale-side writes can emit a 64-byte packet plus a sidecar reference dictionary, append-only pointer index, and exception log under the headless sink path. This keeps the WordPress path out of the hot write loop while giving AIMS an exact byte-offset replay path for later reconciliation work.
+
+See `docs/ames-binary-stream-spec.md` for the packet layout, validation rules, implementation status, and rollout guidance.
 
 ## Deployment Profile
 
@@ -47,9 +49,11 @@ The repository currently provides:
 - Square queue/raw event/normalized sale/replay scaffolding with sync-run telemetry
 - Square thin-client overlap sync foundation: headless AIMS can pull recent Square orders by location/window, and the WP side can replay them into the existing queue/import flow
 - location-aware Square stock push from AIMS so bucket-linked stock can be projected to the correct Square location
+- authenticated laser-control batch ingress in both headless AIMS (`POST /internal/laser/batches`) and the WooCommerce REST surface (`POST /wp-json/wc/v3/aims/laser-batches`) so Docker-based production tooling can push batches without using WordPress as the hot write path
+- shadow-mode binary sale stream writer in `ames-core` with a fixed-width packet, reusable reference dictionary, byte-offset pointer index, and exception lane for invalid hot-path rows
 - capability-first permissions editor with surface-aware access control, while keeping WordPress as the default management experience
-- custom table definitions with indexes across events, demand, buckets, inventory, Square sync, attribution, fulfillment, and operational logging
-- PHPUnit coverage across the headless bridge, event execution, FIFO, auth surfaces, audit logging, and thin-client Square sync foundations
+- custom table definitions with indexes across events, demand, buckets, inventory, Square sync, attribution, fulfillment, operational logging, and pre-production laser batch handoff
+- PHPUnit coverage across the headless bridge, event execution, FIFO, auth surfaces, audit logging, thin-client Square sync foundations, laser batch ingress, and the new binary stream writer
 
 ## Current architecture truth
 

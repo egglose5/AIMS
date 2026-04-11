@@ -71,6 +71,22 @@ class AIMS_Sale_Fulfillment_Allocation_Repository {
 			'updated_at'         => current_time( 'mysql' ),
 		);
 
+		if ( $allocation_id <= 0 ) {
+			$existing = null;
+
+			if ( ! empty( $record['square_sale_id'] ) ) {
+				$existing = $this->find_by_square_sale_id( (int) $record['square_sale_id'] );
+			}
+
+			if ( empty( $existing ) ) {
+				$existing = $this->find_existing_allocation( $record );
+			}
+
+			if ( ! empty( $existing['id'] ) ) {
+				$allocation_id = (int) $existing['id'];
+			}
+		}
+
 		if ( $allocation_id > 0 ) {
 			$wpdb->update(
 				$this->get_table_name(),
@@ -92,5 +108,54 @@ class AIMS_Sale_Fulfillment_Allocation_Repository {
 		);
 
 		return (int) $wpdb->insert_id;
+	}
+
+	public function find_by_square_sale_id( int $square_sale_id ): ?array {
+		global $wpdb;
+
+		if ( $square_sale_id <= 0 ) {
+			return null;
+		}
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE square_sale_id = %d ORDER BY id DESC LIMIT 1',
+				$square_sale_id
+			),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $row : null;
+	}
+
+	private function find_existing_allocation( array $record ): ?array {
+		global $wpdb;
+
+		if ( '' === $record['square_order_id'] || (int) $record['product_id'] <= 0 ) {
+			return null;
+		}
+
+		$query = 'SELECT * FROM ' . $this->get_table_name() . ' WHERE square_order_id = %s AND product_id = %d AND vendor_id = %d AND event_id = %d AND allocation_type = %s';
+		$args  = array(
+			$record['square_order_id'],
+			(int) $record['product_id'],
+			(int) $record['vendor_id'],
+			(int) $record['event_id'],
+			(string) $record['allocation_type'],
+		);
+
+		$source_bucket_id = isset( $record['source_bucket_id'] ) ? (int) $record['source_bucket_id'] : 0;
+		if ( $source_bucket_id > 0 ) {
+			$query .= ' AND source_bucket_id = %d';
+			$args[] = $source_bucket_id;
+		} elseif ( '' !== (string) ( $record['source_bucket_code'] ?? '' ) ) {
+			$query .= ' AND source_bucket_code = %s';
+			$args[] = (string) $record['source_bucket_code'];
+		}
+
+		$query .= ' ORDER BY id DESC LIMIT 1';
+		$row = $wpdb->get_row( $wpdb->prepare( $query, $args ), ARRAY_A );
+
+		return is_array( $row ) ? $row : null;
 	}
 }

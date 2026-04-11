@@ -26,6 +26,9 @@ final class StitchSchemaTest extends \AIMS\Tests\TestCase {
 			$this->assertStringContainsString( 'quantity_completed decimal(20,4) NOT NULL DEFAULT 0.0000', $definitions );
 			$this->assertStringContainsString( 'quantity_received_back decimal(20,4) NOT NULL DEFAULT 0.0000', $definitions );
 			$this->assertStringContainsString( 'unit_payout_snapshot decimal(20,4) NOT NULL DEFAULT 0.0000', $definitions );
+			$this->assertStringContainsString( 'labels_prepared_at datetime NULL DEFAULT NULL', $definitions );
+			$this->assertStringContainsString( 'labels_prepared_by bigint(20) unsigned NOT NULL DEFAULT 0', $definitions );
+			$this->assertStringContainsString( 'label_template_key varchar(100) NOT NULL DEFAULT \'\'', $definitions );
 		} finally {
 			$GLOBALS['wpdb'] = $original_wpdb;
 		}

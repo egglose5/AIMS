@@ -26,6 +26,11 @@ class AIMS_Stitch_Job_Item_Service {
 		}
 
 		$record = $this->normalize_item_data( $data );
+		$record = $this->apply_label_preparation_defaults( $record, $data, $current_user_id );
+		if ( ! $this->has_label_preparation_proof( $record ) ) {
+			return $this->failure_response( 'Print and apply item barcodes before releasing this work to stitcher custody.' );
+		}
+
 		$record['status']      = AIMS_Stitch_Job_Item_Repository::STATUS_ASSIGNED;
 		$record['assigned_at'] = current_time( 'mysql' );
 
@@ -116,19 +121,58 @@ class AIMS_Stitch_Job_Item_Service {
 
 	private function normalize_item_data( array $data ): array {
 		return array(
-			'stitch_job_id'          => (int) ( $data['stitch_job_id'] ?? 0 ),
-			'line_number'            => max( 1, (int) ( $data['line_number'] ?? 1 ) ),
-			'product_id'             => (int) ( $data['product_id'] ?? 0 ),
-			'vendor_id'              => (int) ( $data['vendor_id'] ?? 0 ),
-			'producer_user_id'       => (int) ( $data['producer_user_id'] ?? 0 ),
-			'stitcher_user_id'       => (int) ( $data['stitcher_user_id'] ?? 0 ),
-			'stitch_job_type'        => sanitize_key( (string) ( $data['stitch_job_type'] ?? '' ) ),
-			'quantity_requested'     => (float) ( $data['quantity_requested'] ?? 0 ),
-			'quantity_completed'     => (float) ( $data['quantity_completed'] ?? 0 ),
-			'quantity_received_back' => (float) ( $data['quantity_received_back'] ?? 0 ),
-			'notes'                  => isset( $data['notes'] ) ? $data['notes'] : '',
+			'stitch_job_id'           => (int) ( $data['stitch_job_id'] ?? 0 ),
+			'line_number'             => max( 1, (int) ( $data['line_number'] ?? 1 ) ),
+			'product_id'              => (int) ( $data['product_id'] ?? 0 ),
+			'vendor_id'               => (int) ( $data['vendor_id'] ?? 0 ),
+			'producer_user_id'        => (int) ( $data['producer_user_id'] ?? 0 ),
+			'stitcher_user_id'        => (int) ( $data['stitcher_user_id'] ?? 0 ),
+			'stitch_job_type'         => sanitize_key( (string) ( $data['stitch_job_type'] ?? '' ) ),
+			'quantity_requested'      => (float) ( $data['quantity_requested'] ?? 0 ),
+			'quantity_completed'      => (float) ( $data['quantity_completed'] ?? 0 ),
+			'quantity_received_back'  => (float) ( $data['quantity_received_back'] ?? 0 ),
+			'labels_prepared_at'      => $data['labels_prepared_at'] ?? null,
+			'labels_prepared_by'      => (int) ( $data['labels_prepared_by'] ?? 0 ),
+			'labels_prepared_quantity'=> (float) ( $data['labels_prepared_quantity'] ?? 0 ),
+			'label_template_key'      => sanitize_key( (string) ( $data['label_template_key'] ?? $data['template_key'] ?? '' ) ),
+			'notes'                   => isset( $data['notes'] ) ? $data['notes'] : '',
 			'payout_snapshot_rule_id' => (int) ( $data['payout_snapshot_rule_id'] ?? 0 ),
 		);
+	}
+
+	private function apply_label_preparation_defaults( array $record, array $data, int $current_user_id ): array {
+		$labels_confirmed = ! empty( $data['labels_prepared'] )
+			|| ! empty( $data['labels_applied'] )
+			|| ! empty( $data['confirm_labels_prepared'] )
+			|| ! empty( $data['label_printed'] )
+			|| ! empty( $record['labels_prepared_at'] )
+			|| (int) ( $record['labels_prepared_by'] ?? 0 ) > 0
+			|| '' !== (string) ( $record['label_template_key'] ?? '' );
+
+		if ( $labels_confirmed && empty( $record['labels_prepared_at'] ) ) {
+			$record['labels_prepared_at'] = current_time( 'mysql' );
+		}
+
+		if ( $labels_confirmed && (int) ( $record['labels_prepared_by'] ?? 0 ) <= 0 && $current_user_id > 0 ) {
+			$record['labels_prepared_by'] = $current_user_id;
+		}
+
+		if ( $labels_confirmed && (float) ( $record['labels_prepared_quantity'] ?? 0 ) <= 0 ) {
+			$record['labels_prepared_quantity'] = max( 1.0, (float) ( $record['quantity_requested'] ?? 0 ) );
+		}
+
+		if ( '' === (string) ( $record['label_template_key'] ?? '' ) && ! empty( $data['template_key'] ) ) {
+			$record['label_template_key'] = sanitize_key( (string) $data['template_key'] );
+		}
+
+		return $record;
+	}
+
+	private function has_label_preparation_proof( array $record ): bool {
+		$prepared_at       = trim( (string) ( $record['labels_prepared_at'] ?? '' ) );
+		$prepared_quantity = (float) ( $record['labels_prepared_quantity'] ?? 0 );
+
+		return '' !== $prepared_at && $prepared_quantity > 0;
 	}
 
 	private function failure_response( string $message ): array {
