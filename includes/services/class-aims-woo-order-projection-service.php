@@ -6,9 +6,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Woo_Order_Projection_Service {
 	private $draft_order_creator;
+	private $order_promoter;
 
-	public function __construct( callable $draft_order_creator = null ) {
+	public function __construct( callable $draft_order_creator = null, callable $order_promoter = null ) {
 		$this->draft_order_creator = $draft_order_creator;
+		$this->order_promoter      = $order_promoter;
 	}
 
 	public function project_normalized_sale( array $sale_record, array $context = array() ): array {
@@ -113,6 +115,10 @@ class AIMS_Woo_Order_Projection_Service {
 			$order->update_meta_data( '_aims_square_order_id', (string) ( $sale_record['square_order_id'] ?? '' ) );
 			$order->update_meta_data( '_aims_square_sale_id', (int) ( $sale_record['normalized_sale_id'] ?? $sale_record['id'] ?? 0 ) );
 			$order->update_meta_data( '_aims_projection_source', 'aims_square_replay' );
+			$sync_run_id = (int) ( $context['sync_run_id'] ?? 0 );
+			if ( $sync_run_id > 0 ) {
+				$order->update_meta_data( '_aims_sync_run_id', $sync_run_id );
+			}
 		}
 
 		if ( method_exists( $order, 'add_order_note' ) ) {
@@ -132,8 +138,79 @@ class AIMS_Woo_Order_Projection_Service {
 		);
 	}
 
-	private function normalize_created_order_result( $result, array $context = array() ): array {
-		$projection_mode = sanitize_key( (string) ( $context['projection_mode'] ?? 'draft' ) );
+	/**
+	 * Promotes all draft WooCommerce orders associated with the given run to 'pending'.
+	 *
+	 * @param int   $run_id        The sync run ID (informational — used in the return value).
+	 * @param int[] $woo_order_ids WooCommerce order IDs to attempt promotion.
+	 * @return array{run_id:int, promoted_count:int, skipped_count:int, errors:array}
+	 */
+	public function promote_draft_projections_for_run( int $run_id, array $woo_order_ids ): array {
+		$promoted = 0;
+		$skipped  = 0;
+		$errors   = array();
+
+		foreach ( $woo_order_ids as $order_id ) {
+			$order_id = (int) $order_id;
+			if ( $order_id <= 0 ) {
+				++$skipped;
+				continue;
+			}
+
+			if ( is_callable( $this->order_promoter ) ) {
+				$outcome = call_user_func( $this->order_promoter, $order_id );
+				$status  = (string) ( is_array( $outcome ) ? ( $outcome['status'] ?? 'skipped' ) : 'skipped' );
+			} else {
+				$status = $this->promote_single_order( $order_id );
+			}
+
+			if ( 'promoted' === $status ) {
+				++$promoted;
+			} elseif ( 'error' === $status ) {
+				$errors[] = $order_id;
+			} else {
+				++$skipped;
+			}
+		}
+
+		return array(
+			'run_id'         => $run_id,
+			'promoted_count' => $promoted,
+			'skipped_count'  => $skipped,
+			'errors'         => $errors,
+		);
+	}
+
+	private function promote_single_order( int $order_id ): string {
+		if ( ! function_exists( 'wc_get_order' ) ) {
+			return 'skipped';
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_status' ) ) {
+			return 'skipped';
+		}
+
+		if ( 'draft' !== $order->get_status() ) {
+			return 'skipped';
+		}
+
+		if ( method_exists( $order, 'set_status' ) ) {
+			$order->set_status( 'pending' );
+		}
+
+		if ( method_exists( $order, 'add_order_note' ) ) {
+			$order->add_order_note( 'AIMS: draft projection promoted to pending by operator.' );
+		}
+
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+
+		return 'promoted';
+	}
+
+	private function normalize_created_order_result( $result, array $context = array() ): array {		$projection_mode = sanitize_key( (string) ( $context['projection_mode'] ?? 'draft' ) );
 
 		if ( is_numeric( $result ) ) {
 			$result = array( 'woo_order_id' => (int) $result );

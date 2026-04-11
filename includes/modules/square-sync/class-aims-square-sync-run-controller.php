@@ -23,6 +23,7 @@ class AIMS_Square_Sync_Run_Controller {
 		add_action( 'admin_post_aims_square_replay', array( $this, 'handle_replay' ) );
 		add_action( 'admin_post_aims_square_undo', array( $this, 'handle_undo' ) );
 		add_action( 'admin_post_aims_square_export_projection_parquet', array( $this, 'handle_export_projection_parquet' ) );
+		add_action( 'admin_post_aims_square_promote_projections', array( $this, 'handle_promote_projections' ) );
 	}
 
 	public function handle_replay(): void {
@@ -43,6 +44,48 @@ class AIMS_Square_Sync_Run_Controller {
 			'aims_square_undo_requested',
 			'undo_requested'
 		);
+	}
+
+	public function handle_promote_projections(): void {
+		if ( ! $this->can_manage_square_sync() ) {
+			wp_die( esc_html__( 'You are not allowed to promote projection orders.', 'ai-man-sys' ) );
+		}
+
+		check_admin_referer( 'aims_square_sync_promote_projections', '_aims_nonce' );
+
+		$run_id = max( 0, (int) ( $_REQUEST['run_id'] ?? 0 ) );
+		if ( $run_id <= 0 ) {
+			$this->redirect_to_sync_runs( '', $run_id, 'error', 'A valid Square sync run is required.' );
+		}
+
+		$run = $this->runs->find( $run_id );
+		if ( ! is_array( $run ) || 'square' !== sanitize_key( (string) ( $run['source_system'] ?? '' ) ) ) {
+			$this->redirect_to_sync_runs( '', $run_id, 'error', 'Square sync run not found.' );
+		}
+
+		$provider     = new AIMS_Square_Sync_Runs_Data_Provider();
+		$details      = $provider->get_projection_effect_details( $run_id, 50000 );
+		$effect_rows  = (array) ( $details['rows'] ?? array() );
+
+		$woo_order_ids = array();
+		foreach ( $effect_rows as $row ) {
+			$woo_order_id = (int) ( $row['woo_order_id'] ?? 0 );
+			if ( $woo_order_id > 0 ) {
+				$woo_order_ids[] = $woo_order_id;
+			}
+		}
+
+		if ( empty( $woo_order_ids ) ) {
+			$this->redirect_to_sync_runs( '', $run_id, 'error', 'No projected WooCommerce orders found for this run.' );
+		}
+
+		$result = ( new AIMS_Woo_Order_Projection_Service() )->promote_draft_projections_for_run( $run_id, $woo_order_ids );
+
+		$promoted = (int) ( $result['promoted_count'] ?? 0 );
+		$skipped  = (int) ( $result['skipped_count'] ?? 0 );
+		$message  = sprintf( 'Promote complete. %d promoted, %d skipped.', $promoted, $skipped );
+
+		$this->redirect_to_sync_runs( '', $run_id, 'success', $message );
 	}
 
 	public function handle_export_projection_parquet(): void {

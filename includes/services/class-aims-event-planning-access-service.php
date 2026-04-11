@@ -118,10 +118,30 @@ class AIMS_Event_Planning_Access_Service {
 	}
 
 	public function is_supervisor( int $user_id = 0 ): bool {
+		$user_id = $this->resolve_user_id( $user_id );
+
+		if ( $user_id <= 0 || ! is_object( $this->responsibility_auth ) ) {
+			return false;
+		}
+
+		if ( method_exists( $this->responsibility_auth, 'is_supervisor' ) ) {
+			return (bool) $this->responsibility_auth->is_supervisor( $user_id );
+		}
+
 		return false;
 	}
 
 	public function get_subordinate_user_ids( int $user_id = 0, int $max_depth = 5 ): array {
+		$user_id = $this->resolve_user_id( $user_id );
+
+		if ( $user_id <= 0 || ! is_object( $this->responsibility_auth ) ) {
+			return array();
+		}
+
+		if ( method_exists( $this->responsibility_auth, 'get_subordinate_user_ids_for_user' ) ) {
+			return (array) $this->responsibility_auth->get_subordinate_user_ids_for_user( $user_id );
+		}
+
 		return array();
 	}
 
@@ -148,7 +168,9 @@ class AIMS_Event_Planning_Access_Service {
 			return true;
 		}
 
-		return false;
+		$subordinates = $this->get_subordinate_user_ids( $supervisor_user_id, $max_depth );
+
+		return in_array( $candidate_user_id, $subordinates, true );
 	}
 
 	public function get_authorized_event_contexts( int $user_id = 0, int $max_depth = 5 ): array {

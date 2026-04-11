@@ -210,4 +210,75 @@ final class InventoryTransferAuthorizationServiceTest extends \AIMS\Tests\TestCa
 		$this->assertTrue( $service->is_exceptional_transfer_type( 'direct_collection' ) );
 		$this->assertSame( 'recovery', $service->normalize_transfer_type( 'Recovery' ) );
 	}
+
+	public function testCanActOnCustodyNodeGrantedViaScopeCustodyResponsibilityAssignment(): void {
+		update_option( \AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+		// User 60 has basic inventory capability but no global authority and no endpoint resolution.
+		// However, they have a SCOPE_CUSTODY responsibility assignment for node_id 77.
+		TestState::set_current_user_id( 60 );
+		TestState::set_user_capabilities( 60, array( \AIMS_Capabilities::CAP_MANAGE_INVENTORY ) );
+
+		// Queue active assignments for user 60: one CUSTODY scope for node 77.
+		$this->wpdb()->queue_results( array(
+			array(
+				'id'                 => 1,
+				'user_id'            => 60,
+				'responsibility_key' => 'vendor_manage_inventory',
+				'scope_type'         => \AIMS_Responsibility_Assignment_Repository::SCOPE_CUSTODY,
+				'scope_ref_id'       => 77,
+				'is_active'          => 1,
+				'revoked_at'         => null,
+			),
+		) );
+
+		$endpoint_directory = new class() extends \AIMS_Inventory_Endpoint_Directory_Service {
+			public function __construct() {}
+			public function resolve_endpoint_from_node( int $node_id, string $node_type = '', int $user_id = 0 ): array {
+				return array(); // no endpoint resolution
+			}
+		};
+
+		$service = new \AIMS_Inventory_Transfer_Authorization_Service(
+			$endpoint_directory,
+			new \AIMS_Person_Identity_Service(),
+			new \AIMS_Responsibility_Authorization_Service()
+		);
+
+		$this->assertTrue( $service->can_act_on_custody_node( 60, 'vendor', 77, 'dispatch' ), 'SCOPE_CUSTODY assignment should grant custody node access.' );
+	}
+
+	public function testCanActOnCustodyNodeDeniedWhenEndpointNotInScopeCustodyAssignment(): void {
+		update_option( \AIMS_Responsibility_Authorization_Service::OPTION_ENABLE, '1' );
+		// User 61 has a SCOPE_CUSTODY assignment for node 88 only, not node 99.
+		TestState::set_current_user_id( 61 );
+		TestState::set_user_capabilities( 61, array( \AIMS_Capabilities::CAP_MANAGE_INVENTORY ) );
+
+		// Queue active assignments: CUSTODY for node 88 only.
+		$this->wpdb()->queue_results( array(
+			array(
+				'id'                 => 2,
+				'user_id'            => 61,
+				'responsibility_key' => 'vendor_manage_inventory',
+				'scope_type'         => \AIMS_Responsibility_Assignment_Repository::SCOPE_CUSTODY,
+				'scope_ref_id'       => 88,
+				'is_active'          => 1,
+				'revoked_at'         => null,
+			),
+		) );
+
+		$endpoint_directory = new class() extends \AIMS_Inventory_Endpoint_Directory_Service {
+			public function __construct() {}
+			public function resolve_endpoint_from_node( int $node_id, string $node_type = '', int $user_id = 0 ): array {
+				return array();
+			}
+		};
+
+		$service = new \AIMS_Inventory_Transfer_Authorization_Service(
+			$endpoint_directory,
+			new \AIMS_Person_Identity_Service(),
+			new \AIMS_Responsibility_Authorization_Service()
+		);
+
+		$this->assertFalse( $service->can_act_on_custody_node( 61, 'vendor', 99, 'dispatch' ), 'Node 99 should not be accessible — only node 88 is in scope.' );
+	}
 }

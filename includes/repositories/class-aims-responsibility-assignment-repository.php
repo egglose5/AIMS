@@ -5,9 +5,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Responsibility_Assignment_Repository {
-	public const SCOPE_GLOBAL = 'global';
-	public const SCOPE_EVENT  = 'event';
-	public const SCOPE_VENDOR = 'vendor';
+	public const SCOPE_GLOBAL           = 'global';
+	public const SCOPE_EVENT            = 'event';
+	public const SCOPE_VENDOR           = 'vendor';
+	public const SCOPE_CUSTODY          = 'custody';
+	public const SCOPE_SUBORDINATE_TREE = 'subordinate_tree';
 
 	public function get_table_name(): string {
 		global $wpdb;
@@ -118,6 +120,30 @@ class AIMS_Responsibility_Assignment_Repository {
 		}
 
 		return array_values( array_unique( $scope_ref_ids ) );
+	}
+
+	/**
+	 * Returns true if the user has any active assignment with the given scope_type
+	 * and scope_ref_id, regardless of responsibility_key.
+	 */
+	public function has_scope_for_user( int $user_id, string $scope_type, int $scope_ref_id ): bool {
+		$scope_type   = sanitize_key( $scope_type );
+		$scope_ref_id = (int) $scope_ref_id;
+
+		if ( $user_id <= 0 || '' === $scope_type || $scope_ref_id <= 0 ) {
+			return false;
+		}
+
+		foreach ( $this->get_active_assignments_for_user( $user_id ) as $assignment ) {
+			$assigned_scope = sanitize_key( (string) ( $assignment['scope_type'] ?? '' ) );
+			$assigned_ref   = (int) ( $assignment['scope_ref_id'] ?? 0 );
+
+			if ( $assigned_scope === $scope_type && $assigned_ref === $scope_ref_id ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public function get_user_ids_for_responsibility( string $responsibility_key, string $scope_type = self::SCOPE_GLOBAL, int $scope_ref_id = 0 ): array {

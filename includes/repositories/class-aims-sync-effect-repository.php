@@ -77,6 +77,32 @@ class AIMS_Sync_Effect_Repository {
 		return is_array( $row ) ? $row : null;
 	}
 
+	/**
+	 * Returns true if any sync effect already exists for the given sync_run_id
+	 * with a metadata_json entry whose raw_event_id matches $raw_event_id.
+	 * Used as a fast dedup guard before re-processing a raw event.
+	 */
+	public function has_effect_for_raw_event( int $sync_run_id, int $raw_event_id ): bool {
+		global $wpdb;
+
+		if ( $sync_run_id <= 0 || $raw_event_id <= 0 ) {
+			return false;
+		}
+
+		// wp_json_encode always writes numeric values without quotes so the
+		// pattern "raw_event_id":<int> is safe and stable.
+		$pattern = '%"raw_event_id":' . (int) $raw_event_id . '%';
+		$count   = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COUNT(*) FROM ' . $this->get_table_name() . ' WHERE sync_run_id = %d AND metadata_json LIKE %s',
+				$sync_run_id,
+				$pattern
+			)
+		);
+
+		return (int) $count > 0;
+	}
+
 	public function mark_reversed( int $effect_id, ?int $reversal_sync_action_id = null, ?string $reversed_at = null ): bool {
 		global $wpdb;
 

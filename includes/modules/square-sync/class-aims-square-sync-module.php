@@ -47,13 +47,18 @@ class AIMS_Square_Sync_Module implements AIMS_Module {
 
 		check_admin_referer( 'aims_square_sync_ingest' );
 
-		$payload_json = (string) wp_unslash( $_POST['payload_json'] ?? '' );
-		$mode         = sanitize_key( wp_unslash( $_POST['ingest_mode'] ?? 'analyze_only' ) );
-		$payload      = json_decode( $payload_json, true );
+		$payload_json              = (string) wp_unslash( $_POST['payload_json'] ?? '' );
+		$mode                      = sanitize_key( wp_unslash( $_POST['ingest_mode'] ?? 'analyze_only' ) );
+		$allow_woo_projection       = ! empty( $_POST['allow_woo_order_projection'] );
+		$allow_unreconciled         = ! empty( $_POST['allow_unreconciled_projection'] );
+		$payload                   = json_decode( $payload_json, true );
 
 		if ( ! is_array( $payload ) ) {
 			$this->redirect_with_message( 'error', 'Payload must be valid JSON.' );
 		}
+
+		$payload['allow_woo_order_projection']  = $allow_woo_projection;
+		$payload['allow_unreconciled_projection'] = $allow_unreconciled;
 
 		$sync_runs = new AIMS_Sync_Run_Repository();
 		$actions   = new AIMS_Sync_Action_Repository();
@@ -160,6 +165,9 @@ class AIMS_Square_Sync_Module implements AIMS_Module {
 		echo '<option value="analyze_only">Analyze + queue only (safe)</option>';
 		echo '<option value="persist_flow">Persist through sales flow</option>';
 		echo '</select></p>';
+		echo '<p><strong>WooCommerce Order Projection</strong></p>';
+		echo '<p><label><input type="checkbox" name="allow_woo_order_projection" value="1" /> Enable WooCommerce order projection for this run</label></p>';
+		echo '<p><label><input type="checkbox" name="allow_unreconciled_projection" value="1" /> Allow projection on unreconciled sales (skip reconciliation gate)</label></p>';
 		echo '<p><button type="submit" class="button button-primary">Run manual ingestion</button></p>';
 		echo '</form>';
 	}

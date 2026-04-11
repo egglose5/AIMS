@@ -165,6 +165,55 @@ class AIMS_Bucket_Inventory_Position_Repository {
 		return $this->save( $record, (int) ( $existing['id'] ?? 0 ) );
 	}
 
+	/**
+	 * Atomically increments (or decrements when $delta < 0) the reserved_quantity
+	 * for a single position row.  Returns false if the update fails or position_id
+	 * is invalid.
+	 */
+	public function increment_reserved_quantity( int $position_id, float $delta ): bool {
+		global $wpdb;
+
+		if ( $position_id <= 0 ) {
+			return false;
+		}
+
+		return false !== $wpdb->query(
+			$wpdb->prepare(
+				'UPDATE ' . $this->get_table_name()
+				. ' SET reserved_quantity = reserved_quantity + %f, updated_at = %s WHERE id = %d',
+				$delta,
+				current_time( 'mysql' ),
+				$position_id
+			)
+		);
+	}
+
+	/**
+	 * Returns all active positions matching a vendor_id + product_id pair across
+	 * all buckets.  Used by the fulfillment bridge to locate the position to
+	 * reserve against when a bucket_id is not yet known.
+	 */
+	public function find_by_vendor_and_product( int $vendor_id, int $product_id ): array {
+		global $wpdb;
+
+		if ( $vendor_id <= 0 || $product_id <= 0 ) {
+			return array();
+		}
+
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name()
+				. ' WHERE vendor_id = %d AND product_id = %d AND position_status = %s ORDER BY id ASC',
+				$vendor_id,
+				$product_id,
+				'active'
+			),
+			ARRAY_A
+		);
+
+		return is_array( $rows ) ? $rows : array();
+	}
+
 	public function adjust_reserved_quantity( int $position_id, float $reserved_quantity ): bool {
 		global $wpdb;
 

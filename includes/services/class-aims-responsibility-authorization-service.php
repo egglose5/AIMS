@@ -413,6 +413,73 @@ class AIMS_Responsibility_Authorization_Service {
 		return false;
 	}
 
+	/**
+	 * Returns the custody endpoint IDs (node IDs stored as scope_ref_id) for which
+	 * the user has an active SCOPE_CUSTODY assignment for the given responsibility key.
+	 */
+	public function get_authorized_custody_endpoint_ids( int $user_id = 0, string $resp_key = '' ): array {
+		$user_id  = $user_id > 0 ? $user_id : 0;
+		$resp_key = sanitize_key( $resp_key );
+
+		if ( $user_id <= 0 || '' === $resp_key ) {
+			return array();
+		}
+
+		return $this->get_scope_ref_ids_for_user( $user_id, $resp_key, AIMS_Responsibility_Assignment_Repository::SCOPE_CUSTODY );
+	}
+
+	/**
+	 * Returns true if the user has responsibility-table custody access to the given
+	 * endpoint (node) ID.  When $resp_key is provided, only SCOPE_CUSTODY assignments
+	 * for that specific key are checked.  When empty, any active SCOPE_CUSTODY
+	 * assignment whose scope_ref_id matches is sufficient.
+	 */
+	public function user_can_access_custody_endpoint( int $user_id, int $endpoint_id, string $resp_key = '' ): bool {
+		if ( $user_id <= 0 || $endpoint_id <= 0 || ! $this->is_enabled() ) {
+			return false;
+		}
+
+		if ( '' !== $resp_key ) {
+			return in_array( $endpoint_id, $this->get_authorized_custody_endpoint_ids( $user_id, $resp_key ), true );
+		}
+
+		return method_exists( $this->assignments, 'has_scope_for_user' )
+			&& $this->assignments->has_scope_for_user( $user_id, AIMS_Responsibility_Assignment_Repository::SCOPE_CUSTODY, $endpoint_id );
+	}
+
+	/**
+	 * Returns the user IDs listed as subordinates of the given user via
+	 * SCOPE_SUBORDINATE_TREE responsibility assignments.
+	 */
+	public function get_subordinate_user_ids_for_user( int $user_id = 0 ): array {
+		$user_id = $user_id > 0 ? $user_id : ( function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0 );
+
+		if ( $user_id <= 0 || ! $this->is_enabled() ) {
+			return array();
+		}
+
+		$subordinate_ids = array();
+		foreach ( $this->assignments->get_active_assignments_for_user( $user_id ) as $assignment ) {
+			if ( AIMS_Responsibility_Assignment_Repository::SCOPE_SUBORDINATE_TREE !== sanitize_key( (string) ( $assignment['scope_type'] ?? '' ) ) ) {
+				continue;
+			}
+			$ref_id = (int) ( $assignment['scope_ref_id'] ?? 0 );
+			if ( $ref_id > 0 ) {
+				$subordinate_ids[] = $ref_id;
+			}
+		}
+
+		return array_values( array_unique( $subordinate_ids ) );
+	}
+
+	/**
+	 * Returns true if the user has any active SCOPE_SUBORDINATE_TREE assignment
+	 * (i.e. they have been granted supervisor status over at least one other user).
+	 */
+	public function is_supervisor( int $user_id = 0 ): bool {
+		return ! empty( $this->get_subordinate_user_ids_for_user( $user_id ) );
+	}
+
 	private function get_scope_ref_ids_for_user( int $user_id, string $responsibility_key, string $scope_type ): array {
 		if ( ! $this->is_enabled() ) {
 			return array();

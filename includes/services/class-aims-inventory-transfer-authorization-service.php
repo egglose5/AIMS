@@ -16,13 +16,16 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 
 	private $endpoint_directory;
 	private $person_identity;
+	private $responsibility_auth;
 
 	public function __construct(
 		AIMS_Inventory_Endpoint_Directory_Service $endpoint_directory = null,
-		AIMS_Person_Identity_Service $person_identity = null
+		AIMS_Person_Identity_Service $person_identity = null,
+		AIMS_Responsibility_Authorization_Service $responsibility_auth = null
 	) {
 		$this->endpoint_directory = $endpoint_directory ?: new AIMS_Inventory_Endpoint_Directory_Service();
 		$this->person_identity    = $person_identity ?: new AIMS_Person_Identity_Service();
+		$this->responsibility_auth = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
 	}
 
 	public function can_manage_inventory_transfers( int $user_id = 0 ): bool {
@@ -88,14 +91,28 @@ class AIMS_Inventory_Transfer_Authorization_Service {
 			return true;
 		}
 
+		$resolved_endpoint_id = 0;
 		if ( is_object( $this->endpoint_directory ) && method_exists( $this->endpoint_directory, 'resolve_endpoint_from_node' ) ) {
 			$endpoint = $this->endpoint_directory->resolve_endpoint_from_node( $node_id, $node_type, $user_id );
 			if ( is_array( $endpoint ) && ! empty( $endpoint ) ) {
 				return true;
 			}
+			$resolved_endpoint_id = (int) ( $endpoint['id'] ?? 0 );
 		}
 
-		return $this->matches_node_type_authority( $user_id, $node_type, $context );
+		if ( $this->matches_node_type_authority( $user_id, $node_type, $context ) ) {
+			return true;
+		}
+
+		// Fallback: check SCOPE_CUSTODY responsibility assignment directly.
+		if ( $node_id > 0 && is_object( $this->responsibility_auth ) && method_exists( $this->responsibility_auth, 'user_can_access_custody_endpoint' ) ) {
+			$check_id = $resolved_endpoint_id > 0 ? $resolved_endpoint_id : $node_id;
+			if ( $this->responsibility_auth->user_can_access_custody_endpoint( $user_id, $check_id ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public function can_manage_transfer_nodes( int $user_id = 0, string $source_node_type = '', int $source_node_id = 0, string $target_node_type = '', int $target_node_id = 0, string $transfer_type = self::TRANSFER_TYPE_STANDARD ): bool {

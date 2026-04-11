@@ -90,4 +90,75 @@ final class EventPlanningAccessServiceTest extends \AIMS\Tests\TestCase {
 
 		$this->assertSame( array( 900, 901 ), array_values( array_map( 'intval', array_column( $service->get_authorized_events( 53 ), 'id' ) ) ) );
 	}
+
+	public function testIsSupervisorDelegatesToResponsibilityAuth(): void {
+		$auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+			public function is_supervisor( int $user_id = 0 ): bool {
+				return 90 === $user_id;
+			}
+		};
+
+		$service = new AIMS_Event_Planning_Access_Service(
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {},
+			new class() extends \AIMS_Event_Repository {},
+			$auth
+		);
+
+		$this->assertTrue( $service->is_supervisor( 90 ) );
+		$this->assertFalse( $service->is_supervisor( 91 ) );
+	}
+
+	public function testGetSubordinateUserIdsDelegatesToResponsibilityAuth(): void {
+		$auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+			public function get_subordinate_user_ids_for_user( int $user_id = 0 ): array {
+				return 80 === $user_id ? array( 201, 202 ) : array();
+			}
+		};
+
+		$service = new AIMS_Event_Planning_Access_Service(
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {},
+			new class() extends \AIMS_Event_Repository {},
+			$auth
+		);
+
+		$this->assertSame( array( 201, 202 ), $service->get_subordinate_user_ids( 80 ) );
+		$this->assertSame( array(), $service->get_subordinate_user_ids( 99 ) );
+	}
+
+	public function testIsSubordinateUserReturnsTrueForSelf(): void {
+		$auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+			public function get_subordinate_user_ids_for_user( int $user_id = 0 ): array {
+				return array();
+			}
+		};
+
+		$service = new AIMS_Event_Planning_Access_Service(
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {},
+			new class() extends \AIMS_Event_Repository {},
+			$auth
+		);
+
+		$this->assertTrue( $service->is_subordinate_user( 80, 80 ), 'A user is always a subordinate of themselves.' );
+	}
+
+	public function testIsSubordinateUserReturnsTrueWhenCandidateInSubordinateList(): void {
+		$auth = new class() extends \AIMS_Responsibility_Authorization_Service {
+			public function __construct() {}
+			public function get_subordinate_user_ids_for_user( int $user_id = 0 ): array {
+				return 80 === $user_id ? array( 201, 202 ) : array();
+			}
+		};
+
+		$service = new AIMS_Event_Planning_Access_Service(
+			new class() extends \AIMS_Vendor_Event_Assignment_Repository {},
+			new class() extends \AIMS_Event_Repository {},
+			$auth
+		);
+
+		$this->assertTrue( $service->is_subordinate_user( 80, 201 ) );
+		$this->assertFalse( $service->is_subordinate_user( 80, 999 ) );
+	}
 }

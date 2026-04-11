@@ -267,4 +267,76 @@ final class SquareReplayServiceTest extends \AIMS\Tests\TestCase {
 		$metadata = json_decode( (string) ( $effects->saved[0]['metadata_json'] ?? '' ), true );
 		$this->assertSame( 7801, $metadata['projection'][0]['woo_order_id'] ?? 0 );
 	}
+
+public function testReplayRawEventReturnsAlreadyReplayedWhenEffectExistsForSameRunAndEvent(): void {
+// effects repo reports that raw_event 42 was already processed in run 99.
+$effects = new class() extends \AIMS_Sync_Effect_Repository {
+public function __construct() {}
+public function has_effect_for_raw_event( int $sync_run_id, int $raw_event_id ): bool {
+return 99 === $sync_run_id && 42 === $raw_event_id;
+}
+};
+
+$normalized_sales = new class() extends \AIMS_Square_Normalized_Sale_Repository {
+public function __construct() {}
+public int $save_count = 0;
+public function save( array $data, int $id = 0 ): int {
+$this->save_count++;
+return 1;
+}
+};
+
+$service = new \AIMS_Square_Replay_Service(
+null,
+$normalized_sales,
+null,
+null,
+null,
+$effects
+);
+
+$raw_event = array( 'id' => 42, 'payload' => array( 'line_items' => array() ) );
+$result    = $service->replay_raw_event( $raw_event, array( 'sync_run_id' => 99 ) );
+
+$this->assertFalse( $result['replayed'], 'Already-replayed event should return replayed=false.' );
+$this->assertTrue( $result['already_replayed'] ?? false, 'already_replayed flag should be set.' );
+$this->assertSame( 0, $normalized_sales->save_count, 'No normalized sale should be written when dedup fires.' );
+}
+
+public function testReplayRawEventProceedsNormallyWhenNoExistingEffectForRun(): void {
+// No existing effects — dedup guard should NOT fire.
+$effects = new class() extends \AIMS_Sync_Effect_Repository {
+public function __construct() {}
+public function has_effect_for_raw_event( int $sync_run_id, int $raw_event_id ): bool {
+return false;
+}
+public function save( array $data, int $id = 0 ): int {
+return 1;
+}
+};
+
+$service = new \AIMS_Square_Replay_Service(
+null,
+null,
+null,
+null,
+null,
+$effects
+);
+
+$raw_event = array(
+'id'      => 55,
+'payload' => array(
+'id'         => 'ORDER_55',
+'line_items' => array(
+array( 'uid' => 'LI1', 'quantity' => 1, 'total_money' => array( 'amount' => 1000 ) ),
+),
+),
+);
+
+$result = $service->replay_raw_event( $raw_event, array( 'sync_run_id' => 10 ) );
+
+$this->assertTrue( $result['replayed'], 'Non-duplicate event should proceed with replay=true.' );
+$this->assertFalse( $result['already_replayed'] ?? false, 'already_replayed should not be set for fresh events.' );
+}
 }

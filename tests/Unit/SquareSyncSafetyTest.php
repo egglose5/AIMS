@@ -190,6 +190,102 @@ final class SquareSyncSafetyTest extends \AIMS\Tests\TestCase {
 		$this->assertNotEmpty( $hook_calls );
 	}
 
+	public function testSquareSyncRunControllerRegistersPromoteProjectionsAction(): void {
+		$controller = new \AIMS_Square_Sync_Run_Controller();
+		$controller->register();
+
+		$hook_calls = TestState::get_hook_calls( 'admin_post_aims_square_promote_projections' );
+		$this->assertNotEmpty( $hook_calls );
+	}
+
+	public function testSquareSyncRunsPageRendersPromoteButtonWhenProjectionStatusIsSet(): void {
+		$page = new \AIMS_Square_Sync_Runs_Page(
+			new class() extends \AIMS_Square_Sync_Runs_Data_Provider {
+				public function __construct() {}
+
+				public function get_rows(): array {
+					return array(
+						array(
+							'run_id'                  => 25,
+							'source_system'           => 'square',
+							'sync_watermark'          => '2026-04-11T10:00:00Z',
+							'status'                  => 'success',
+							'processed_records'       => '3',
+							'error_count'             => '0',
+							'woo_projection_status'   => 'projected',
+							'woo_projection_summary'  => 'Projected 3 | Skipped 0',
+							'woo_projection_details'  => '',
+							'completed_at'            => '2026-04-11 10:05:00',
+							'can_replay'              => false,
+							'can_undo'                => false,
+						),
+					);
+				}
+
+				public function get_summary(): array {
+					return array(
+						'total_runs'              => 1,
+						'total_processed_records' => 3,
+						'total_error_count'       => 0,
+						'last_sync_completed_at'  => '2026-04-11 10:05:00',
+						'last_sync_status'        => 'success',
+					);
+				}
+			}
+		);
+
+		ob_start();
+		$page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'aims_square_promote_projections', $html );
+		$this->assertStringContainsString( 'Promote Draft Projections', $html );
+	}
+
+	public function testSquareSyncRunsPageDoesNotRenderPromoteButtonWhenNoProjections(): void {
+		$page = new \AIMS_Square_Sync_Runs_Page(
+			new class() extends \AIMS_Square_Sync_Runs_Data_Provider {
+				public function __construct() {}
+
+				public function get_rows(): array {
+					return array(
+						array(
+							'run_id'                  => 26,
+							'source_system'           => 'square',
+							'sync_watermark'          => '2026-04-11T10:00:00Z',
+							'status'                  => 'success',
+							'processed_records'       => '2',
+							'error_count'             => '0',
+							'woo_projection_status'   => 'none',
+							'woo_projection_summary'  => 'No projection records',
+							'woo_projection_details'  => '',
+							'completed_at'            => '2026-04-11 10:05:00',
+							'can_replay'              => false,
+							'can_undo'                => false,
+						),
+					);
+				}
+
+				public function get_summary(): array {
+					return array(
+						'total_runs'              => 1,
+						'total_processed_records' => 2,
+						'total_error_count'       => 0,
+						'last_sync_completed_at'  => '2026-04-11 10:05:00',
+						'last_sync_status'        => 'success',
+					);
+				}
+			}
+		);
+
+		ob_start();
+		$page->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringNotContainsString( 'aims_square_promote_projections', $html );
+		$this->assertStringNotContainsString( 'Promote Draft Projections', $html );
+	}
+
 	public function testSquareSyncRunsPageRendersExportParquetAction(): void {
 		$page = new \AIMS_Square_Sync_Runs_Page(
 			new class() extends \AIMS_Square_Sync_Runs_Data_Provider {

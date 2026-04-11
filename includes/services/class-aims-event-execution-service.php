@@ -87,20 +87,26 @@ class AIMS_Event_Execution_Service {
 	}
 
 	public function vendor_event_checkin( array $data ): array {
-		return $this->apply_event_execution_movement(
+		$result = $this->apply_event_execution_movement(
 			$data,
 			array(
 				'status'         => AIMS_Event_Bucket_Assignment_Repository::STATUS_AT_EVENT,
-				'reference_type'  => 'vendor_event_checkin',
-				'movement_type'   => 'event_load_out',
-				'quantity_delta'  => -1,
-				'message'         => 'Vendor event check-in recorded.',
+				'reference_type' => 'vendor_event_checkin',
+				'movement_type'  => 'event_load_out',
+				'quantity_delta' => -1,
+				'message'        => 'Vendor event check-in recorded.',
 			)
 		);
+
+		if ( ! empty( $result['success'] ) && ! empty( $result['movement_triggered'] ) ) {
+			do_action( 'aims_after_vendor_event_checkin', $result );
+		}
+
+		return $result;
 	}
 
 	public function event_return( array $data ): array {
-		return $this->apply_event_execution_movement(
+		$result = $this->apply_event_execution_movement(
 			$data,
 			array(
 				'status'         => AIMS_Event_Bucket_Assignment_Repository::STATUS_RETURNED,
@@ -110,6 +116,12 @@ class AIMS_Event_Execution_Service {
 				'message'        => 'Event return recorded.',
 			)
 		);
+
+		if ( ! empty( $result['success'] ) && ! empty( $result['movement_triggered'] ) ) {
+			do_action( 'aims_after_event_return', $result );
+		}
+
+		return $result;
 	}
 
 	public function update_bucket_sealed_state( int $bucket_id, bool $is_sealed ): bool {

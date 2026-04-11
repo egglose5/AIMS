@@ -110,6 +110,30 @@ class AIMS_Sale_Fulfillment_Allocation_Repository {
 		return (int) $wpdb->insert_id;
 	}
 
+	/**
+	 * Updates only the allocation_status column for the given allocation_id.
+	 * Returns false when the status value is not in the allowed list or on DB error.
+	 */
+	public function update_status( int $allocation_id, string $to_status ): bool {
+		global $wpdb;
+
+		$to_status = $this->normalize_status( $to_status );
+		if ( $allocation_id <= 0 || '' === $to_status ) {
+			return false;
+		}
+
+		return false !== $wpdb->update(
+			$this->get_table_name(),
+			array(
+				'allocation_status' => $to_status,
+				'updated_at'        => current_time( 'mysql' ),
+			),
+			array( 'id' => $allocation_id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+	}
+
 	public function find_by_square_sale_id( int $square_sale_id ): ?array {
 		global $wpdb;
 

@@ -62,6 +62,23 @@ class AIMS_Fulfillment_Service {
 		);
 	}
 
+	/**
+	 * Transitions an allocation to a new status.
+	 * Returns false when the allocation_id is invalid, the status is not in the
+	 * allowed list, or the repository does not have update_status support.
+	 */
+	public function transition_allocation_status( int $allocation_id, string $to_status, array $context = array() ): bool {
+		if ( $allocation_id <= 0 ) {
+			return false;
+		}
+
+		if ( method_exists( $this->allocations, 'update_status' ) ) {
+			return (bool) $this->allocations->update_status( $allocation_id, $to_status );
+		}
+
+		return false;
+	}
+
 	private function normalize_allocation_bucket_reference( array $data ): array {
 		$normalized = array(
 			'source_bucket_id'   => ! empty( $data['source_bucket_id'] ) ? (int) $data['source_bucket_id'] : 0,

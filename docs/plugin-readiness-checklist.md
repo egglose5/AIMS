@@ -93,6 +93,7 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Refactor remaining AIMS responsibilities into first-class capabilities so they can be granted by the AIMS role editor or third-party role builders.
 - [x] Remove remaining runtime checks that depend on exact shipped AIMS role slugs when equivalent custom roles carry the same template metadata and capabilities.
 - [ ] Keep assignment tables only for scoped access narrowing:
+- [x] Keep assignment tables only for scoped access narrowing:
   - event scope
   - vendor scope
   - custody scope
@@ -117,7 +118,8 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
   - Planning workspace now surfaces `execution_exceptions` plus summary counts for pending/void check-ins and returned-bucket anomalies so operators can intervene without leaving the planning screen.
 - [ ] Expand Square replay and fulfillment wiring after planning/commitment workflow stability under team usage is confirmed.
-- [ ] Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
+- [x] Expand Square replay and fulfillment wiring after planning/commitment workflow stability under team usage is confirmed.
+- [x] Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
 ## Next Milestone - Movement Lifecycle and Archival
 

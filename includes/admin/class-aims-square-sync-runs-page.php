@@ -111,6 +111,10 @@ class AIMS_Square_Sync_Runs_Page {
 		$actions[] = $this->render_export_parquet_form( $run_id );
 		$actions[] = '<a class="button" href="' . esc_url( $this->projection_details_url( $run_id ) ) . '">Projection Effects</a>';
 
+		if ( 'none' !== ( $row['woo_projection_status'] ?? 'none' ) ) {
+			$actions[] = $this->render_promote_projections_form( $run_id );
+		}
+
 		if ( empty( $actions ) ) {
 			return '<em>No actions available</em>';
 		}
@@ -128,6 +132,19 @@ class AIMS_Square_Sync_Runs_Page {
 			<input type="hidden" name="run_id" value="<?php echo esc_attr( (string) $run_id ); ?>">
 			<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'aims_square_sync_action', '_aims_nonce' ); } ?>
 			<button type="submit" class="button button-secondary"><?php echo esc_html( $label ); ?></button>
+		</form>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	private function render_promote_projections_form( int $run_id ): string {
+		ob_start();
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="aims_square_promote_projections">
+			<input type="hidden" name="run_id" value="<?php echo esc_attr( (string) $run_id ); ?>">
+			<?php if ( function_exists( 'wp_nonce_field' ) ) { wp_nonce_field( 'aims_square_sync_promote_projections', '_aims_nonce' ); } ?>
+			<button type="submit" class="button">Promote Draft Projections</button>
 		</form>
 		<?php
 		return (string) ob_get_clean();
