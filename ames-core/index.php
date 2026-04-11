@@ -88,7 +88,7 @@ try {
 					'flow_php_parquet'  => class_exists( '\Flow\Parquet\Writer' ) && class_exists( '\Flow\Parquet\Reader' ),
 					'openssl'           => function_exists( 'openssl_encrypt' ) && function_exists( 'openssl_decrypt' ),
 				),
-				'routes' => array( 'POST /move', 'GET /manifest', 'POST /manifest/push', 'GET /history', 'GET /internal/archive', 'POST /internal/secrets/{provider}', 'POST /oauth/{provider}/authorize', 'GET /oauth/{provider}/callback', 'GET /oauth/{provider}/status', 'GET /buckets', 'POST /buckets', 'POST /fifo/receive', 'POST /custody/move', 'GET /fifo/availability', 'POST /fifo/pick' ),
+				'routes' => array( 'POST /move', 'GET /manifest', 'POST /manifest/push', 'GET /history', 'GET /internal/archive', 'GET /internal/square/pull', 'POST /internal/square/locations', 'POST /internal/square/team-members', 'GET /internal/square/holdings', 'POST /internal/secrets/{provider}', 'POST /oauth/{provider}/authorize', 'GET /oauth/{provider}/callback', 'GET /oauth/{provider}/status', 'GET /buckets', 'POST /buckets', 'POST /fifo/receive', 'POST /custody/move', 'GET /fifo/availability', 'POST /fifo/pick' ),
 			)
 		);
 	}
@@ -247,6 +247,46 @@ try {
 		json_response(
 			array(
 				'ok'     => true,
+				'result' => $result,
+			)
+		);
+	}
+
+	if ( 'POST' === $method && '/internal/square/locations' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, true );
+		$result = $remote->createSquareLocation( json_request_body() );
+		$logger->info( 'square.location_create', array( 'success' => $result['success'] ?? false ) );
+		json_response(
+			array(
+				'ok'      => ! empty( $result['success'] ),
+				'result'  => $result,
+				'location'=> $result['location'] ?? null,
+			),
+			empty( $result['success'] ) ? 502 : 201
+		);
+	}
+
+	if ( 'POST' === $method && '/internal/square/team-members' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, true );
+		$result = $remote->createSquareTeamMember( json_request_body() );
+		$logger->info( 'square.team_member_create', array( 'success' => $result['success'] ?? false ) );
+		json_response(
+			array(
+				'ok'          => ! empty( $result['success'] ),
+				'result'      => $result,
+				'team_member' => $result['team_member'] ?? null,
+			),
+			empty( $result['success'] ) ? 502 : 201
+		);
+	}
+
+	if ( 'GET' === $method && '/internal/square/holdings' === $path ) {
+		$auth->assertAuthorized( $_SERVER, $query, true );
+		$result = $remote->fetchSquareLocationHoldings( $query );
+		$logger->info( 'square.holdings_read', array( 'count' => count( (array) ( $result['counts'] ?? array() ) ) ) );
+		json_response(
+			array(
+				'ok'     => ! empty( $result['success'] ),
 				'result' => $result,
 			)
 		);

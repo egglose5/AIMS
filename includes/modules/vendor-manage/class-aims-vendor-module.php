@@ -7,13 +7,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AIMS_Vendor_Module implements AIMS_Module {
 	private $vendor_service;
 	private $responsibility_auth;
+	private $square_provisioning;
 	private $vendor_checkin_portal_controller;
 	private $vendor_portal_navigation_controller;
 	private const ADMIN_PAGE = 'aims-vendors';
 
-	public function __construct( AIMS_Vendor_Service $vendor_service, AIMS_Responsibility_Authorization_Service $responsibility_auth = null ) {
-		$this->vendor_service = $vendor_service;
+	public function __construct( AIMS_Vendor_Service $vendor_service, AIMS_Responsibility_Authorization_Service $responsibility_auth = null, AIMS_Vendor_Square_Provisioning_Service $square_provisioning = null ) {
+		$this->vendor_service      = $vendor_service;
 		$this->responsibility_auth = $responsibility_auth ?: ( class_exists( 'AIMS_Responsibility_Authorization_Service' ) ? new AIMS_Responsibility_Authorization_Service() : null );
+		$this->square_provisioning = $square_provisioning ?: ( class_exists( 'AIMS_Vendor_Square_Provisioning_Service' ) ? new AIMS_Vendor_Square_Provisioning_Service( $vendor_service ) : null );
 	}
 
 	public function register(): void {
@@ -70,6 +72,25 @@ class AIMS_Vendor_Module implements AIMS_Module {
 		}
 
 		$new_vendor_id = $this->vendor_service->create_vendor( $data );
+		if ( $new_vendor_id <= 0 ) {
+			$this->redirect_with_message( 'error', 'Unable to create vendor.' );
+		}
+
+		$provisioning = $this->get_square_provisioning_service();
+		if ( is_object( $provisioning ) && method_exists( $provisioning, 'provision_vendor' ) ) {
+			$result = (array) $provisioning->provision_vendor( $new_vendor_id );
+			if ( empty( $result['success'] ) ) {
+				if ( method_exists( $this->vendor_service, 'delete_vendor' ) ) {
+					$this->vendor_service->delete_vendor( $new_vendor_id );
+				}
+
+				$this->redirect_with_message(
+					'error',
+					(string) ( $result['message'] ?? 'Square location provisioning failed.' )
+				);
+			}
+		}
+
 		$this->redirect_with_message( 'success', 'Vendor created.', $new_vendor_id );
 	}
 
@@ -106,6 +127,12 @@ class AIMS_Vendor_Module implements AIMS_Module {
 		}
 
 		return $this->vendor_portal_navigation_controller;
+	}
+
+	private function get_square_provisioning_service(): ?AIMS_Vendor_Square_Provisioning_Service {
+		return $this->square_provisioning instanceof AIMS_Vendor_Square_Provisioning_Service
+			? $this->square_provisioning
+			: null;
 	}
 
 	private function render_status_notice(): void {

@@ -199,6 +199,101 @@ final class RemoteTruthService {
 	}
 
 	/**
+	 * @param array<string, mixed> $payload
+	 * @return array<string, mixed>
+	 */
+	public function createSquareLocation( array $payload = array() ): array {
+		if ( ! $this->hasSquareCredentials() ) {
+			return array(
+				'success' => false,
+				'message' => 'Square credentials are not configured.',
+				'location'=> null,
+			);
+		}
+
+		$location = $this->squareClient()->createLocation( $payload );
+
+		return array(
+			'success'  => '' !== (string) ( $location['id'] ?? '' ),
+			'location' => $location,
+			'message'  => '' !== (string) ( $location['id'] ?? '' ) ? 'Square location created.' : 'Square location create did not return an ID.',
+			'raw'      => $location['response_json'] ?? null,
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $payload
+	 * @return array<string, mixed>
+	 */
+	public function createSquareTeamMember( array $payload = array() ): array {
+		if ( ! $this->hasSquareCredentials() ) {
+			return array(
+				'success'     => false,
+				'message'     => 'Square credentials are not configured.',
+				'team_member' => null,
+			);
+		}
+
+		$teamMember = $this->squareClient()->createTeamMember( $payload );
+
+		return array(
+			'success'     => '' !== (string) ( $teamMember['id'] ?? '' ),
+			'team_member' => $teamMember,
+			'message'     => '' !== (string) ( $teamMember['id'] ?? '' ) ? 'Square team member created.' : 'Square team member create did not return an ID.',
+			'raw'         => $teamMember['response_json'] ?? null,
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $query
+	 * @return array<string, mixed>
+	 */
+	public function fetchSquareLocationHoldings( array $query = array() ): array {
+		if ( ! $this->hasSquareCredentials() ) {
+			return array(
+				'counts'       => array(),
+				'location_ids' => array(),
+				'success'      => false,
+				'message'      => 'Square credentials are not configured.',
+			);
+		}
+
+		$locationIds = array_values(
+			array_filter(
+				array_map(
+					static fn( $value ): string => trim( (string) $value ),
+					(array) ( $query['location_ids'] ?? array() )
+				)
+			)
+		);
+
+		if ( empty( $locationIds ) && '' !== $this->config->squareLocationId() ) {
+			$locationIds[] = $this->config->squareLocationId();
+		}
+
+		$counts = $this->squareClient()->fetchInventoryCounts(
+			array(
+				'location_ids'       => $locationIds,
+				'catalog_object_ids' => (array) ( $query['catalog_object_ids'] ?? array() ),
+				'updated_after'      => (string) ( $query['updated_after'] ?? '' ),
+				'cursor'             => (string) ( $query['cursor'] ?? '' ),
+			)
+		);
+
+		return array(
+			'counts'       => array_map(
+				static function ( array $count ): array {
+					return (array) ( $count['raw'] ?? $count );
+				},
+				$counts
+			),
+			'location_ids' => $locationIds,
+			'success'      => true,
+			'message'      => 'Square holdings retrieved.',
+		);
+	}
+
+	/**
 	 * @param array<string, mixed> $row
 	 * @return array<string, mixed>
 	 */

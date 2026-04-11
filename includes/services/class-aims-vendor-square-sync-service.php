@@ -13,7 +13,7 @@ class AIMS_Vendor_Square_Sync_Service {
 		AIMS_Square_Team_Member_Repository $team_members = null
 	) {
 		$this->vendors      = $vendors;
-		$this->team_members = $team_members;
+		$this->team_members = $team_members ?: new AIMS_Square_Team_Member_Repository();
 	}
 
 	public function plan_vendor_sync( int $vendor_id, array $square_team_members = array() ): array {
@@ -35,6 +35,10 @@ class AIMS_Vendor_Square_Sync_Service {
 	}
 
 	public function plan_vendor_sync_from_record( array $vendor, array $square_team_members = array() ): array {
+		if ( empty( $square_team_members ) && is_object( $this->team_members ) && method_exists( $this->team_members, 'all' ) ) {
+			$square_team_members = (array) $this->team_members->all();
+		}
+
 		$vendor_context = $this->prepare_vendor_context( $vendor );
 		$matched_member = $this->find_matching_square_team_member( $vendor_context, $square_team_members );
 
@@ -66,6 +70,7 @@ class AIMS_Vendor_Square_Sync_Service {
 		$vendor_code           = sanitize_key( $vendor['vendor_code'] ?? '' );
 		$email_address         = sanitize_email( $vendor['email_address'] ?? '' );
 		$phone_number          = sanitize_text_field( $vendor['phone_number'] ?? '' );
+		$square_location_id    = sanitize_text_field( $vendor['square_location_id'] ?? '' );
 		$square_team_member_id = sanitize_text_field( $vendor['square_team_member_id'] ?? '' );
 		$name_parts            = $this->split_vendor_name( $vendor_name );
 
@@ -76,6 +81,7 @@ class AIMS_Vendor_Square_Sync_Service {
 			'status'                => sanitize_key( $vendor['status'] ?? 'active' ),
 			'email_address'         => $email_address,
 			'phone_number'          => $phone_number,
+			'square_location_id'    => $square_location_id,
 			'square_team_member_id' => $square_team_member_id,
 			'given_name'            => $name_parts['given_name'],
 			'family_name'           => $name_parts['family_name'],
@@ -126,7 +132,7 @@ class AIMS_Vendor_Square_Sync_Service {
 	}
 
 	public function build_square_team_member_create_payload( array $vendor ): array {
-		return array(
+		$payload = array(
 			'given_name'   => sanitize_text_field( $vendor['given_name'] ?? $vendor['vendor_name'] ?? '' ),
 			'family_name'  => sanitize_text_field( $vendor['family_name'] ?? '' ),
 			'email_address'=> sanitize_email( $vendor['email_address'] ?? '' ),
@@ -142,6 +148,16 @@ class AIMS_Vendor_Square_Sync_Service {
 				'vendor_id' => (int) ( $vendor['vendor_id'] ?? 0 ),
 			),
 		);
+
+		$square_location_id = sanitize_text_field( (string) ( $vendor['square_location_id'] ?? '' ) );
+		if ( '' !== $square_location_id ) {
+			$payload['assigned_locations'] = array(
+				'assignment_type' => 'EXPLICIT_LOCATIONS',
+				'location_ids'    => array( $square_location_id ),
+			);
+		}
+
+		return $payload;
 	}
 
 	private function normalize_square_team_member_record( array $candidate ): array {

@@ -175,6 +175,35 @@ class AIMS_Vendor_Person_Repository {
 	}
 
 	/**
+	 * Delete vendor user and clear vendor metadata
+	 *
+	 * @param int $user_id The user ID to delete
+	 * @return bool True if cleanup succeeded
+	 */
+	public function delete( int $user_id ): bool {
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+
+		$this->metadata_service->unmark_as_vendor( $user_id );
+
+		if ( function_exists( 'wp_delete_user' ) ) {
+			return (bool) wp_delete_user( $user_id );
+		}
+
+		global $wpdb;
+		if ( isset( $wpdb ) && method_exists( $wpdb, 'delete' ) ) {
+			$users_table    = property_exists( $wpdb, 'users' ) ? $wpdb->users : $wpdb->prefix . 'users';
+			$usermeta_table = property_exists( $wpdb, 'usermeta' ) ? $wpdb->usermeta : $wpdb->prefix . 'usermeta';
+
+			$wpdb->delete( $usermeta_table, array( 'user_id' => $user_id ) );
+			$wpdb->delete( $users_table, array( 'ID' => $user_id ) );
+		}
+
+		return true;
+	}
+
+	/**
 	 * Get vendor users for a specific responsibility scope (event-based, vendor-based, etc.)
 	 *
 	 * Uses responsibility assignments to find users with vendor responsibilities.

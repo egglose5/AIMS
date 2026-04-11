@@ -63,6 +63,16 @@ class AIMS_Vendor_Service {
 	}
 
 	/**
+	 * Delete vendor (used for explicit rollback on provisioning failures)
+	 *
+	 * @param int $vendor_id The vendor user ID
+	 * @return bool True when the vendor record was removed or unmarked
+	 */
+	public function delete_vendor( int $vendor_id ): bool {
+		return $this->person_repository->delete( $vendor_id );
+	}
+
+	/**
 	 * Get sync mapping by Square location (uses new person-based model)
 	 *
 	 * @param string $square_location_id The Square location ID

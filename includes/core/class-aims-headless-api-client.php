@@ -48,6 +48,24 @@ class AIMS_Headless_Api_Client {
 		) );
 	}
 
+	public function create_square_location( array $payload ): array {
+		return $this->request( 'POST', '/internal/square/locations', array(
+			'body' => $payload,
+		) );
+	}
+
+	public function create_square_team_member( array $payload ): array {
+		return $this->request( 'POST', '/internal/square/team-members', array(
+			'body' => $payload,
+		) );
+	}
+
+	public function get_square_holdings( array $query = array() ): array {
+		return $this->request( 'GET', '/internal/square/holdings', array(
+			'query' => $query,
+		) );
+	}
+
 	public function get_buckets( array $query = array() ): array {
 		return $this->request( 'GET', '/buckets', array(
 			'query' => $query,

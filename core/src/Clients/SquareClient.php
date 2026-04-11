@@ -98,6 +98,114 @@ final class SquareClient {
 		);
 	}
 
+	public function createLocation( array $payload ): array {
+		$location = isset( $payload['location'] ) && is_array( $payload['location'] )
+			? (array) $payload['location']
+			: $payload;
+
+		$response = $this->request(
+			'POST',
+			'/v2/locations',
+			array(
+				'body' => array(
+					'idempotency_key' => (string) ( $payload['idempotency_key'] ?? $this->idempotencyKey() ),
+					'location'        => $location,
+				),
+			)
+		);
+
+		$location = (array) ( $response['json']['location'] ?? array() );
+
+		return array(
+			'id'            => (string) ( $location['id'] ?? '' ),
+			'name'          => (string) ( $location['name'] ?? '' ),
+			'status'        => (string) ( $location['status'] ?? '' ),
+			'country'       => (string) ( $location['country'] ?? '' ),
+			'capabilities'  => (array) ( $location['capabilities'] ?? array() ),
+			'raw'           => $location,
+			'success'       => (bool) ( $response['success'] ?? false ),
+			'response_json' => $response['json'] ?? null,
+		);
+	}
+
+	public function createTeamMember( array $payload ): array {
+		$teamMember = isset( $payload['team_member'] ) && is_array( $payload['team_member'] )
+			? (array) $payload['team_member']
+			: $payload;
+
+		$body = array(
+			'idempotency_key' => (string) ( $payload['idempotency_key'] ?? $this->idempotencyKey() ),
+			'team_member'     => $teamMember,
+		);
+
+		if ( isset( $payload['assigned_locations'] ) && is_array( $payload['assigned_locations'] ) ) {
+			$body['assigned_locations'] = $payload['assigned_locations'];
+		}
+
+		$response   = $this->request( 'POST', '/v2/team-members', array( 'body' => $body ) );
+		$teamMember = (array) ( $response['json']['team_member'] ?? array() );
+
+		return array(
+			'id'              => (string) ( $teamMember['id'] ?? '' ),
+			'display_name'    => (string) ( $teamMember['display_name'] ?? '' ),
+			'given_name'      => (string) ( $teamMember['given_name'] ?? '' ),
+			'family_name'     => (string) ( $teamMember['family_name'] ?? '' ),
+			'email_address'   => (string) ( $teamMember['email_address'] ?? '' ),
+			'phone_number'    => (string) ( $teamMember['phone_number'] ?? '' ),
+			'reference_id'    => (string) ( $teamMember['reference_id'] ?? '' ),
+			'status'          => (string) ( $teamMember['status'] ?? '' ),
+			'assigned_locations' => (array) ( $body['assigned_locations'] ?? array() ),
+			'raw'             => $teamMember,
+			'success'         => (bool) ( $response['success'] ?? false ),
+			'response_json'   => $response['json'] ?? null,
+		);
+	}
+
+	public function fetchInventoryCounts( array $filters = array() ): array {
+		$locationIds = array_values(
+			array_filter(
+				array_map(
+					static fn( $value ): string => trim( (string) $value ),
+					(array) ( $filters['location_ids'] ?? array() )
+				)
+			)
+		);
+
+		$body = array(
+			'location_ids' => $locationIds,
+			'states'       => (array) ( $filters['states'] ?? array( 'IN_STOCK' ) ),
+		);
+
+		if ( ! empty( $filters['catalog_object_ids'] ) ) {
+			$body['catalog_object_ids'] = array_values( (array) $filters['catalog_object_ids'] );
+		}
+
+		if ( ! empty( $filters['updated_after'] ) ) {
+			$body['updated_after'] = (string) $filters['updated_after'];
+		}
+
+		if ( ! empty( $filters['cursor'] ) ) {
+			$body['cursor'] = (string) $filters['cursor'];
+		}
+
+		$response = $this->request( 'POST', '/v2/inventory/counts/batch-retrieve', array( 'body' => $body ) );
+		$counts   = (array) ( $response['json']['counts'] ?? array() );
+
+		return array_map(
+			static function ( array $count ): array {
+				return array(
+					'catalog_object_id' => (string) ( $count['catalog_object_id'] ?? '' ),
+					'location_id'       => (string) ( $count['location_id'] ?? '' ),
+					'state'             => (string) ( $count['state'] ?? '' ),
+					'quantity'          => (string) ( $count['quantity'] ?? '' ),
+					'calculated_at'     => (string) ( $count['calculated_at'] ?? '' ),
+					'raw'               => $count,
+				);
+			},
+			$counts
+		);
+	}
+
 	private function request( string $method, string $path, array $options = array() ): array {
 		$options['headers'] = array_merge(
 			array(
@@ -132,5 +240,9 @@ final class SquareClient {
 			},
 			$items
 		);
+	}
+
+	private function idempotencyKey(): string {
+		return bin2hex( random_bytes( 16 ) );
 	}
 }
