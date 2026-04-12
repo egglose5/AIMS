@@ -29,6 +29,22 @@ class AIMS_Admin_Menu {
 	}
 
 	public function register(): void {
+			   // Add Role Editor submenu
+			   add_submenu_page(
+				   self::MENU_SLUG,
+				   'Role Editor',
+				   'Role Editor',
+				   $this->get_menu_capability(),
+				   'aims-role-editor',
+				   function() {
+					   if (class_exists('AIMS_Role_Editor_Page')) {
+						   $page = new AIMS_Role_Editor_Page();
+						   $page->render();
+					   } else {
+						   echo '<div class="notice notice-error"><p>Role editor is unavailable.</p></div>';
+					   }
+				   }
+			   );
 		add_menu_page(
 			'AIMS',
 			'AIMS',
@@ -48,34 +64,110 @@ class AIMS_Admin_Menu {
 			array( $this, 'render_dashboard' )
 		);
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			'Settings',
-			'Settings',
-			$this->get_menu_capability(),
-			self::SETTINGS_PAGE_SLUG,
-			array( $this, 'render_settings' )
-		);
+		   add_submenu_page(
+			   self::MENU_SLUG,
+			   'Settings',
+			   'Settings',
+			   $this->get_menu_capability(),
+			   self::SETTINGS_PAGE_SLUG,
+			   array( $this, 'render_settings' )
+		   );
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			'Activity Log',
-			'Activity Log',
+			'Square API',
+			'Square API',
 			$this->get_menu_capability(),
-			self::ACTIVITY_PAGE_SLUG,
-			array( $this, 'render_activity_log' )
+			'aims-square-api',
+			array( $this, 'render_square_api_settings' )
 		);
+	   add_submenu_page(
+		   self::MENU_SLUG,
+		   'Activity Log',
+		   'Activity Log',
+		   $this->get_menu_capability(),
+		   self::ACTIVITY_PAGE_SLUG,
+		   array( $this, 'render_activity_log' )
+	   );
 
-		add_action( 'admin_init', array( $this, 'register_settings' ) );
-		add_action( 'admin_post_aims_submit_remote_move', array( $this, 'handle_submit_remote_move' ) );
-		add_action( 'admin_post_aims_register_remote_bucket', array( $this, 'handle_register_remote_bucket' ) );
-		add_action( 'admin_post_aims_receive_remote_fifo', array( $this, 'handle_receive_remote_fifo' ) );
-		add_action( 'admin_post_aims_move_remote_custody', array( $this, 'handle_move_remote_custody' ) );
-		add_action( 'admin_post_aims_pick_remote_fifo', array( $this, 'handle_pick_remote_fifo' ) );
-		add_action( 'admin_post_aims_sync_remote_manifest', array( $this, 'handle_sync_remote_manifest' ) );
-		add_action( 'admin_post_aims_trigger_remote_archive', array( $this, 'handle_trigger_remote_archive' ) );
-		add_action( 'admin_post_aims_designate_wholesale_customer', array( $this, 'handle_designate_wholesale_customer' ) );
-	}
+	   add_action( 'admin_init', array( $this, 'register_settings' ) );
+	   add_action( 'admin_post_aims_submit_remote_move', array( $this, 'handle_submit_remote_move' ) );
+	   add_action( 'admin_post_aims_register_remote_bucket', array( $this, 'handle_register_remote_bucket' ) );
+	   add_action( 'admin_post_aims_receive_remote_fifo', array( $this, 'handle_receive_remote_fifo' ) );
+	   add_action( 'admin_post_aims_move_remote_custody', array( $this, 'handle_move_remote_custody' ) );
+	   add_action( 'admin_post_aims_pick_remote_fifo', array( $this, 'handle_pick_remote_fifo' ) );
+	   add_action( 'admin_post_aims_sync_remote_manifest', array( $this, 'handle_sync_remote_manifest' ) );
+	   add_action( 'admin_post_aims_trigger_remote_archive', array( $this, 'handle_trigger_remote_archive' ) );
+	   add_action( 'admin_post_aims_designate_wholesale_customer', array( $this, 'handle_designate_wholesale_customer' ) );
+	   // End of register()
+}
+
+public function render_square_api_settings() {
+	   // Attempt to auto-populate from WooCommerce Square plugin (stub for future extension)
+	   $auto_token = '';
+	   $auto_location = '';
+	   $auto_version = '2026-01-22';
+	   // TODO: Add logic to pull from WooCommerce Square plugin if present
+
+	   $core_env = dirname(__DIR__,2) . '/ames-core/.env';
+	   $env = file_exists($core_env) ? file_get_contents($core_env) : '';
+	   $token = '';
+	   $location = '';
+	   $version = '';
+	   if ($env) {
+		   if (preg_match('/AIMS_SQUARE_ACCESS_TOKEN=(.*)/', $env, $m)) $token = trim($m[1]);
+		   if (preg_match('/AIMS_SQUARE_LOCATION_ID=(.*)/', $env, $m)) $location = trim($m[1]);
+		   if (preg_match('/AIMS_SQUARE_VERSION=(.*)/', $env, $m)) $version = trim($m[1]);
+	   }
+	   if (isset($_POST['aims_square_api_save'])) {
+		   check_admin_referer('aims_square_api_settings');
+		   $token = sanitize_text_field($_POST['aims_square_access_token'] ?? '');
+		   $location = sanitize_text_field($_POST['aims_square_location_id'] ?? '');
+		   $version = sanitize_text_field($_POST['aims_square_version'] ?? '');
+		   // Update .env
+		   $lines = $env ? explode("\n", $env) : [];
+		   $found_token = $found_location = $found_version = false;
+		   foreach ($lines as &$line) {
+			   if (strpos($line, 'AIMS_SQUARE_ACCESS_TOKEN=') === 0) { $line = 'AIMS_SQUARE_ACCESS_TOKEN=' . $token; $found_token = true; }
+			   if (strpos($line, 'AIMS_SQUARE_LOCATION_ID=') === 0) { $line = 'AIMS_SQUARE_LOCATION_ID=' . $location; $found_location = true; }
+			   if (strpos($line, 'AIMS_SQUARE_VERSION=') === 0) { $line = 'AIMS_SQUARE_VERSION=' . $version; $found_version = true; }
+		   }
+		   if (!$found_token) $lines[] = 'AIMS_SQUARE_ACCESS_TOKEN=' . $token;
+		   if (!$found_location) $lines[] = 'AIMS_SQUARE_LOCATION_ID=' . $location;
+		   if (!$found_version) $lines[] = 'AIMS_SQUARE_VERSION=' . $version;
+		   file_put_contents($core_env, implode("\n", $lines));
+		   echo '<div class="notice notice-success is-dismissible"><p>Square API credentials saved.</p></div>';
+	   }
+	   echo '<div class="wrap"><h1>Square API Settings</h1>';
+	   echo '<form method="post">';
+	   wp_nonce_field('aims_square_api_settings');
+	   echo '<table class="form-table">';
+	   echo '<tr><th scope="row"><label for="aims_square_access_token">Access Token</label></th><td><input type="text" id="aims_square_access_token" name="aims_square_access_token" value="' . esc_attr($token ?: $auto_token) . '" class="regular-text" /></td></tr>';
+	   // Fetch all vendor Square Location IDs for select
+	   $vendor_service = class_exists('AIMS_Vendor_User_Metadata_Service') ? new AIMS_Vendor_User_Metadata_Service() : null;
+	   $vendor_ids = $vendor_service ? $vendor_service->get_all_vendors('active') : array();
+	   $location_options = array();
+	   if ($vendor_service) {
+		   foreach ($vendor_ids as $vid) {
+			   $loc_id = $vendor_service->get_square_location_id($vid);
+			   if ($loc_id !== '') {
+				   $vendor_name = $vendor_service->get_vendor_name($vid);
+				   $location_options[$loc_id] = $vendor_name . ' (' . $loc_id . ')';
+			   }
+		   }
+	   }
+	   echo '<tr><th scope="row"><label for="aims_square_location_id">Location ID</label></th><td><select id="aims_square_location_id" name="aims_square_location_id" class="regular-text">';
+	   echo '<option value="">Select a vendor location...</option>';
+	   foreach ($location_options as $loc_id => $label) {
+		   $selected = ($loc_id === ($location ?: $auto_location)) ? ' selected' : '';
+		   echo '<option value="' . esc_attr($loc_id) . '"' . $selected . '>' . esc_html($label) . '</option>';
+	   }
+	   echo '</select></td></tr>';
+	   echo '<tr><th scope="row"><label for="aims_square_version">API Version</label></th><td><input type="text" id="aims_square_version" name="aims_square_version" value="' . esc_attr($version ?: $auto_version) . '" class="regular-text" /></td></tr>';
+	   echo '</table>';
+	   submit_button('Save Credentials', 'primary', 'aims_square_api_save');
+	echo '</form></div>';
+}
 
 	public function register_settings(): void {
 		register_setting(
@@ -613,7 +705,7 @@ class AIMS_Admin_Menu {
 		wp_nonce_field( 'aims_submit_remote_move' );
 
 		echo '<table class="form-table"><tbody>';
-		echo '<tr><th scope="row"><label for="aims-sku">SKU</label></th><td><input id="aims-sku" type="text" class="regular-text" name="sku" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-sku">SKU</label></th><td><input id="aims-sku" type="text" class="regular-text" name="sku" required autocomplete="off" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-from-location">From Location</label></th><td><input id="aims-from-location" type="text" class="regular-text" name="from_location" required /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-to-location">To Location</label></th><td><input id="aims-to-location" type="text" class="regular-text" name="to_location" required /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-quantity">Quantity</label></th><td><input id="aims-quantity" type="number" min="1" step="1" name="quantity" value="1" required /></td></tr>';
@@ -621,7 +713,57 @@ class AIMS_Admin_Menu {
 
 		submit_button( 'Send Movement to AIMS Core' );
 		echo '</form>';
+
+		// Add AJAX autocomplete for SKU
+		add_action('admin_footer', function() {
+			if (!function_exists('wc_get_products')) return;
+			?>
+			<script>
+			jQuery(function($){
+				$('#aims-sku').autocomplete({
+					source: function(request, response) {
+						$.ajax({
+							url: ajaxurl,
+							dataType: 'json',
+							data: {
+								action: 'aims_sku_autocomplete',
+								term: request.term
+							},
+							success: function(data) {
+								response(data);
+							}
+						});
+					},
+					minLength: 2
+				});
+			});
+			</script>
+			<?php
+		});
 	}
+// AJAX handler for SKU autocomplete
+add_action('wp_ajax_aims_sku_autocomplete', function() {
+	if (!function_exists('wc_get_products')) {
+		wp_send_json([]);
+	}
+	$term = isset($_GET['term']) ? sanitize_text_field($_GET['term']) : '';
+	$products = wc_get_products([
+		'sku' => $term,
+		'limit' => 20,
+		'status' => 'publish',
+		'orderby' => 'title',
+		'order' => 'ASC',
+		'search' => $term,
+	]);
+	$results = [];
+	foreach ($products as $product) {
+		$results[] = [
+			'label' => $product->get_sku() . ' - ' . $product->get_name(),
+			'value' => $product->get_sku(),
+		];
+	}
+	wp_send_json($results);
+});
 
 	private function render_remote_bucket_form(): void {
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
@@ -634,7 +776,25 @@ class AIMS_Admin_Menu {
 		echo '<tr><th scope="row"><label for="aims-bucket-type">Bucket Type</label></th><td><input id="aims-bucket-type" type="text" class="regular-text" name="bucket_type" value="physical" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-status">Status</label></th><td><input id="aims-bucket-status" type="text" class="regular-text" name="status" value="active" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-show-id">Show ID</label></th><td><input id="aims-bucket-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
-		echo '<tr><th scope="row"><label for="aims-bucket-square-location-id">Square Location ID</label></th><td><input id="aims-bucket-square-location-id" type="text" class="regular-text" name="square_location_id" /></td></tr>';
+		   // Square Location ID select for remote bucket form
+		   $vendor_service = class_exists('AIMS_Vendor_User_Metadata_Service') ? new AIMS_Vendor_User_Metadata_Service() : null;
+		   $vendor_ids = $vendor_service ? $vendor_service->get_all_vendors('active') : array();
+		   $location_options = array();
+		   if ($vendor_service) {
+			   foreach ($vendor_ids as $vid) {
+				   $loc_id = $vendor_service->get_square_location_id($vid);
+				   if ($loc_id !== '') {
+					   $vendor_name = $vendor_service->get_vendor_name($vid);
+					   $location_options[$loc_id] = $vendor_name . ' (' . $loc_id . ')';
+				   }
+			   }
+		   }
+		   echo '<tr><th scope="row"><label for="aims-bucket-square-location-id">Square Location ID</label></th><td><select id="aims-bucket-square-location-id" name="square_location_id" class="regular-text">';
+		   echo '<option value="">Select a vendor location...</option>';
+		   foreach ($location_options as $loc_id => $label) {
+			   echo '<option value="' . esc_attr($loc_id) . '">' . esc_html($label) . '</option>';
+		   }
+		   echo '</select></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-current-location">Current Location</label></th><td><input id="aims-bucket-current-location" type="text" class="regular-text" name="current_location" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-current-custody">Current Custody</label></th><td><input id="aims-bucket-current-custody" type="text" class="regular-text" name="current_custody" /></td></tr>';
 		echo '</tbody></table>';
@@ -719,7 +879,27 @@ class AIMS_Admin_Menu {
 		echo '<table class="form-table"><tbody>';
 		echo '<tr><th scope="row"><label for="aims-fifo-sku">SKU</label></th><td><input id="aims-fifo-sku" type="text" class="regular-text" name="aims_fifo_sku" value="' . esc_attr( (string) ( $query['sku'] ?? '' ) ) . '" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-fifo-show-id">Show ID</label></th><td><input id="aims-fifo-show-id" type="text" class="regular-text" name="aims_fifo_show_id" value="' . esc_attr( (string) ( $query['show_id'] ?? '' ) ) . '" /></td></tr>';
-		echo '<tr><th scope="row"><label for="aims-fifo-square-location-id">Square Location ID</label></th><td><input id="aims-fifo-square-location-id" type="text" class="regular-text" name="aims_fifo_square_location_id" value="' . esc_attr( (string) ( $query['square_location_id'] ?? '' ) ) . '" /></td></tr>';
+		   // Square Location ID select for FIFO availability form
+		   $vendor_service = class_exists('AIMS_Vendor_User_Metadata_Service') ? new AIMS_Vendor_User_Metadata_Service() : null;
+		   $vendor_ids = $vendor_service ? $vendor_service->get_all_vendors('active') : array();
+		   $location_options = array();
+		   if ($vendor_service) {
+			   foreach ($vendor_ids as $vid) {
+				   $loc_id = $vendor_service->get_square_location_id($vid);
+				   if ($loc_id !== '') {
+					   $vendor_name = $vendor_service->get_vendor_name($vid);
+					   $location_options[$loc_id] = $vendor_name . ' (' . $loc_id . ')';
+				   }
+			   }
+		   }
+		   $selected_loc = (string) ( $query['square_location_id'] ?? '' );
+		   echo '<tr><th scope="row"><label for="aims-fifo-square-location-id">Square Location ID</label></th><td><select id="aims-fifo-square-location-id" name="aims_fifo_square_location_id" class="regular-text">';
+		   echo '<option value="">Select a vendor location...</option>';
+		   foreach ($location_options as $loc_id => $label) {
+			   $selected = ($loc_id === $selected_loc) ? ' selected' : '';
+			   echo '<option value="' . esc_attr($loc_id) . '"' . $selected . '>' . esc_html($label) . '</option>';
+		   }
+		   echo '</select></td></tr>';
 		echo '</tbody></table>';
 		submit_button( 'Lookup FIFO Availability', 'secondary', '', false );
 		echo '</form>';
@@ -765,7 +945,25 @@ class AIMS_Admin_Menu {
 		echo '<table class="form-table"><tbody>';
 		echo '<tr><th scope="row"><label for="aims-pick-sku">SKU</label></th><td><input id="aims-pick-sku" type="text" class="regular-text" name="sku" required /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-show-id">Show ID</label></th><td><input id="aims-pick-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
-		echo '<tr><th scope="row"><label for="aims-pick-square-location-id">Square Location ID</label></th><td><input id="aims-pick-square-location-id" type="text" class="regular-text" name="square_location_id" /></td></tr>';
+		   // Square Location ID select for FIFO pick form
+		   $vendor_service = class_exists('AIMS_Vendor_User_Metadata_Service') ? new AIMS_Vendor_User_Metadata_Service() : null;
+		   $vendor_ids = $vendor_service ? $vendor_service->get_all_vendors('active') : array();
+		   $location_options = array();
+		   if ($vendor_service) {
+			   foreach ($vendor_ids as $vid) {
+				   $loc_id = $vendor_service->get_square_location_id($vid);
+				   if ($loc_id !== '') {
+					   $vendor_name = $vendor_service->get_vendor_name($vid);
+					   $location_options[$loc_id] = $vendor_name . ' (' . $loc_id . ')';
+				   }
+			   }
+		   }
+		   echo '<tr><th scope="row"><label for="aims-pick-square-location-id">Square Location ID</label></th><td><select id="aims-pick-square-location-id" name="square_location_id" class="regular-text">';
+		   echo '<option value="">Select a vendor location...</option>';
+		   foreach ($location_options as $loc_id => $label) {
+			   echo '<option value="' . esc_attr($loc_id) . '">' . esc_html($label) . '</option>';
+		   }
+		   echo '</select></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-request-reference">Request Reference</label></th><td><input id="aims-pick-request-reference" type="text" class="regular-text" name="request_reference" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-quantity">Quantity</label></th><td><input id="aims-pick-quantity" type="number" min="0.0001" step="0.0001" name="quantity" value="1" required /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-amount-paid">Amount Paid</label></th><td><input id="aims-pick-amount-paid" type="number" min="0" step="0.01" name="amount_paid" value="0.00" required /></td></tr>';

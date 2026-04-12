@@ -88,7 +88,27 @@ class AIMS_Event_Planning_Events_Page {
 		$this->render_text_input( 'start_date', 'Start Date (YYYY-MM-DD)', (string) ( $event['start_date'] ?? '' ), true );
 		$this->render_text_input( 'end_date', 'End Date (YYYY-MM-DD)', (string) ( $event['end_date'] ?? '' ), true );
 		$this->render_text_input( 'location_name', 'Location Name', (string) ( $event['location_name'] ?? '' ), false );
-		$this->render_text_input( 'square_location_id', 'Square Location ID', (string) ( $event['square_location_id'] ?? '' ), false );
+		   // Square Location ID select (from vendor meta)
+		   $vendor_service = class_exists('AIMS_Vendor_User_Metadata_Service') ? new AIMS_Vendor_User_Metadata_Service() : null;
+		   $vendor_ids = $vendor_service ? $vendor_service->get_all_vendors('active') : array();
+		   $location_options = array();
+		   if ($vendor_service) {
+			   foreach ($vendor_ids as $vid) {
+				   $loc_id = $vendor_service->get_square_location_id($vid);
+				   if ($loc_id !== '') {
+					   $vendor_name = $vendor_service->get_vendor_name($vid);
+					   $location_options[$loc_id] = $vendor_name . ' (' . $loc_id . ')';
+				   }
+			   }
+		   }
+		   $selected_loc = (string) ( $event['square_location_id'] ?? '' );
+		   echo '<tr><th scope="row"><label for="square_location_id">Square Location ID</label></th><td><select id="square_location_id" name="square_location_id" class="regular-text">';
+		   echo '<option value="">Select a vendor location...</option>';
+		   foreach ($location_options as $loc_id => $label) {
+			   $selected = ($loc_id === $selected_loc) ? ' selected' : '';
+			   echo '<option value="' . esc_attr($loc_id) . '"' . $selected . '>' . esc_html($label) . '</option>';
+		   }
+		   echo '</select></td></tr>';
 
 		echo '<tr><th scope="row"><label for="status">Status</label></th><td><select id="status" name="status">';
 		foreach ( array( 'draft', 'active', 'completed', 'archived' ) as $status ) {

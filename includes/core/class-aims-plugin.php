@@ -1,3 +1,28 @@
+	public function register_square_webhook_endpoint() {
+		register_rest_route('aims/v1', '/square/webhook', array(
+			'methods' => 'POST',
+			'callback' => array($this, 'handle_square_webhook'),
+			'permission_callback' => '__return_true', // Webhooks are public
+		));
+	}
+
+	public function handle_square_webhook($request) {
+		$payload = $request->get_json_params();
+		if (!is_array($payload)) {
+			return new \WP_REST_Response(['error' => 'Invalid payload'], 400);
+		}
+		if (!class_exists('AIMS_Square_Webhook_Intake_Service')) {
+			return new \WP_REST_Response(['error' => 'Webhook service unavailable'], 500);
+		}
+		// You may want to add authentication/verification here for production
+		$service = new \AIMS_Square_Webhook_Intake_Service(
+			new \AIMS_Square_Import_Queue_Repository(),
+			new \AIMS_Square_Raw_Event_Service(),
+			new \AIMS_Square_Normalization_Service()
+		);
+		$result = $service->ingest_order_payload($payload);
+		return new \WP_REST_Response(['success' => true, 'result' => $result], 200);
+	}
 <?php
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -276,6 +301,7 @@ class AIMS_Plugin {
 		if ( is_object( $this->integration_rest_controller ) && method_exists( $this->integration_rest_controller, 'register' ) ) {
 			$this->integration_rest_controller->register();
 		}
+		add_action('rest_api_init', array($this, 'register_square_webhook_endpoint'));
 	}
 
 	public function load_textdomain(): void {
