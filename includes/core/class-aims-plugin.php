@@ -29,6 +29,7 @@ class AIMS_Plugin {
 
 	public static function activate(): void {
 		self::ensure_default_options();
+		self::maybe_install_schema();
 		AIMS_Capabilities::register_roles_and_caps();
 	}
 
@@ -110,6 +111,7 @@ class AIMS_Plugin {
 	}
 
 	public function boot(): void {
+		self::maybe_install_schema();
 		add_action( 'admin_menu', array( $this->admin_menu, 'register' ) );
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
 		if ( is_object( $this->square_thin_client_sync ) && method_exists( $this->square_thin_client_sync, 'boot' ) ) {
@@ -132,5 +134,20 @@ class AIMS_Plugin {
 			false,
 			dirname( AIMS_PLUGIN_BASENAME ) . '/languages'
 		);
+	}
+
+	private static function maybe_install_schema(): void {
+		if ( ! class_exists( 'AIMS_Installer' ) || ! class_exists( 'AIMS_Schema' ) ) {
+			return;
+		}
+
+		// Tests and non-WordPress contexts can define ABSPATH without core upgrade files.
+		$upgrade_path = ABSPATH . 'wp-admin/includes/upgrade.php';
+		if ( ! file_exists( $upgrade_path ) ) {
+			return;
+		}
+
+		$installer = new AIMS_Installer( new AIMS_Schema() );
+		$installer->maybe_install();
 	}
 }

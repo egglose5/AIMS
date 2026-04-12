@@ -24,15 +24,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 .aims-cc-muted{color:#646970;font-size:.9em;margin:4px 0 10px}
 .aims-cc-step-badge{display:inline-block;background:#2271b1;color:#fff;border-radius:999px;padding:2px 10px;font-size:.78em;font-weight:700;margin-bottom:8px}
 label.cc-label{display:block;font-weight:600;margin-bottom:6px}
-.aims-cc-portal input[type="text"],.aims-cc-portal input[type="number"],.aims-cc-portal textarea,.aims-cc-portal select,.aims-cc-portal button{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #8c8f94;border-radius:6px;font-size:1em}
-.aims-cc-portal button{cursor:pointer;border:none;border-radius:8px;padding:12px;font-weight:700;margin-top:8px}
-.aims-cc-portal button.primary{background:#2271b1;color:#fff}
-.aims-cc-portal button.primary:disabled{background:#b5d0ee;cursor:not-allowed}
-.aims-cc-portal button.secondary{background:#f6f7f7;color:#1d2327;border:1px solid #c3c4c7}
-.aims-cc-portal button.danger{background:#d63638;color:#fff}
-#aims-cc-viewfinder-wrap{position:relative;background:#000;border-radius:10px;overflow:hidden;max-height:280px;margin:0 0 10px}
-#aims-cc-viewfinder{width:100%;display:block;border-radius:10px}
-#aims-cc-scan-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:2px solid rgba(34,113,177,.8);border-radius:6px;width:60%;height:38%;box-shadow:0 0 0 9999px rgba(0,0,0,.35)}
+#aims-cc-portal input[type="text"],#aims-cc-portal input[type="number"],#aims-cc-portal textarea,#aims-cc-portal select,#aims-cc-portal button{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #8c8f94;border-radius:6px;font-size:1em}
+#aims-cc-portal button{cursor:pointer;border:none;border-radius:8px;padding:12px;font-weight:700;margin-top:8px}
+#aims-cc-portal button.primary{background:#2271b1;color:#fff}
+#aims-cc-portal button.primary:disabled{background:#b5d0ee;cursor:not-allowed}
+#aims-cc-portal button.secondary{background:#f6f7f7;color:#1d2327;border:1px solid #c3c4c7}
+#aims-cc-portal button.danger{background:#d63638;color:#fff}
+.aims-cc-viewfinder-shell{position:relative;background:#000;border-radius:10px;overflow:hidden;max-height:280px;margin:0 0 10px}
+.aims-cc-viewfinder{width:100%;display:block;border-radius:10px}
+.aims-cc-scan-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:2px solid rgba(34,113,177,.8);border-radius:6px;width:60%;height:38%;box-shadow:0 0 0 9999px rgba(0,0,0,.35)}
 #aims-cc-scan-flash{position:absolute;inset:0;pointer-events:none;opacity:0;background:rgba(0,255,120,.35);border-radius:10px;transition:opacity .08s ease}
 .aims-cc-input-row{display:flex;gap:8px;margin:8px 0}
 .aims-cc-input-row input{flex:1}
@@ -74,9 +74,9 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 			<label class="cc-label" for="aims-cc-bucket-text">Scan or enter Bucket ID / Barcode</label>
 
 			<div id="aims-cc-bucket-viewfinder-wrap" class="aims-cc-viewfinder-wrap" style="display:none">
-				<div id="aims-cc-viewfinder-wrap">
-					<video id="aims-cc-viewfinder" autoplay playsinline muted></video>
-					<div id="aims-cc-scan-overlay"></div>
+				<div class="aims-cc-viewfinder-shell">
+					<video id="aims-cc-viewfinder" class="aims-cc-viewfinder" autoplay playsinline muted></video>
+					<div id="aims-cc-scan-overlay" class="aims-cc-scan-overlay"></div>
 					<div id="aims-cc-scan-flash"></div>
 				</div>
 				<p class="aims-cc-scan-hint">Point at the bucket barcode</p>
@@ -101,9 +101,9 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 			<label class="cc-label">Scan Each Item</label>
 
 			<div id="aims-cc-item-viewfinder-wrap" style="display:none">
-				<div id="aims-cc-viewfinder-wrap-items">
-					<video id="aims-cc-viewfinder-items" autoplay playsinline muted></video>
-					<div id="aims-cc-scan-overlay-items" class="aims-cc-scan-overlay" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:2px solid rgba(34,113,177,.8);border-radius:6px;width:60%;height:38%;box-shadow:0 0 0 9999px rgba(0,0,0,.35)"></div>
+				<div class="aims-cc-viewfinder-shell">
+					<video id="aims-cc-viewfinder-items" class="aims-cc-viewfinder" autoplay playsinline muted></video>
+					<div id="aims-cc-scan-overlay-items" class="aims-cc-scan-overlay"></div>
 					<div id="aims-cc-scan-flash-items" style="position:absolute;inset:0;pointer-events:none;opacity:0;background:rgba(0,255,120,.35);border-radius:10px;transition:opacity .08s ease"></div>
 				</div>
 				<p class="aims-cc-scan-hint">Point at item barcode / SKU label</p>
@@ -181,6 +181,7 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 	var SCAN_PREF_KEY   = 'aims_cycle_count_scan_mode';
 	var cameraAutoDisabled = false;
 	var scanMode = loadScanMode();
+	var barcodeDetectorSupported = typeof window.BarcodeDetector === 'function';
 
 	/* ---- DOM refs ---- */
 	var phaseBucket  = document.getElementById('aims-cc-phase-bucket');
@@ -241,7 +242,7 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 		lookupBucket(val);
 	});
 	bucketTextField.addEventListener('keydown', function (e) {
-		if (e.key === 'Enter' || e.key === 'Tab') bucketLookupBtn.click();
+		if (e.key === 'Enter') bucketLookupBtn.click();
 	});
 	bucketCamBtn.addEventListener('click', function () {
 		if (bucketScanning) {
@@ -274,7 +275,7 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 		itemTextField.focus();
 	});
 	itemTextField.addEventListener('keydown', function (e) {
-		if (e.key === 'Enter' || e.key === 'Tab') itemAddBtn.click();
+		if (e.key === 'Enter') itemAddBtn.click();
 	});
 	itemCamBtn.addEventListener('click', function () {
 		if (itemScanning) {
@@ -481,6 +482,13 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 	/* ======================== Camera: Bucket ======================== */
 	function startBucketCamera(autoStart) {
 		autoStart = !!autoStart;
+		if (bucketScanning) {
+			return;
+		}
+		if (!barcodeDetectorSupported) {
+			showNotice(bucketStatus, 'info', 'Live camera barcode detection is unavailable in this browser. Use a handheld barcode scanner or type the bucket code.');
+			return;
+		}
 		if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
 			showNotice(bucketStatus, 'info', 'Camera scanning is unavailable here. Use a handheld barcode scanner or type the bucket code.');
 			return;
@@ -516,6 +524,13 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 	/* ======================== Camera: Items ======================== */
 	function startItemCamera(autoStart) {
 		autoStart = !!autoStart;
+		if (itemScanning) {
+			return;
+		}
+		if (!barcodeDetectorSupported) {
+			showNotice(itemStatus, 'info', 'Live camera barcode detection is unavailable in this browser. Use a handheld barcode scanner or type SKUs.');
+			return;
+		}
 		if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
 			showNotice(itemStatus, 'info', 'Camera scanning is unavailable here. Use a handheld barcode scanner or type SKUs.');
 			return;
@@ -550,7 +565,7 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 
 	/* ======================== BarcodeDetector ======================== */
 	function scheduleDetect(context) {
-		if (!window.BarcodeDetector) return;
+		if (!barcodeDetectorSupported) return;
 
 		var detector    = new BarcodeDetector({ formats: ['code_128','ean_13','ean_8','code_39','upc_a','upc_e','qr_code','itf'] });
 		var videoTarget = context === 'bucket' ? bucketVideo : itemVideo;
@@ -563,7 +578,10 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 			detector.detect(videoTarget)
 				.then(function (barcodes) {
 					if (barcodes.length > 0) {
-						var val  = barcodes[0].rawValue;
+						var val  = String(barcodes[0].rawValue || '').trim();
+						if (!val) {
+							return;
+						}
 						var now  = Date.now();
 						var last = context === 'bucket' ? lastBucketScan : lastItemScan;
 						if (val !== last || (now - lastScanTs) > SCAN_DEBOUNCE) {
@@ -614,7 +632,17 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 			if (!resp.ok && resp.status !== 404 && resp.status !== 422) {
 				throw new Error('HTTP ' + resp.status);
 			}
-			return resp.json();
+			return resp.text().then(function (text) {
+				if (!text) {
+					return {};
+				}
+
+				try {
+					return JSON.parse(text);
+				} catch (e) {
+					throw new Error('Invalid JSON response from cycle count endpoint.');
+				}
+			});
 		});
 	}
 
@@ -709,7 +737,7 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 			return false;
 		}
 
-		if (!window.BarcodeDetector) {
+		if (!barcodeDetectorSupported) {
 			return false;
 		}
 
@@ -721,7 +749,7 @@ label.cc-label{display:block;font-weight:600;margin-bottom:6px}
 	}
 
 	/* ---- BarcodeDetector availability notice ---- */
-	if (!window.BarcodeDetector) {
+	if (!barcodeDetectorSupported) {
 		var hint = document.createElement('p');
 		hint.className = 'aims-cc-muted';
 		hint.style.fontSize = '.8em';

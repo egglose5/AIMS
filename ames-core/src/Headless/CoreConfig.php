@@ -193,6 +193,28 @@ final class CoreConfig {
 		return '' !== $this->squareUrl;
 	}
 
+	public function validateRequiredSecrets(): void {
+		$missing = array();
+
+		if ( $this->isPlaceholderSecret( $this->sharedSecret ) ) {
+			$missing[] = 'AIMS_SHARED_SECRET';
+		}
+
+		if ( $this->isPlaceholderSecret( $this->archiveSecret ) ) {
+			$missing[] = 'AIMS_ARCHIVE_SECRET';
+		}
+
+		if ( $this->isPlaceholderSecret( $this->encryptionKey ) ) {
+			$missing[] = 'AIMS_ENCRYPTION_KEY';
+		}
+
+		if ( empty( $missing ) ) {
+			return;
+		}
+
+		throw new \RuntimeException( 'Missing required AIMS secrets: ' . implode( ', ', $missing ) );
+	}
+
 	private static function envPath( string $key, string $default, string $rootPath ): string {
 		$value = trim( (string) getenv( $key ) );
 
@@ -205,5 +227,11 @@ final class CoreConfig {
 		}
 
 		return rtrim( $rootPath, '\\/' ) . DIRECTORY_SEPARATOR . ltrim( str_replace( array( '/', '\\' ), DIRECTORY_SEPARATOR, $value ), '\\/' );
+	}
+
+	private function isPlaceholderSecret( string $value ): bool {
+		$normalized = strtolower( trim( $value ) );
+
+		return '' === $normalized || in_array( $normalized, array( 'change-me', 'changeme', 'replace-me' ), true );
 	}
 }

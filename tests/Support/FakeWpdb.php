@@ -147,4 +147,8 @@ final class FakeWpdb {
 	public function get_charset_collate(): string {
 		return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
 	}
+
+	public function esc_like( string $text ): string {
+		return addcslashes( $text, '_%\\' );
+	}
 }

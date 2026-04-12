@@ -54,6 +54,7 @@ spl_autoload_register(
 ( new EnvLoader() )->load( $root . DIRECTORY_SEPARATOR . '.env' );
 
 $config = CoreConfig::fromRoot( $root );
+$config->validateRequiredSecrets();
 $config->ensureDirectories();
 
 $logger       = new FileLogger( $config->logsPath() );
@@ -86,6 +87,7 @@ $archive = new ArchiveService(
 $history = new FlowParquetHistoryReader();
 
 try {
+	$exposeErrorDetails = should_expose_error_details();
 	$method = strtoupper( $_SERVER['REQUEST_METHOD'] ?? 'GET' );
 	$path   = resolve_request_path();
 	$query  = is_array( $_GET ) ? $_GET : array();
@@ -395,7 +397,9 @@ try {
 					}
 				}
 			} catch ( Throwable $exception ) {
-				$warnings[] = $exception->getMessage();
+				$warnings[] = $exposeErrorDetails
+					? $exception->getMessage()
+					: 'Vault history unavailable for one or more segments.';
 			}
 		}
 
@@ -439,13 +443,33 @@ try {
 	json_response( array( 'ok' => false, 'message' => 'Route not found.', 'method' => $method, 'path' => $path ), 404 );
 } catch ( InvalidArgumentException $exception ) {
 	$logger->error( 'request.invalid', array( 'message' => $exception->getMessage() ) );
-	json_response( array( 'ok' => false, 'message' => $exception->getMessage() ), 422 );
+	json_response( array( 'ok' => false, 'message' => 'Invalid request.' ), 422 );
 } catch ( RuntimeException $exception ) {
 	$logger->error( 'request.runtime_error', array( 'message' => $exception->getMessage() ) );
-	json_response( array( 'ok' => false, 'message' => $exception->getMessage() ), 500 );
+	json_response(
+		array(
+			'ok'      => false,
+			'message' => 'AIMS core runtime error.',
+			'detail'  => should_expose_error_details() ? $exception->getMessage() : null,
+		),
+		500
+	);
 } catch ( Throwable $exception ) {
 	$logger->error( 'request.unhandled', array( 'message' => $exception->getMessage(), 'type' => $exception::class ) );
-	json_response( array( 'ok' => false, 'message' => 'Unhandled AIMS core error.', 'detail' => $exception->getMessage() ), 500 );
+	json_response(
+		array(
+			'ok'      => false,
+			'message' => 'Unhandled AIMS core error.',
+			'detail'  => should_expose_error_details() ? $exception->getMessage() : null,
+		),
+		500
+	);
+}
+
+function should_expose_error_details(): bool {
+	$appEnv = strtolower( trim( (string) ( getenv( 'AIMS_APP_ENV' ) ?: 'production' ) ) );
+
+	return in_array( $appEnv, array( 'dev', 'development', 'local', 'staging', 'test', 'testing' ), true );
 }
 
 function resolve_request_path(): string {
