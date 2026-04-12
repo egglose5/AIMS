@@ -29,9 +29,10 @@ If this is a first manual install rather than an upgrade, use the current filesy
 
 1. Upload the plugin to `wp-content/plugins/ai-man-sys`.
 2. Deploy `ames-core/` to a reachable URL or subpath and ensure `sink/`, `vault/`, `logs/`, and `config/` are writable.
+	- Ensure `/status` resolves at either `https://example.com/ames-core/status` (rewrite-enabled) or `https://example.com/ames-core/index.php/status` (no rewrite).
 3. Copy or mirror `ames-core/.env.example` and set `AIMS_SHARED_SECRET`, `AIMS_ARCHIVE_SECRET`, and `AIMS_ENCRYPTION_KEY` before activation. If you want explicit binary-lane controls, also set `AIMS_BINARY_STREAM_MODE`, `AIMS_BINARY_PRIMARY_APPROVED`, `AIMS_BINARY_FLUSH_PACKET_LIMIT`, `AIMS_BINARY_FLUSH_BYTE_LIMIT`, `AIMS_HOT_RETENTION_DAYS`, and `AIMS_VAULT_RETENTION_DAYS`.
 4. Activate the plugin in wp-admin.
-5. Open `AIMS > Settings` and point the plugin at the deployed headless URL, using the same shared secret as the `AIMS Token` value.
+5. Open `AIMS > Settings` and set **AIMS API URL** to the route base used above (`https://example.com/ames-core` with rewrite or `https://example.com/ames-core/index.php` without rewrite), using the same shared secret as the `AIMS Token` value.
 6. Open `AIMS > Dashboard` and verify the core connection before any live movement, sync, or archive action.
 
 ## Upgrade Steps

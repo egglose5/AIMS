@@ -53,6 +53,7 @@ Use this path for a first manual install on the current filesystem-capable share
    - do not activate until the headless side is reachable
 4. **Deploy the headless `ames-core` directory**
    - place `ames-core/` in a filesystem-capable location reachable over HTTP, for example `https://example.com/ames-core/`
+   - expose routing so `/status` works either at `https://example.com/ames-core/status` (rewrite-enabled) or `https://example.com/ames-core/index.php/status` (no rewrite)
    - ensure `sink/`, `vault/`, `logs/`, and `config/` are writable by PHP
    - make sure the host honors the included `.htaccess` and/or `web.config` protections where applicable
 5. **Configure the headless environment**
@@ -66,9 +67,12 @@ Use this path for a first manual install on the current filesystem-capable share
 6. **Activate and connect WordPress**
    - activate the `AIMS` plugin in wp-admin
    - open `AIMS > Settings`
-   - set **AIMS API URL** to the base URL for your deployed `ames-core`
+   - set **AIMS API URL** to the route base that serves AIMS paths:
+     - rewrite-enabled example: `https://example.com/ames-core`
+     - no-rewrite example: `https://example.com/ames-core/index.php`
    - set **AIMS Token** to the same value as `AIMS_SHARED_SECRET`
 7. **Run a first connection check**
+   - confirm `GET <AIMS API URL>/status` returns JSON from the headless core
    - open `AIMS > Dashboard`
    - confirm **Core Status** loads without a connection error
    - confirm the **Hot Data Pressure** card renders
@@ -81,7 +85,7 @@ For rollout, rollback, and post-install checks, follow `docs/upgrade-path.md`.
 The repository currently provides:
 
 - standalone `ames-core` router with token-authenticated routes for movement, buckets, FIFO, custody, manifest build/push, history, archive, OAuth, and encrypted provider secrets
-- WordPress/Woo thin-client bridge through [class-aims-headless-api-client.php](C:/Users/sided/source/repos/AIMS%20Local%20Repo/includes/core/class-aims-headless-api-client.php) and the AIMS cockpit
+- WordPress/Woo thin-client bridge through [includes/core/class-aims-headless-api-client.php](includes/core/class-aims-headless-api-client.php) and the AIMS cockpit
 - bucket-first physical truth with current seal state, current Square location context, custody movement, FIFO receive, FIFO availability, and FIFO pick
 - event planning and execution workspace in WordPress, including staged bucket prep, temporary release, dock-safe seal checks, check-in, return flows, and show profitability rollups
 - vendor-facing portal tools for upcoming shows, mobile event check-in, and mobile field expense logging with short justification and receipt capture
