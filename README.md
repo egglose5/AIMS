@@ -156,6 +156,7 @@ The repository currently provides:
 - Square queue/raw event/normalized sale/replay scaffolding with sync-run telemetry
 - Square thin-client overlap sync foundation: headless AIMS can pull recent Square orders by location/window, and the WP side can replay them into the existing queue/import flow
 - location-aware Square stock push from AIMS so bucket-linked stock can be projected to the correct Square location
+- customer-facing inventory sync endpoints so partner systems can POST current on-hand counts into AIMS and GET update feeds for two-way automation
 - authenticated laser-control batch ingress in both headless AIMS (`POST /internal/laser/batches`) and the WooCommerce REST surface (`POST /wp-json/wc/v3/aims/laser-batches`) so Docker-based production tooling can push batches without using WordPress as the hot write path
 - shadow-mode binary sale stream lane in `ames-core` with a fixed-width packet, reusable reference dictionary, byte-offset pointer index, exception lane for invalid hot-path rows, packet reread/reconciliation support, buffered flush thresholds, retention metadata, dashboard visibility for binary shadow status, and a primary-mode approval gate
 - Woo projection integration points that can add unfulfilled and user-defined order charges so projected Square orders show operational fee lines in the native WooCommerce order interface
@@ -184,6 +185,14 @@ The direction is clear even if the cutover is not 100% complete yet:
 - The portal writes absolute bucket-position truth and also records an audited `cycle_count` bucket movement delta per changed SKU.
 - Access is limited to users who can `manage_aims_inventory` or `manage_aims`.
 - See `docs/cycle-count-mobile-portal.md` for setup and rollout details.
+
+## Customer inventory integration
+
+- AIMS now exposes customer integration routes for automated inventory sharing:
+   - `POST /wp-json/aims/v1/integrations/inventory` to send current inventory counts
+   - `GET /wp-json/aims/v1/integrations/updates` to read updates and low-stock summary
+- The same shared token model is used for auth via `X-Ames-Token`.
+- Customer-facing guidance is available directly in the wholesale portal and in `docs/customer-inventory-integration.md`.
 
 ## Core rules
 
