@@ -177,6 +177,9 @@ class AIMS_Plugin {
 
 	public function boot(): void {
 		self::maybe_install_schema();
+		if ( class_exists( 'AIMS_Product_Cost_Woo_Cogs_Sync_Service' ) ) {
+			AIMS_Product_Cost_Woo_Cogs_Sync_Service::register_hooks();
+		}
 		add_action( 'admin_menu', array( $this->admin_menu, 'register' ) );
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
 		if ( is_object( $this->square_thin_client_sync ) && method_exists( $this->square_thin_client_sync, 'boot' ) ) {

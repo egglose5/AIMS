@@ -38,6 +38,8 @@ class AIMS_Product_Cost_Rule_Repository {
 				array( '%d' )
 			);
 
+			$this->fire_rule_saved_action( $rule_id, $record );
+
 			return $rule_id;
 		}
 
@@ -49,7 +51,12 @@ class AIMS_Product_Cost_Rule_Repository {
 			array( '%s', '%d', '%d', '%d', '%s', '%f', '%f', '%d', '%s', '%s' )
 		);
 
-		return (int) $wpdb->insert_id;
+		$inserted_id = (int) $wpdb->insert_id;
+		if ( $inserted_id > 0 ) {
+			$this->fire_rule_saved_action( $inserted_id, $record );
+		}
+
+		return $inserted_id;
 	}
 
 	public function get_active_rules(): array {
@@ -67,6 +74,15 @@ class AIMS_Product_Cost_Rule_Repository {
 		return in_array( $assignment_type, array( self::ASSIGNMENT_TYPE_PRODUCT, self::ASSIGNMENT_TYPE_CATEGORY ), true )
 			? $assignment_type
 			: self::ASSIGNMENT_TYPE_PRODUCT;
+	}
+
+	private function fire_rule_saved_action( int $rule_id, array $record ): void {
+		if ( $rule_id <= 0 || ! function_exists( 'do_action' ) ) {
+			return;
+		}
+
+		$record['id'] = $rule_id;
+		do_action( 'aims_product_cost_rule_saved', $rule_id, $record );
 	}
 }
 
