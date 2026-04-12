@@ -81,6 +81,20 @@ class AIMS_Plugin {
 					file_put_contents($env_file, $env);
 				}
 			}
+			// Auto-populate API URL and token if possible
+			if (file_exists($env_file)) {
+				$env = file_get_contents($env_file);
+				$api_url = site_url('/ames-core');
+				if (get_option(self::OPTION_API_URL, '') === '') {
+					update_option(self::OPTION_API_URL, $api_url, false);
+				}
+				if (preg_match('/^AIMS_SHARED_SECRET=(.*)$/m', $env, $m)) {
+					$token = trim($m[1]);
+					if (get_option(self::OPTION_API_TOKEN, '') === '') {
+						update_option(self::OPTION_API_TOKEN, $token, false);
+					}
+				}
+			}
 		}
 		// Admin notice if errors
 		if (!empty($errors)) {
