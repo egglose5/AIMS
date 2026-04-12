@@ -36,6 +36,58 @@ class AIMS_Plugin {
 		self::ensure_default_options();
 		self::maybe_install_schema();
 		AIMS_Capabilities::register_roles_and_caps();
+		// Automated setup for ames-core and runtime dirs
+		$errors = array();
+		// Check PHP extensions
+		if (!extension_loaded('pdo') || !extension_loaded('pdo_sqlite')) {
+			$errors[] = __('AIMS requires the PDO and PDO_SQLITE PHP extensions.', 'ai-man-sys');
+		}
+		// Ensure ames-core exists
+		$core_dir = AIMS_PLUGIN_PATH . 'ames-core/';
+		if (!is_dir($core_dir)) {
+			$errors[] = __('ames-core directory is missing from the plugin. Please upload all plugin files.', 'ai-man-sys');
+		} else {
+			// Ensure runtime dirs
+			foreach (['sink', 'vault', 'logs', 'config'] as $subdir) {
+				$path = $core_dir . $subdir . '/';
+				if (!is_dir($path)) {
+					if (!mkdir($path, 0755, true)) {
+						$errors[] = sprintf(__('Failed to create directory: %s', 'ai-man-sys'), $path);
+					}
+				}
+				if (!is_writable($path)) {
+					if (!@chmod($path, 0755)) {
+						$errors[] = sprintf(__('Directory not writable: %s', 'ai-man-sys'), $path);
+					}
+				}
+			}
+			// Copy .env.example to .env if needed
+			$env_example = $core_dir . '.env.example';
+			$env_file = $core_dir . '.env';
+			if (file_exists($env_example) && !file_exists($env_file)) {
+				if (!copy($env_example, $env_file)) {
+					$errors[] = __('Failed to copy .env.example to .env in ames-core.', 'ai-man-sys');
+				} else {
+					// Generate secrets if not set
+					$env = file_get_contents($env_file);
+					$replacements = [
+						'AIMS_SHARED_SECRET=' => 'AIMS_SHARED_SECRET=' . wp_generate_password(32, true, true),
+						'AIMS_ARCHIVE_SECRET=' => 'AIMS_ARCHIVE_SECRET=' . wp_generate_password(32, true, true),
+						'AIMS_ENCRYPTION_KEY=' => 'AIMS_ENCRYPTION_KEY=' . wp_generate_password(32, true, true),
+					];
+					foreach ($replacements as $needle => $replace) {
+						$env = preg_replace('/^' . preg_quote($needle, '/') . '.*$/m', $replace, $env);
+					}
+					file_put_contents($env_file, $env);
+				}
+			}
+		}
+		// Admin notice if errors
+		if (!empty($errors)) {
+			update_option('aims_activation_errors', $errors);
+		} else {
+			delete_option('aims_activation_errors');
+		}
 		if ( function_exists( 'add_rewrite_endpoint' ) ) {
 			$mask = ( defined( 'EP_ROOT' ) ? (int) EP_ROOT : 0 ) | ( defined( 'EP_PAGES' ) ? (int) EP_PAGES : 0 );
 			add_rewrite_endpoint( 'aims-wholesale', $mask > 0 ? $mask : 1 );
@@ -43,6 +95,16 @@ class AIMS_Plugin {
 		if ( function_exists( 'flush_rewrite_rules' ) ) {
 			flush_rewrite_rules( false );
 		}
+	// Show admin notice if activation errors exist
+	add_action('admin_notices', function() {
+		if ($errors = get_option('aims_activation_errors')) {
+			echo '<div class="notice notice-error"><p><strong>AIMS Plugin Setup Issues:</strong></p><ul>';
+			foreach ($errors as $err) {
+				echo '<li>' . esc_html($err) . '</li>';
+			}
+			echo '</ul></div>';
+		}
+	});
 	}
 
 	public static function uninstall(): void {
