@@ -14,12 +14,18 @@ class AIMS_Admin_Menu {
 	private $audit_log_service;
 	private $hot_db_health_service;
 	private $square_location_push_policy;
+	private $low_stock_alert_service;
+ 	private $customer_spend_window_service;
+	private $wholesale_contract_service;
 
-	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null, AIMS_Audit_Log_Service $audit_log_service = null, AIMS_Hot_Db_Health_Service $hot_db_health_service = null, AIMS_Square_Location_Push_Policy_Service $square_location_push_policy = null ) {
+	public function __construct( AIMS_Surface_Authorization_Service $surface_authorization = null, AIMS_Audit_Log_Service $audit_log_service = null, AIMS_Hot_Db_Health_Service $hot_db_health_service = null, AIMS_Square_Location_Push_Policy_Service $square_location_push_policy = null, AIMS_Low_Stock_Alert_Service $low_stock_alert_service = null, AIMS_Customer_Spend_Window_Service $customer_spend_window_service = null, AIMS_Wholesale_Contract_Service $wholesale_contract_service = null ) {
 		$this->surface_authorization     = $surface_authorization ?: new AIMS_Surface_Authorization_Service();
 		$this->audit_log_service         = $audit_log_service ?: new AIMS_Audit_Log_Service();
 		$this->hot_db_health_service     = $hot_db_health_service ?: new AIMS_Hot_Db_Health_Service();
 		$this->square_location_push_policy = $square_location_push_policy ?: new AIMS_Square_Location_Push_Policy_Service();
+		$this->low_stock_alert_service   = $low_stock_alert_service ?: new AIMS_Low_Stock_Alert_Service();
+		$this->customer_spend_window_service = $customer_spend_window_service ?: new AIMS_Customer_Spend_Window_Service();
+		$this->wholesale_contract_service = $wholesale_contract_service ?: new AIMS_Wholesale_Contract_Service();
 	}
 
 	public function register(): void {
@@ -68,6 +74,7 @@ class AIMS_Admin_Menu {
 		add_action( 'admin_post_aims_pick_remote_fifo', array( $this, 'handle_pick_remote_fifo' ) );
 		add_action( 'admin_post_aims_sync_remote_manifest', array( $this, 'handle_sync_remote_manifest' ) );
 		add_action( 'admin_post_aims_trigger_remote_archive', array( $this, 'handle_trigger_remote_archive' ) );
+		add_action( 'admin_post_aims_designate_wholesale_customer', array( $this, 'handle_designate_wholesale_customer' ) );
 	}
 
 	public function register_settings(): void {
@@ -88,6 +95,36 @@ class AIMS_Admin_Menu {
 				'type'              => 'string',
 				'sanitize_callback'  => array( 'AIMS_Plugin', 'sanitize_api_token' ),
 				'default'           => '',
+			)
+		);
+
+		register_setting(
+			self::SETTINGS_GROUP,
+			AIMS_Plugin::OPTION_LOW_STOCK_THRESHOLD,
+			array(
+				'type'              => 'integer',
+				'sanitize_callback' => array( 'AIMS_Plugin', 'sanitize_low_stock_threshold' ),
+				'default'           => 5,
+			)
+		);
+
+		register_setting(
+			self::SETTINGS_GROUP,
+			AIMS_Plugin::OPTION_CUSTOMER_SPEND_WINDOW_DAYS,
+			array(
+				'type'              => 'integer',
+				'sanitize_callback' => array( 'AIMS_Plugin', 'sanitize_customer_spend_window_days' ),
+				'default'           => 30,
+			)
+		);
+
+		register_setting(
+			self::SETTINGS_GROUP,
+			AIMS_Plugin::OPTION_CUSTOMER_SPEND_QUALIFY_AMOUNT,
+			array(
+				'type'              => 'number',
+				'sanitize_callback' => array( 'AIMS_Plugin', 'sanitize_customer_spend_qualify_amount' ),
+				'default'           => 0,
 			)
 		);
 
@@ -115,6 +152,48 @@ class AIMS_Admin_Menu {
 			self::SETTINGS_PAGE_SLUG,
 			'aims_headless_connection'
 		);
+
+		add_settings_section(
+			'aims_inventory_alerts',
+			'Inventory Alerts',
+			function (): void {
+				echo '<p>Configure read-only low-stock warnings for products aggregated across active bucket positions.</p>';
+			},
+			self::SETTINGS_PAGE_SLUG
+		);
+
+		add_settings_field(
+			AIMS_Plugin::OPTION_LOW_STOCK_THRESHOLD,
+			'Low Stock Threshold',
+			array( $this, 'render_low_stock_threshold_field' ),
+			self::SETTINGS_PAGE_SLUG,
+			'aims_inventory_alerts'
+		);
+
+		add_settings_section(
+			'aims_customer_spend_window',
+			'Customer Spend Window',
+			function (): void {
+				echo '<p>Set the default rolling timeframe used when evaluating customer spend.</p>';
+			},
+			self::SETTINGS_PAGE_SLUG
+		);
+
+		add_settings_field(
+			AIMS_Plugin::OPTION_CUSTOMER_SPEND_WINDOW_DAYS,
+			'Default Rolling Window (days)',
+			array( $this, 'render_customer_spend_window_days_field' ),
+			self::SETTINGS_PAGE_SLUG,
+			'aims_customer_spend_window'
+		);
+
+		add_settings_field(
+			AIMS_Plugin::OPTION_CUSTOMER_SPEND_QUALIFY_AMOUNT,
+			'Wholesale Qualification Spend',
+			array( $this, 'render_customer_spend_qualify_amount_field' ),
+			self::SETTINGS_PAGE_SLUG,
+			'aims_customer_spend_window'
+		);
 	}
 
 	public function render_dashboard(): void {
@@ -136,6 +215,12 @@ class AIMS_Admin_Menu {
 		$availability_query = $this->get_fifo_availability_query();
 		$notice             = $this->get_notice();
 		$hot_db_health      = $this->hot_db_health_service->get_dashboard_snapshot();
+		$low_stock_snapshot = $this->low_stock_alert_service->get_dashboard_snapshot();
+		$customer_spend_query = $this->get_customer_spend_query();
+		$customer_spend_snapshot = $this->customer_spend_window_service->get_dashboard_snapshot(
+			(string) ( $customer_spend_query['lookup'] ?? '' ),
+			(int) ( $customer_spend_query['window_days'] ?? AIMS_Plugin::get_customer_spend_window_days() )
+		);
 		$manifest_sync_gate = $this->square_location_push_policy->get_manifest_sync_gate();
 
 		if ( $client->is_configured() && '' !== (string) ( $availability_query['sku'] ?? '' ) ) {
@@ -177,6 +262,16 @@ class AIMS_Admin_Menu {
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Hot Data Pressure</h2>';
 		$this->render_hot_db_health( $hot_db_health );
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>Low Stock Alerts</h2>';
+		$this->render_low_stock_alerts( $low_stock_snapshot );
+		echo '</div>';
+
+		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
+		echo '<h2>Customer Spend Window</h2>';
+		$this->render_customer_spend_window_panel( $customer_spend_snapshot, $customer_spend_query );
 		echo '</div>';
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
@@ -271,6 +366,83 @@ class AIMS_Admin_Menu {
 			esc_attr( AIMS_Plugin::OPTION_API_TOKEN ),
 			esc_attr( AIMS_Plugin::get_api_token() )
 		);
+	}
+
+	public function render_low_stock_threshold_field(): void {
+		printf(
+			'<input type="number" min="0" step="1" class="small-text" name="%1$s" value="%2$s" /> <span class="description">Alert when available quantity is less than or equal to this value.</span>',
+			esc_attr( AIMS_Plugin::OPTION_LOW_STOCK_THRESHOLD ),
+			esc_attr( (string) AIMS_Plugin::get_low_stock_threshold() )
+		);
+	}
+
+	public function render_customer_spend_window_days_field(): void {
+		printf(
+			'<input type="number" min="1" step="1" class="small-text" name="%1$s" value="%2$s" /> <span class="description">Used as the default window for customer spend lookups.</span>',
+			esc_attr( AIMS_Plugin::OPTION_CUSTOMER_SPEND_WINDOW_DAYS ),
+			esc_attr( (string) AIMS_Plugin::get_customer_spend_window_days() )
+		);
+	}
+
+	public function render_customer_spend_qualify_amount_field(): void {
+		printf(
+			'<input type="number" min="0" step="0.01" class="small-text" name="%1$s" value="%2$s" /> <span class="description">If customer spend in the rolling window is at least this amount, admin can one-click designate wholesale.</span>',
+			esc_attr( AIMS_Plugin::OPTION_CUSTOMER_SPEND_QUALIFY_AMOUNT ),
+			esc_attr( number_format( AIMS_Plugin::get_customer_spend_qualify_amount(), 2, '.', '' ) )
+		);
+	}
+
+	public function handle_designate_wholesale_customer(): void {
+		$this->require_capability();
+		check_admin_referer( 'aims_designate_wholesale_customer' );
+
+		$customer_id = absint( $_POST['customer_id'] ?? 0 );
+		$lookup      = $this->sanitize_request_string( $_POST['customer_lookup'] ?? '' );
+		$window_days = AIMS_Plugin::sanitize_customer_spend_window_days( (string) wp_unslash( $_POST['window_days'] ?? AIMS_Plugin::get_customer_spend_window_days() ) );
+
+		if ( $customer_id <= 0 ) {
+			$this->redirect_back( array(
+				self::NOTICE_QUERY_ARG => 'wholesale_designation_failed',
+				'aims_customer_lookup' => $lookup,
+				'aims_customer_window_days' => $window_days,
+			) );
+		}
+
+		$snapshot = $this->customer_spend_window_service->get_dashboard_snapshot( $lookup, $window_days );
+		$total_spend = (float) ( $snapshot['total_spend'] ?? 0 );
+		$threshold   = AIMS_Plugin::get_customer_spend_qualify_amount();
+		$qualifies   = $threshold <= 0 || $total_spend >= $threshold;
+
+		if ( ! $qualifies ) {
+			$this->record_audit_event( 'customer_wholesale_designation', (string) $customer_id, false );
+			$this->redirect_back( array(
+				self::NOTICE_QUERY_ARG => 'wholesale_designation_below_threshold',
+				'aims_customer_lookup' => $lookup,
+				'aims_customer_window_days' => $window_days,
+			) );
+		}
+
+		$current_contract = $this->wholesale_contract_service->get_contract( $customer_id );
+		$this->wholesale_contract_service->save_contract_from_profile(
+			$customer_id,
+			array(
+				AIMS_Wholesale_Contract_Service::META_ENABLED => '1',
+				AIMS_Wholesale_Contract_Service::META_ELEVATED_CUSTOMER => ! empty( $current_contract['elevated_customer'] ) ? '1' : '0',
+				AIMS_Wholesale_Contract_Service::META_LEAD_TIME_DAYS => (int) ( $current_contract['lead_time_days'] ?? 7 ),
+				AIMS_Wholesale_Contract_Service::META_MIN_ORDER_QTY => (int) ( $current_contract['min_order_qty'] ?? 1 ),
+				AIMS_Wholesale_Contract_Service::META_TIER_RATES => (string) get_user_meta( $customer_id, AIMS_Wholesale_Contract_Service::META_TIER_RATES, true ),
+				AIMS_Wholesale_Contract_Service::META_PAYMENT_TERMS => (string) ( $current_contract['payment_terms'] ?? '' ),
+				AIMS_Wholesale_Contract_Service::META_SHIPPING_WINDOW => (string) ( $current_contract['shipping_window'] ?? '' ),
+				AIMS_Wholesale_Contract_Service::META_CONTRACT_NOTES => (string) ( $current_contract['contract_notes'] ?? '' ),
+			)
+		);
+
+		$this->record_audit_event( 'customer_wholesale_designation', (string) $customer_id, true );
+		$this->redirect_back( array(
+			self::NOTICE_QUERY_ARG => 'wholesale_designated',
+			'aims_customer_lookup' => $lookup,
+			'aims_customer_window_days' => $window_days,
+		) );
 	}
 
 	public function handle_submit_remote_move(): void {
@@ -808,6 +980,104 @@ class AIMS_Admin_Menu {
 		}
 	}
 
+	private function render_low_stock_alerts( array $snapshot ): void {
+		$threshold      = (int) ( $snapshot['threshold'] ?? AIMS_Plugin::get_low_stock_threshold() );
+		$tracked        = (int) ( $snapshot['tracked_products'] ?? 0 );
+		$low_stock      = (int) ( $snapshot['low_stock_products'] ?? 0 );
+		$active_rows    = (int) ( $snapshot['active_positions'] ?? 0 );
+		$alerts         = is_array( $snapshot['alerts'] ?? null ) ? $snapshot['alerts'] : array();
+
+		echo '<p>Alerts are read-only and based on active bucket position availability (`quantity - reserved_quantity`) aggregated by product.</p>';
+		echo '<p><strong>Threshold:</strong> ' . esc_html( number_format( $threshold ) ) . ' | <strong>Tracked Products:</strong> ' . esc_html( number_format( $tracked ) ) . ' | <strong>Active Positions:</strong> ' . esc_html( number_format( $active_rows ) ) . '</p>';
+
+		if ( $low_stock <= 0 ) {
+			echo '<p><strong>No low-stock products detected.</strong></p>';
+			return;
+		}
+
+		echo '<p><strong>' . esc_html( number_format( $low_stock ) ) . ' product(s) are at or below threshold.</strong></p>';
+		echo '<table class="widefat striped" style="max-width:960px;"><thead><tr><th>Product</th><th>Available</th><th>Total</th><th>Reserved</th><th>Buckets</th><th>Vendors</th><th>Status</th></tr></thead><tbody>';
+		foreach ( $alerts as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+
+			$status_label = 'low' === (string) ( $item['status'] ?? '' ) ? 'Low' : 'Out';
+			echo '<tr>';
+			echo '<td>' . esc_html( (string) ( $item['product_name'] ?? '' ) ) . ' <span style="color:#646970;">#' . esc_html( (string) ( $item['product_id'] ?? 0 ) ) . '</span></td>';
+			echo '<td><strong>' . esc_html( number_format( (float) ( $item['available_quantity'] ?? 0 ), 4 ) ) . '</strong></td>';
+			echo '<td>' . esc_html( number_format( (float) ( $item['total_quantity'] ?? 0 ), 4 ) ) . '</td>';
+			echo '<td>' . esc_html( number_format( (float) ( $item['reserved_quantity'] ?? 0 ), 4 ) ) . '</td>';
+			echo '<td>' . esc_html( number_format( (int) ( $item['bucket_count'] ?? 0 ) ) ) . '</td>';
+			echo '<td>' . esc_html( number_format( (int) ( $item['vendor_count'] ?? 0 ) ) ) . '</td>';
+			echo '<td>' . esc_html( $status_label ) . '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	private function render_customer_spend_window_panel( array $snapshot, array $query ): void {
+		$lookup      = (string) ( $query['lookup'] ?? '' );
+		$window_days = (int) ( $query['window_days'] ?? AIMS_Plugin::get_customer_spend_window_days() );
+		$threshold   = AIMS_Plugin::get_customer_spend_qualify_amount();
+
+		echo '<form method="get" action="' . esc_url( admin_url( 'admin.php' ) ) . '">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::MENU_SLUG ) . '" />';
+		echo '<table class="form-table"><tbody>';
+		echo '<tr><th scope="row"><label for="aims-customer-spend-lookup">Customer</label></th><td><input id="aims-customer-spend-lookup" type="text" class="regular-text" name="aims_customer_lookup" value="' . esc_attr( $lookup ) . '" placeholder="ID, email, or username" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-customer-spend-window-days">Window (days)</label></th><td><input id="aims-customer-spend-window-days" type="number" min="1" step="1" name="aims_customer_window_days" value="' . esc_attr( (string) $window_days ) . '" /></td></tr>';
+		echo '</tbody></table>';
+		submit_button( 'Evaluate Customer Spend', 'secondary', '', false );
+		echo '</form>';
+
+		if ( empty( $snapshot['resolved'] ) ) {
+			echo '<p>' . esc_html( (string) ( $snapshot['message'] ?? 'Provide a customer lookup to evaluate spend.' ) ) . '</p>';
+			return;
+		}
+
+		$customer    = is_array( $snapshot['customer'] ?? null ) ? $snapshot['customer'] : array();
+		$total_spend = (float) ( $snapshot['total_spend'] ?? 0 );
+		$order_count = (int) ( $snapshot['order_count'] ?? 0 );
+		$orders      = is_array( $snapshot['orders'] ?? null ) ? $snapshot['orders'] : array();
+		$qualifies   = $threshold <= 0 || $total_spend >= $threshold;
+		$already_wholesale = $this->wholesale_contract_service->is_wholesale_customer( (int) ( $customer['id'] ?? 0 ) );
+
+		echo '<p><strong>Customer:</strong> ' . esc_html( (string) ( $customer['display_name'] ?? 'Unknown' ) ) . ' <span style="color:#646970;">#' . esc_html( (string) ( $customer['id'] ?? 0 ) ) . ' • ' . esc_html( (string) ( $customer['email'] ?? '' ) ) . '</span></p>';
+		echo '<p><strong>Rolling Window:</strong> ' . esc_html( number_format( $window_days ) ) . ' day(s) | <strong>Spend:</strong> ' . esc_html( number_format( $total_spend, 2 ) ) . ' | <strong>Orders:</strong> ' . esc_html( number_format( $order_count ) ) . '</p>';
+		echo '<p><strong>Qualification Threshold:</strong> ' . esc_html( number_format( $threshold, 2 ) ) . ' | <strong>Status:</strong> ' . esc_html( $qualifies ? 'Qualifies' : 'Below threshold' ) . ' | <strong>Wholesale:</strong> ' . esc_html( $already_wholesale ? 'Enabled' : 'Not enabled' ) . '</p>';
+
+		if ( ! $already_wholesale && $qualifies ) {
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="margin-bottom:12px;">';
+			echo '<input type="hidden" name="action" value="aims_designate_wholesale_customer" />';
+			echo '<input type="hidden" name="customer_id" value="' . esc_attr( (string) ( (int) ( $customer['id'] ?? 0 ) ) ) . '" />';
+			echo '<input type="hidden" name="customer_lookup" value="' . esc_attr( $lookup ) . '" />';
+			echo '<input type="hidden" name="window_days" value="' . esc_attr( (string) $window_days ) . '" />';
+			wp_nonce_field( 'aims_designate_wholesale_customer' );
+			submit_button( 'Designate as Wholesale', 'primary', '', false );
+			echo '</form>';
+		}
+
+		if ( empty( $orders ) ) {
+			echo '<p>No qualifying WooCommerce orders found for this window.</p>';
+			return;
+		}
+
+		echo '<table class="widefat striped" style="max-width:920px;"><thead><tr><th>Order</th><th>Date</th><th>Status</th><th>Total</th></tr></thead><tbody>';
+		foreach ( $orders as $order_row ) {
+			if ( ! is_array( $order_row ) ) {
+				continue;
+			}
+
+			echo '<tr>';
+			echo '<td>#' . esc_html( (string) ( (int) ( $order_row['order_id'] ?? 0 ) ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $order_row['date'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $order_row['status'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( number_format( (float) ( $order_row['total'] ?? 0 ), 2 ) ) . '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
+	}
+
 	/**
 	 * @return array<string, mixed>
 	 */
@@ -845,6 +1115,9 @@ class AIMS_Admin_Menu {
 			'manifest_sync_failed' => array( 'error', 'Manifest sync failed.' ),
 			'archive_started'=> array( 'success', 'Archive request sent.' ),
 			'archive_failed' => array( 'error', 'Archive request failed.' ),
+			'wholesale_designated' => array( 'success', 'Customer designated as wholesale.' ),
+			'wholesale_designation_failed' => array( 'error', 'Wholesale designation failed: invalid customer selection.' ),
+			'wholesale_designation_below_threshold' => array( 'warning', 'Wholesale designation blocked because customer spend is below the qualification threshold.' ),
 		);
 
 		if ( ! isset( $message_map[ $notice ] ) ) {
@@ -891,6 +1164,17 @@ class AIMS_Admin_Menu {
 			'sku'     => isset( $_GET['aims_fifo_sku'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_sku'] ) : '',
 			'show_id' => isset( $_GET['aims_fifo_show_id'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_show_id'] ) : '',
 			'square_location_id' => isset( $_GET['aims_fifo_square_location_id'] ) ? $this->sanitize_request_string( $_GET['aims_fifo_square_location_id'] ) : '',
+		);
+	}
+
+	private function get_customer_spend_query(): array {
+		$window_days = isset( $_GET['aims_customer_window_days'] )
+			? AIMS_Plugin::sanitize_customer_spend_window_days( (string) wp_unslash( $_GET['aims_customer_window_days'] ) )
+			: AIMS_Plugin::get_customer_spend_window_days();
+
+		return array(
+			'lookup'      => isset( $_GET['aims_customer_lookup'] ) ? $this->sanitize_request_string( $_GET['aims_customer_lookup'] ) : '',
+			'window_days' => $window_days,
 		);
 	}
 

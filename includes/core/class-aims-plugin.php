@@ -9,6 +9,9 @@ class AIMS_Plugin {
 	const OPTION_INSTALLED_AT   = 'aims_installed_at';
 	const OPTION_API_URL        = 'aims_api_url';
 	const OPTION_API_TOKEN      = 'aims_api_token';
+	const OPTION_LOW_STOCK_THRESHOLD = 'aims_low_stock_threshold';
+	const OPTION_CUSTOMER_SPEND_WINDOW_DAYS = 'aims_customer_spend_window_days';
+	const OPTION_CUSTOMER_SPEND_QUALIFY_AMOUNT = 'aims_customer_spend_qualify_amount';
 	const SCHEMA_VERSION        = '0.16.0';
 
 	private static $instance = null;
@@ -18,6 +21,8 @@ class AIMS_Plugin {
 	private $laser_batch_rest_controller;
 	private $hot_db_archive_monitor;
 	private $cycle_count_controller;
+	private $wholesale_customer_portal_controller;
+	private $integration_rest_controller;
 
 	public static function instance(): AIMS_Plugin {
 		if ( null === self::$instance ) {
@@ -31,6 +36,13 @@ class AIMS_Plugin {
 		self::ensure_default_options();
 		self::maybe_install_schema();
 		AIMS_Capabilities::register_roles_and_caps();
+		if ( function_exists( 'add_rewrite_endpoint' ) ) {
+			$mask = ( defined( 'EP_ROOT' ) ? (int) EP_ROOT : 0 ) | ( defined( 'EP_PAGES' ) ? (int) EP_PAGES : 0 );
+			add_rewrite_endpoint( 'aims-wholesale', $mask > 0 ? $mask : 1 );
+		}
+		if ( function_exists( 'flush_rewrite_rules' ) ) {
+			flush_rewrite_rules( false );
+		}
 	}
 
 	public static function uninstall(): void {
@@ -44,6 +56,9 @@ class AIMS_Plugin {
 			self::OPTION_INSTALLED_AT,
 			self::OPTION_API_URL,
 			self::OPTION_API_TOKEN,
+			self::OPTION_LOW_STOCK_THRESHOLD,
+			self::OPTION_CUSTOMER_SPEND_WINDOW_DAYS,
+			self::OPTION_CUSTOMER_SPEND_QUALIFY_AMOUNT,
 		);
 	}
 
@@ -66,6 +81,18 @@ class AIMS_Plugin {
 
 		if ( false === get_option( self::OPTION_API_TOKEN, false ) ) {
 			update_option( self::OPTION_API_TOKEN, '', false );
+		}
+
+		if ( false === get_option( self::OPTION_LOW_STOCK_THRESHOLD, false ) ) {
+			update_option( self::OPTION_LOW_STOCK_THRESHOLD, 5, false );
+		}
+
+		if ( false === get_option( self::OPTION_CUSTOMER_SPEND_WINDOW_DAYS, false ) ) {
+			update_option( self::OPTION_CUSTOMER_SPEND_WINDOW_DAYS, 30, false );
+		}
+
+		if ( false === get_option( self::OPTION_CUSTOMER_SPEND_QUALIFY_AMOUNT, false ) ) {
+			update_option( self::OPTION_CUSTOMER_SPEND_QUALIFY_AMOUNT, 0, false );
 		}
 	}
 
@@ -94,6 +121,18 @@ class AIMS_Plugin {
 		);
 	}
 
+	public static function get_low_stock_threshold(): int {
+		return self::sanitize_low_stock_threshold( (string) get_option( self::OPTION_LOW_STOCK_THRESHOLD, '5' ) );
+	}
+
+	public static function get_customer_spend_window_days(): int {
+		return self::sanitize_customer_spend_window_days( (string) get_option( self::OPTION_CUSTOMER_SPEND_WINDOW_DAYS, '30' ) );
+	}
+
+	public static function get_customer_spend_qualify_amount(): float {
+		return self::sanitize_customer_spend_qualify_amount( (string) get_option( self::OPTION_CUSTOMER_SPEND_QUALIFY_AMOUNT, '0' ) );
+	}
+
 	public static function sanitize_api_url( string $value ): string {
 		return untrailingslashit( esc_url_raw( trim( $value ) ) );
 	}
@@ -102,12 +141,38 @@ class AIMS_Plugin {
 		return trim( sanitize_text_field( $value ) );
 	}
 
+	public static function sanitize_low_stock_threshold( string $value ): int {
+		$normalized = absint( $value );
+
+		return min( 1000000, $normalized );
+	}
+
+	public static function sanitize_customer_spend_window_days( string $value ): int {
+		$normalized = absint( $value );
+		if ( $normalized <= 0 ) {
+			return 30;
+		}
+
+		return min( 3650, $normalized );
+	}
+
+	public static function sanitize_customer_spend_qualify_amount( string $value ): float {
+		$normalized = round( (float) $value, 2 );
+		if ( $normalized < 0 ) {
+			return 0.0;
+		}
+
+		return min( 1000000000.0, $normalized );
+	}
+
 	private function __construct() {
 		$this->admin_menu                  = new AIMS_Admin_Menu();
 		$this->square_thin_client_sync     = new AIMS_Square_Thin_Client_Sync_Service();
 		$this->laser_batch_rest_controller = new AIMS_Laser_Batch_Rest_Controller();
 		$this->hot_db_archive_monitor      = new AIMS_Hot_Db_Archive_Monitor_Service();
 		$this->cycle_count_controller      = new AIMS_Cycle_Count_Controller();
+		$this->wholesale_customer_portal_controller = new AIMS_Wholesale_Customer_Portal_Controller();
+		$this->integration_rest_controller = new AIMS_Integration_Rest_Controller();
 	}
 
 	public function boot(): void {
@@ -125,6 +190,12 @@ class AIMS_Plugin {
 		}
 		if ( is_object( $this->cycle_count_controller ) && method_exists( $this->cycle_count_controller, 'register' ) ) {
 			$this->cycle_count_controller->register();
+		}
+		if ( is_object( $this->wholesale_customer_portal_controller ) && method_exists( $this->wholesale_customer_portal_controller, 'register' ) ) {
+			$this->wholesale_customer_portal_controller->register();
+		}
+		if ( is_object( $this->integration_rest_controller ) && method_exists( $this->integration_rest_controller, 'register' ) ) {
+			$this->integration_rest_controller->register();
 		}
 	}
 
