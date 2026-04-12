@@ -24,13 +24,19 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 	 */
 	public function __construct( string $sqlitePath, array $options = array() ) {
 		$mode = strtolower( trim( (string) ( $options['binary_stream_mode'] ?? 'shadow' ) ) );
+		$primaryApproved = $this->normalizeBoolFlag( $options['binary_primary_approved'] ?? false );
 		if ( ! in_array( $mode, array( 'off', 'shadow', 'primary' ), true ) ) {
+			$mode = 'shadow';
+		}
+
+		if ( 'primary' === $mode && ! $primaryApproved ) {
 			$mode = 'shadow';
 		}
 
 		$this->sqlitePath = $sqlitePath;
 		$this->binaryOptions = array(
 			'binary_stream_mode' => $mode,
+			'binary_primary_approved' => $primaryApproved,
 			'flush_packet_limit' => max( 1, (int) ( $options['binary_flush_packet_limit'] ?? 1 ) ),
 			'flush_byte_limit'   => max( BinarySaleStreamWriter::PACKET_BYTES, (int) ( $options['binary_flush_byte_limit'] ?? 65536 ) ),
 		);
@@ -161,7 +167,11 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 	 * @return array<string, mixed>
 	 */
 	public function binaryShadowSummary(): array {
-		return $this->binaryWriter()->summary();
+		$summary = $this->binaryWriter()->summary();
+		$summary['stream_mode'] = (string) ( $this->binaryOptions['binary_stream_mode'] ?? 'shadow' );
+		$summary['primary_approved'] = (bool) ( $this->binaryOptions['binary_primary_approved'] ?? false );
+
+		return $summary;
 	}
 
 	/**
@@ -693,5 +703,19 @@ final class SqliteLedgerRepository implements ArchiveSinkInterface {
 
 	private function intValue( mixed $value ): int {
 		return is_numeric( $value ) ? (int) $value : 0;
+	}
+
+	private function normalizeBoolFlag( mixed $value ): bool {
+		if ( is_bool( $value ) ) {
+			return $value;
+		}
+
+		if ( is_int( $value ) || is_float( $value ) ) {
+			return 1 === (int) $value;
+		}
+
+		$normalized = strtolower( trim( (string) $value ) );
+
+		return in_array( $normalized, array( '1', 'true', 'yes', 'on' ), true );
 	}
 }

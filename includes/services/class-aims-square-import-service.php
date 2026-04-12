@@ -131,17 +131,29 @@ class AIMS_Square_Import_Service {
 
 			$this->create_fulfillment_allocations_for_sale( $sale_id, $payload, $line_item, $analysis, $line_context );
 
-			$projection_record = $this->project_sale_to_woo(
-				array_merge( $sale_record, array( 'id' => $sale_id ) ),
-				array(
-					'allow_woo_order_projection' => ! empty( $payload['allow_woo_order_projection'] ),
-					'allow_unreconciled_projection' => ! empty( $payload['allow_unreconciled_projection'] ),
-					'reconciliation_status'      => (string) ( $payload['reconciliation_status'] ?? 'pending' ),
-					'projection_mode'            => (string) ( $payload['projection_mode'] ?? 'draft' ),
-					'queue_id'                   => $queue_id,
-					'line_item'                  => $line_item,
-				)
+			$projection_context = array(
+				'allow_woo_order_projection'    => ! empty( $payload['allow_woo_order_projection'] ),
+				'allow_unreconciled_projection' => ! empty( $payload['allow_unreconciled_projection'] ),
+				'reconciliation_status'         => (string) ( $payload['reconciliation_status'] ?? 'pending' ),
+				'projection_mode'               => (string) ( $payload['projection_mode'] ?? 'draft' ),
+				'queue_id'                      => $queue_id,
+				'line_item'                     => $line_item,
+				'customer_data'                 => (array) ( $analysis['customer_data'] ?? array() ),
+				'address_data'                  => (array) ( $analysis['address_data'] ?? array() ),
+				'customer_id'                   => $customer_id,
+				'shipping_address_id'           => $shipping_address_id,
+				'additional_projection_charges' => $this->merge_projection_charges(
+					(array) ( $payload['additional_projection_charges'] ?? array() ),
+					(array) ( $analysis['charge_markers']['projection_charges'] ?? array() )
+				),
 			);
+
+			if ( ! empty( $analysis['charge_markers']['force_pending_projection'] ) ) {
+				$projection_context['projection_mode']               = 'pending';
+				$projection_context['allow_unreconciled_projection'] = true;
+			}
+
+			$projection_record = $this->project_sale_to_woo( array_merge( $sale_record, array( 'id' => $sale_id ) ), $projection_context );
 
 			if ( ! empty( $projection_record ) ) {
 				$projection[] = $projection_record;
@@ -338,5 +350,26 @@ class AIMS_Square_Import_Service {
 				'updated_at'         => current_time( 'mysql' ),
 			)
 		);
+	}
+
+	private function merge_projection_charges( array $base_charges, array $rule_charges ): array {
+		$merged = array();
+
+		foreach ( array_merge( $base_charges, $rule_charges ) as $charge ) {
+			if ( ! is_array( $charge ) ) {
+				continue;
+			}
+
+			$amount = round( (float) ( $charge['amount'] ?? 0 ), 2 );
+			$label  = sanitize_text_field( (string) ( $charge['label'] ?? '' ) );
+
+			if ( $amount <= 0 || '' === $label ) {
+				continue;
+			}
+
+			$merged[] = $charge;
+		}
+
+		return array_values( $merged );
 	}
 }

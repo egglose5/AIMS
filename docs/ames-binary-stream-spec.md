@@ -80,7 +80,9 @@ Current behavior:
 - packets can be reread by `segment path + byte offset` through `BinarySaleStreamReader`
 - `SqliteLedgerRepository::reconcileBinaryShadow()` can compare packet counts, cents totals, and decoded packet values against the current movement flow to surface drift
 - `GET /history?source=binary` plus the WordPress **Binary Shadow Status** dashboard card expose rehydrated packet rows, pointer counts, exception counts, and active segment files for operator review
+- `SqliteLedgerRepository::binaryShadowSummary()` now exposes effective `stream_mode` and `primary_approved` flags for operational verification
 - buffered flush thresholds are now configurable via `AIMS_BINARY_FLUSH_PACKET_LIMIT` and `AIMS_BINARY_FLUSH_BYTE_LIMIT`
+- `AIMS_BINARY_STREAM_MODE=primary` is safety-gated and automatically demoted to `shadow` unless `AIMS_BINARY_PRIMARY_APPROVED=1`
 - archive manifests can now carry binary-shadow metadata plus hot/vault retention thresholds from `AIMS_HOT_RETENTION_DAYS` and `AIMS_VAULT_RETENTION_DAYS`
 
 This remains intentionally **shadow-only**. The canonical movement ledger is still the source of truth until staging soak comparisons stay clean and an operator explicitly approves promotion.

@@ -17,6 +17,7 @@ class AIMS_Plugin {
 	private $square_thin_client_sync;
 	private $laser_batch_rest_controller;
 	private $hot_db_archive_monitor;
+	private $cycle_count_controller;
 
 	public static function instance(): AIMS_Plugin {
 		if ( null === self::$instance ) {
@@ -105,6 +106,7 @@ class AIMS_Plugin {
 		$this->square_thin_client_sync     = new AIMS_Square_Thin_Client_Sync_Service();
 		$this->laser_batch_rest_controller = new AIMS_Laser_Batch_Rest_Controller();
 		$this->hot_db_archive_monitor      = new AIMS_Hot_Db_Archive_Monitor_Service();
+		$this->cycle_count_controller      = new AIMS_Cycle_Count_Controller();
 	}
 
 	public function boot(): void {
@@ -118,6 +120,9 @@ class AIMS_Plugin {
 		}
 		if ( is_object( $this->hot_db_archive_monitor ) && method_exists( $this->hot_db_archive_monitor, 'boot' ) ) {
 			$this->hot_db_archive_monitor->boot();
+		}
+		if ( is_object( $this->cycle_count_controller ) && method_exists( $this->cycle_count_controller, 'register' ) ) {
+			$this->cycle_count_controller->register();
 		}
 	}
 

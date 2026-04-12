@@ -7,6 +7,73 @@ namespace AIMS\Tests\Unit;
 use AmesCore\Headless\Storage\SqliteLedgerRepository;
 
 final class AmesCoreSqliteLedgerRepositoryTest extends \AIMS\Tests\TestCase {
+	public function testPrimaryModeFallsBackToShadowForFalseStringApprovalFlag(): void {
+		$sqlitePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-ledger-' . uniqid( '', true ) . '.sqlite';
+		$repo       = new SqliteLedgerRepository(
+			$sqlitePath,
+			array(
+				'binary_stream_mode' => 'primary',
+				'binary_primary_approved' => 'false',
+			)
+		);
+
+		$summary = $repo->binaryShadowSummary();
+		$this->assertSame( 'shadow', $summary['stream_mode'] ?? '' );
+		$this->assertFalse( $summary['primary_approved'] ?? true );
+	}
+
+	public function testPrimaryModeAllowsTruthyStringApprovalFlag(): void {
+		$sqlitePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-ledger-' . uniqid( '', true ) . '.sqlite';
+		$repo       = new SqliteLedgerRepository(
+			$sqlitePath,
+			array(
+				'binary_stream_mode' => 'primary',
+				'binary_primary_approved' => 'yes',
+			)
+		);
+
+		$summary = $repo->binaryShadowSummary();
+		$this->assertSame( 'primary', $summary['stream_mode'] ?? '' );
+		$this->assertTrue( $summary['primary_approved'] ?? false );
+	}
+
+	public function testPrimaryModeFallsBackToShadowWhenNotApproved(): void {
+		if ( ! extension_loaded( 'pdo_sqlite' ) ) {
+			$this->markTestSkipped( 'The pdo_sqlite extension is required for this test.' );
+		}
+
+		$sqlitePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-ledger-' . uniqid( '', true ) . '.sqlite';
+		$repo       = new SqliteLedgerRepository(
+			$sqlitePath,
+			array(
+				'binary_stream_mode' => 'primary',
+			)
+		);
+		$repo->initialize();
+
+		$summary = $repo->binaryShadowSummary();
+		$this->assertSame( 'shadow', $summary['stream_mode'] ?? '' );
+	}
+
+	public function testPrimaryModeIsKeptWhenApproved(): void {
+		if ( ! extension_loaded( 'pdo_sqlite' ) ) {
+			$this->markTestSkipped( 'The pdo_sqlite extension is required for this test.' );
+		}
+
+		$sqlitePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'aims-ledger-' . uniqid( '', true ) . '.sqlite';
+		$repo       = new SqliteLedgerRepository(
+			$sqlitePath,
+			array(
+				'binary_stream_mode' => 'primary',
+				'binary_primary_approved' => true,
+			)
+		);
+		$repo->initialize();
+
+		$summary = $repo->binaryShadowSummary();
+		$this->assertSame( 'primary', $summary['stream_mode'] ?? '' );
+	}
+
 	public function testRecordMoveWritesBinarySaleShadowAndPointerIndex(): void {
 		if ( ! extension_loaded( 'pdo_sqlite' ) ) {
 			$this->markTestSkipped( 'The pdo_sqlite extension is required for this test.' );

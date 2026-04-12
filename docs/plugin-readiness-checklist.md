@@ -92,7 +92,6 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Allow custom site roles to fully replace shipped AIMS roles across portal, planning, inventory, stitching, and reporting workflows.
 - [x] Refactor remaining AIMS responsibilities into first-class capabilities so they can be granted by the AIMS role editor or third-party role builders.
 - [x] Remove remaining runtime checks that depend on exact shipped AIMS role slugs when equivalent custom roles carry the same template metadata and capabilities.
-- [ ] Keep assignment tables only for scoped access narrowing:
 - [x] Keep assignment tables only for scoped access narrowing:
   - event scope
   - vendor scope
@@ -117,7 +116,6 @@ This checklist maps release tasks to concrete code areas in this repository.
   - Planning workspace timeline now surfaces Assigned, Loaded, and In Transit timestamps for operator visibility.
 - [x] Extend execution-side exception visibility into planning (check-in failures, return anomalies) for faster intervention.
   - Planning workspace now surfaces `execution_exceptions` plus summary counts for pending/void check-ins and returned-bucket anomalies so operators can intervene without leaving the planning screen.
-- [ ] Expand Square replay and fulfillment wiring after planning/commitment workflow stability under team usage is confirmed.
 - [x] Expand Square replay and fulfillment wiring after planning/commitment workflow stability under team usage is confirmed.
 - [x] Keep optional WooCommerce order projection behind AIMS-side operational reconciliation.
 
@@ -137,7 +135,8 @@ This checklist maps release tasks to concrete code areas in this repository.
 - [x] Add export/archive jobs that write local-server Parquet payloads for older movement batches.
 - [x] Add reread/rehydration queries for archived movement history.
 - [x] Define retention thresholds for hot lines versus archived movement batches.
-- [ ] Keep the binary lane in shadow mode until a staging soak confirms clean packet counts, per-event totals, exception counts, and operator sign-off for promotion.
+- [x] Keep the binary lane in shadow mode until a staging soak confirms clean packet counts, per-event totals, exception counts, and operator sign-off for promotion.
+  - Runtime now demotes `AIMS_BINARY_STREAM_MODE=primary` back to `shadow` unless `AIMS_BINARY_PRIMARY_APPROVED=1` is explicitly set.
 
 ## Following Milestone - Square Projection Observability and Monte Carlo Export
 
@@ -164,7 +163,20 @@ This checklist maps release tasks to concrete code areas in this repository.
   - `SquareSyncSafetyTest`: summary aggregation, drill-in detail rows, controller action registration, page form rendering.
   - `SquareProjectionParquetExportServiceTest`: `export_run` callback path (mixed projection + hot row assertions); `stream_to_resource` path (bytes reach output resource, no `path` key returned).
 
+## Following Milestone - Mobile Cycle Count Portal
+
+- [x] Add a warehouse-facing mobile cycle count surface for phone camera use instead of requiring wp-admin inventory edits on the floor.
+- [x] Support bucket resolution by barcode scan or manual bucket-code entry.
+- [x] Support repeated SKU scans with inline quantity correction before submit.
+- [x] Write final absolute bucket-position truth while also recording audited `cycle_count` deltas for each changed SKU.
+- [x] Gate access behind `manage_aims_inventory` or `manage_aims` and expose the surface through the `aims_cycle_count_portal` shortcode.
+  - Entry points: `includes/modules/inventory-manage/class-aims-cycle-count-controller.php`, `includes/services/class-aims-cycle-count-service.php`, and `templates/cycle-count-portal.php`.
+  - Runtime path: `GET /wp-json/aims/v1/cycle-count/bucket` and `POST /wp-json/aims/v1/cycle-count/submit`.
+  - Operator guidance: `docs/cycle-count-mobile-portal.md`.
+
 ## Following Milestone - Headless Portability Fork
+
+Deferred: This milestone is intentionally postponed until after v1.1 while the IONOS deployment profile remains the active production target.
 
 - [ ] Document the current standalone `ames-core` implementation as an `IONOS-style` or filesystem-capable shared-host profile rather than a universal WordPress-host profile.
 - [ ] Keep the AIMS domain rules shared while formalizing a storage/runtime fork point:

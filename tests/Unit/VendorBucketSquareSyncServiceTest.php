@@ -94,7 +94,19 @@ final class VendorBucketSquareSyncServiceTest extends \AIMS\Tests\TestCase {
 			}
 		};
 
-		$service = new \AIMS_Vendor_Bucket_Square_Sync_Service( $positions, $physical_buckets, $vendors, $client );
+		$charge_rules = new class() extends \AIMS_Square_Order_Charge_Rule_Service {
+			public function get_push_rules(): array {
+				return array(
+					array(
+						'code'               => 'line_unfulfilled',
+						'square_charge_name' => 'Unfulfilled Line Charge',
+						'default_amount'     => 2.5,
+					),
+				);
+			}
+		};
+
+		$service = new \AIMS_Vendor_Bucket_Square_Sync_Service( $positions, $physical_buckets, $vendors, $client, $charge_rules );
 		$result  = $service->sync_bucket_to_vendor_location(
 			200,
 			5,
@@ -112,6 +124,7 @@ final class VendorBucketSquareSyncServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'SKU-901', $client->payloads[0]['resolved_truth']['catalog'][0]['sku'] );
 		$this->assertSame( 2.5, $client->payloads[0]['resolved_truth']['catalog'][0]['stock_quantity'] );
 		$this->assertSame( 'LOC-77', $client->payloads[0]['resolved_truth']['catalog'][0]['square_location_id'] );
+		$this->assertSame( 'line_unfulfilled', $client->payloads[0]['resolved_truth']['order_charge_rules'][0]['code'] );
 		$this->assertSame(
 			array(
 				array(

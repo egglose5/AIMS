@@ -37,6 +37,7 @@ class AIMS_Loader {
 			AIMS_PLUGIN_PATH . 'includes/modules/stitch-manage/class-aims-' . $relative_class . '.php',
 			AIMS_PLUGIN_PATH . 'includes/modules/square-sync/class-aims-' . $relative_class . '.php',
 			AIMS_PLUGIN_PATH . 'includes/modules/reports-analytics/class-aims-' . $relative_class . '.php',
+			AIMS_PLUGIN_PATH . 'includes/modules/inventory-manage/class-aims-' . $relative_class . '.php',
 		);
 
 		foreach ( $paths as $path ) {

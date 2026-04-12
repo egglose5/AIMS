@@ -6,9 +6,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AIMS_Square_Normalization_Service {
 	private const DEFAULT_AIMS_SHIPPING_MARKER_NAME = 'AIMS Ship From Warehouse';
+	private $charge_rules;
+
+	public function __construct( AIMS_Square_Order_Charge_Rule_Service $charge_rules = null ) {
+		$this->charge_rules = $charge_rules ? $charge_rules : new AIMS_Square_Order_Charge_Rule_Service();
+	}
 
 	public function analyze_order_payload( array $payload ): array {
 		$marker        = $this->detect_canonical_shipping_marker( $payload );
+		$charge_markers = $this->detect_configured_charge_markers( $payload );
 		$customer      = $this->extract_customer_data( $payload );
 		$address       = $this->extract_address_data( $payload );
 		$validation    = $this->validate_customer_address_presence( $customer, $address, $marker );
@@ -16,6 +22,7 @@ class AIMS_Square_Normalization_Service {
 
 		return array(
 			'shipping_marker'    => $marker,
+			'charge_markers'     => $charge_markers,
 			'customer_data'      => $customer,
 			'address_data'       => $address,
 			'validation'         => $validation,
@@ -55,6 +62,7 @@ class AIMS_Square_Normalization_Service {
 				'shipping_address_id' => (int) ( $context['shipping_address_id'] ?? 0 ),
 				'billing_address_id'  => (int) ( $context['billing_address_id'] ?? 0 ),
 				'square_location_id'  => (string) ( $payload['location_id'] ?? '' ),
+				'charge_markers'      => (array) ( $analysis['charge_markers'] ?? array() ),
 			)
 		);
 
@@ -121,6 +129,19 @@ class AIMS_Square_Normalization_Service {
 			'label'                    => $aims_shipping_marker_name,
 			'raw_charge'               => null,
 		);
+	}
+
+	public function detect_configured_charge_markers( array $payload ): array {
+		if ( ! is_object( $this->charge_rules ) || ! method_exists( $this->charge_rules, 'match_payload_charges' ) ) {
+			return array(
+				'matched_rules'      => array(),
+				'matched_charge_ids' => array(),
+				'flags'              => array(),
+				'projection_charges' => array(),
+			);
+		}
+
+		return (array) $this->charge_rules->match_payload_charges( $payload );
 	}
 
 	public function validate_customer_address_presence( array $customer_data, array $address_data, array $marker = array() ): array {
@@ -319,6 +340,18 @@ class AIMS_Square_Normalization_Service {
 	}
 
 	private function build_operational_sale_payload( array $payload, array $line_item, array $context, array $line_amounts, array $shipping_marker ): array {
+		$charge_markers      = (array) ( $context['charge_markers'] ?? array() );
+		$matched_charge_codes = array();
+
+		if ( ! empty( $charge_markers['matched_rules'] ) && is_array( $charge_markers['matched_rules'] ) ) {
+			foreach ( $charge_markers['matched_rules'] as $matched_rule ) {
+				$code = sanitize_key( (string) ( $matched_rule['code'] ?? '' ) );
+				if ( '' !== $code ) {
+					$matched_charge_codes[] = $code;
+				}
+			}
+		}
+
 		return array(
 			'square_order_id'      => (string) ( $payload['id'] ?? '' ),
 			'square_line_item_uid' => (string) ( $line_item['uid'] ?? $line_item['id'] ?? '' ),
@@ -333,6 +366,8 @@ class AIMS_Square_Normalization_Service {
 			'discount_amount'      => $this->normalize_money_amount( $line_amounts['discount_amount'] ?? 0 ),
 			'tax_amount'           => $this->normalize_money_amount( $line_amounts['tax_amount'] ?? 0 ),
 			'delivery_method'      => ! empty( $shipping_marker['has_aims_shipping_marker'] ) ? 'ship' : 'pickup',
+			'charge_flags'         => (array) ( $charge_markers['flags'] ?? array() ),
+			'matched_charge_codes' => array_values( array_unique( $matched_charge_codes ) ),
 		);
 	}
 
@@ -378,6 +413,10 @@ class AIMS_Square_Normalization_Service {
 	}
 
 	private function determine_fulfillment_status( array $analysis ): string {
+		if ( ! empty( $analysis['charge_markers']['force_unfulfilled'] ) ) {
+			return AIMS_Square_Sale_Repository::STATUS_PENDING;
+		}
+
 		if ( ! empty( $analysis['validation']['needs_shipping_info'] ) ) {
 			return AIMS_Square_Sale_Repository::STATUS_NEEDS_SHIPPING_INFO;
 		}

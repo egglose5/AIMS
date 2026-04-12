@@ -61,7 +61,8 @@ Use this path for a first manual install on the current filesystem-capable share
    - set `AIMS_ARCHIVE_SECRET` (it may match the shared secret if you do not want a separate archive secret)
    - set `AIMS_ENCRYPTION_KEY`
    - optionally set `AIMS_SINK_PATH`, `AIMS_VAULT_PATH`, `AIMS_CONFIG_PATH`, `AIMS_LOG_PATH`, `AIMS_SQLITE_PATH`, `AIMS_WOO_URL`, and Square values for your environment
-   - for the binary lane, optionally set `AIMS_BINARY_STREAM_MODE`, `AIMS_BINARY_FLUSH_PACKET_LIMIT`, `AIMS_BINARY_FLUSH_BYTE_LIMIT`, `AIMS_HOT_RETENTION_DAYS`, and `AIMS_VAULT_RETENTION_DAYS`
+   - for the binary lane, optionally set `AIMS_BINARY_STREAM_MODE`, `AIMS_BINARY_PRIMARY_APPROVED`, `AIMS_BINARY_FLUSH_PACKET_LIMIT`, `AIMS_BINARY_FLUSH_BYTE_LIMIT`, `AIMS_HOT_RETENTION_DAYS`, and `AIMS_VAULT_RETENTION_DAYS`
+   - `AIMS_BINARY_STREAM_MODE=primary` is safety-gated and will be demoted to `shadow` unless `AIMS_BINARY_PRIMARY_APPROVED=1`
 6. **Activate and connect WordPress**
    - activate the `AIMS` plugin in wp-admin
    - open `AIMS > Settings`
@@ -84,6 +85,7 @@ The repository currently provides:
 - bucket-first physical truth with current seal state, current Square location context, custody movement, FIFO receive, FIFO availability, and FIFO pick
 - event planning and execution workspace in WordPress, including staged bucket prep, temporary release, dock-safe seal checks, check-in, return flows, and show profitability rollups
 - vendor-facing portal tools for upcoming shows, mobile event check-in, and mobile field expense logging with short justification and receipt capture
+- warehouse-facing mobile cycle count and initial inventory deployment portal with bucket barcode scan, SKU scan, manual quantity correction, and audited count deltas
 - a seven-day pre-event mobile access window so assigned vendors can prepare, check in, and log show expenses before the event opens
 - execution-side mirroring of real event movements into headless AIMS so standalone positional truth is fed by actual physical actions
 - structured WP-side audit logs for operator actions instead of hot-path audit table bloat
@@ -92,7 +94,8 @@ The repository currently provides:
 - Square thin-client overlap sync foundation: headless AIMS can pull recent Square orders by location/window, and the WP side can replay them into the existing queue/import flow
 - location-aware Square stock push from AIMS so bucket-linked stock can be projected to the correct Square location
 - authenticated laser-control batch ingress in both headless AIMS (`POST /internal/laser/batches`) and the WooCommerce REST surface (`POST /wp-json/wc/v3/aims/laser-batches`) so Docker-based production tooling can push batches without using WordPress as the hot write path
-- shadow-mode binary sale stream lane in `ames-core` with a fixed-width packet, reusable reference dictionary, byte-offset pointer index, exception lane for invalid hot-path rows, packet reread/reconciliation support, buffered flush thresholds, retention metadata, and dashboard visibility for binary shadow status
+- shadow-mode binary sale stream lane in `ames-core` with a fixed-width packet, reusable reference dictionary, byte-offset pointer index, exception lane for invalid hot-path rows, packet reread/reconciliation support, buffered flush thresholds, retention metadata, dashboard visibility for binary shadow status, and a primary-mode approval gate
+- Woo projection integration points that can add unfulfilled and user-defined order charges so projected Square orders show operational fee lines in the native WooCommerce order interface
 - capability-first permissions editor with surface-aware access control, while keeping WordPress as the default management experience
 - custom table definitions with indexes across events, demand, buckets, inventory, Square sync, attribution, fulfillment, operational logging, and pre-production laser batch handoff
 - PHPUnit coverage across the headless bridge, event execution, FIFO, auth surfaces, audit logging, thin-client Square sync foundations, laser batch ingress, and the new binary stream writer
@@ -110,6 +113,14 @@ The direction is clear even if the cutover is not 100% complete yet:
 - AIMS should own physical movement truth.
 - WordPress should be the default management point, not the data engine.
 - Square should be a thin client for sales and inventory projection, not the operational authority.
+
+## Mobile cycle counts
+
+- The shortcode `aims_cycle_count_portal` exposes a mobile-first counting surface for warehouse operators.
+- Operators scan a bucket barcode or bucket code first, then scan SKUs into that bucket or correct quantities manually.
+- The portal writes absolute bucket-position truth and also records an audited `cycle_count` bucket movement delta per changed SKU.
+- Access is limited to users who can `manage_aims_inventory` or `manage_aims`.
+- See `docs/cycle-count-mobile-portal.md` for setup and rollout details.
 
 ## Core rules
 

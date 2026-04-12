@@ -348,4 +348,250 @@ final class SquareImportServiceTest extends \AIMS\Tests\TestCase {
 		$metadata = json_decode( (string) ( $effects->saved[0]['metadata_json'] ?? '' ), true );
 		$this->assertSame( 8811, $metadata['projection'][0]['woo_order_id'] ?? 0 );
 	}
+
+	public function testPersistQueueToSalesFlowPassesCustomerAndAddressIntoProjectionContext(): void {
+		$captured_context = array();
+
+		$queue = new class() extends \AIMS_Square_Import_Queue_Repository {
+			public function __construct() {}
+
+			public function save( array $data, int $queue_id = 0 ): int {
+				unset( $data, $queue_id );
+				return 903;
+			}
+
+			public function mark_processed( int $queue_id, ?string $processed_at = null ): bool {
+				unset( $queue_id, $processed_at );
+				return true;
+			}
+		};
+
+		$sales = new class() extends \AIMS_Square_Sale_Repository {
+			public function __construct() {}
+
+			public function save( array $data ): int {
+				unset( $data );
+				return 3302;
+			}
+		};
+
+		$customers = new class() extends \AIMS_Customer_Repository {
+			public function __construct() {}
+
+			public function find_by_square_customer_id( string $square_customer_id ): ?array {
+				unset( $square_customer_id );
+				return array( 'id' => 3004 );
+			}
+		};
+
+		$addresses = new class() extends \AIMS_Customer_Address_Repository {
+			public function __construct() {}
+
+			public function find_by_square_address_id( string $square_address_id ): ?array {
+				unset( $square_address_id );
+				return array( 'id' => 4004 );
+			}
+		};
+
+		$fulfillment = new class() extends \AIMS_Fulfillment_Service {
+			public function __construct() {}
+
+			public function create_allocation( array $data ): int {
+				unset( $data );
+				return 5004;
+			}
+		};
+
+		$projection = new \AIMS_Woo_Order_Projection_Service(
+			static function( array $sale_record, array $context = array() ) use ( &$captured_context ): array {
+				unset( $sale_record );
+				$captured_context = $context;
+
+				return array(
+					'woo_order_id'    => 8812,
+					'projection_mode' => 'draft',
+				);
+			}
+		);
+
+		$service = new \AIMS_Square_Import_Service(
+			$queue,
+			$sales,
+			$customers,
+			$addresses,
+			$fulfillment,
+			new \AIMS_Square_Normalization_Service(),
+			null,
+			null,
+			$projection
+		);
+
+		$service->persist_queue_to_sales_flow(
+			array(
+				'id'                         => 'SQ-IMPORT-103',
+				'created_at'                 => '2026-04-11T14:11:00Z',
+				'location_id'                => 'LOC-12',
+				'event_id'                   => 64,
+				'vendor_id'                  => 34,
+				'allow_woo_order_projection' => true,
+				'reconciliation_status'      => 'reconciled',
+				'projection_mode'            => 'draft',
+				'customer'                   => array(
+					'id'            => 'CUST-10',
+					'given_name'    => 'Alex',
+					'family_name'   => 'River',
+					'email_address' => 'alex@example.com',
+					'phone_number'  => '+1 555 555 0100',
+				),
+				'shipping_address'           => array(
+					'id'                             => 'ADDR-10',
+					'address_line_1'                 => '123 Market St',
+					'locality'                       => 'Portland',
+					'administrative_district_level_1'=> 'OR',
+					'postal_code'                    => '97201',
+					'country'                        => 'US',
+				),
+				'line_items'                 => array(
+					array(
+						'uid'            => 'LINE-103',
+						'woo_product_id' => 913,
+						'sku'            => 'SKU-913',
+						'quantity'       => 1,
+						'net_amount'     => 55.00,
+					),
+				),
+			),
+			903
+		);
+
+		$this->assertSame( 'alex@example.com', $captured_context['customer_data']['email_address'] ?? '' );
+		$this->assertSame( '+1 555 555 0100', $captured_context['customer_data']['phone_number'] ?? '' );
+		$this->assertSame( '123 Market St', $captured_context['address_data']['address_line_1'] ?? '' );
+		$this->assertSame( 3004, $captured_context['customer_id'] ?? 0 );
+		$this->assertSame( 4004, $captured_context['shipping_address_id'] ?? 0 );
+	}
+
+	public function testPersistQueueToSalesFlowForcesPendingProjectionWhenChargeRuleRequestsUnfulfilledControl(): void {
+		update_option(
+			\AIMS_Square_Order_Charge_Rule_Service::OPTION_RULES,
+			array(
+				array(
+					'code'                     => 'event_pay_later',
+					'label'                    => 'Event Pay Later',
+					'square_charge_name'       => 'Event Pay Later',
+					'force_unfulfilled'        => true,
+					'force_pending_projection' => true,
+				),
+			)
+		);
+
+		$captured_context = array();
+
+		$queue = new class() extends \AIMS_Square_Import_Queue_Repository {
+			public function __construct() {}
+
+			public function save( array $data, int $queue_id = 0 ): int {
+				unset( $data, $queue_id );
+				return 904;
+			}
+
+			public function mark_processed( int $queue_id, ?string $processed_at = null ): bool {
+				unset( $queue_id, $processed_at );
+				return true;
+			}
+		};
+
+		$sales = new class() extends \AIMS_Square_Sale_Repository {
+			public function __construct() {}
+
+			public function save( array $data ): int {
+				unset( $data );
+				return 3303;
+			}
+		};
+
+		$customers = new class() extends \AIMS_Customer_Repository {
+			public function __construct() {}
+
+			public function find_by_square_customer_id( string $square_customer_id ): ?array {
+				unset( $square_customer_id );
+				return array( 'id' => 3005 );
+			}
+		};
+
+		$addresses = new class() extends \AIMS_Customer_Address_Repository {
+			public function __construct() {}
+
+			public function find_by_square_address_id( string $square_address_id ): ?array {
+				unset( $square_address_id );
+				return array( 'id' => 4005 );
+			}
+		};
+
+		$fulfillment = new class() extends \AIMS_Fulfillment_Service {
+			public function __construct() {}
+
+			public function create_allocation( array $data ): int {
+				unset( $data );
+				return 5005;
+			}
+		};
+
+		$projection = new \AIMS_Woo_Order_Projection_Service(
+			static function( array $sale_record, array $context = array() ) use ( &$captured_context ): array {
+				unset( $sale_record );
+				$captured_context = $context;
+
+				return array(
+					'woo_order_id'    => 8813,
+					'projection_mode' => (string) ( $context['projection_mode'] ?? 'draft' ),
+				);
+			}
+		);
+
+		$service = new \AIMS_Square_Import_Service(
+			$queue,
+			$sales,
+			$customers,
+			$addresses,
+			$fulfillment,
+			new \AIMS_Square_Normalization_Service(),
+			null,
+			null,
+			$projection
+		);
+
+		$service->persist_queue_to_sales_flow(
+			array(
+				'id'                         => 'SQ-IMPORT-104',
+				'created_at'                 => '2026-04-11T14:12:00Z',
+				'location_id'                => 'LOC-14',
+				'event_id'                   => 65,
+				'vendor_id'                  => 35,
+				'allow_woo_order_projection' => true,
+				'allow_unreconciled_projection' => false,
+				'reconciliation_status'      => 'pending',
+				'service_charges'            => array(
+					array(
+						'uid'          => 'svc-event-pay-later',
+						'name'         => 'Event Pay Later',
+						'amount_money' => array( 'amount' => 0, 'currency' => 'USD' ),
+					),
+				),
+				'line_items'                 => array(
+					array(
+						'uid'            => 'LINE-104',
+						'woo_product_id' => 914,
+						'sku'            => 'SKU-914',
+						'quantity'       => 1,
+						'net_amount'     => 40.00,
+					),
+				),
+			),
+			904
+		);
+
+		$this->assertSame( 'pending', $captured_context['projection_mode'] ?? '' );
+		$this->assertTrue( $captured_context['allow_unreconciled_projection'] ?? false );
+	}
 }

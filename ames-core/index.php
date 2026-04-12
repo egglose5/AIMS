@@ -62,6 +62,7 @@ $ledger       = new SqliteLedgerRepository(
 	$config->sqlitePath(),
 	array(
 		'binary_stream_mode' => $config->binaryStreamMode(),
+		'binary_primary_approved' => $config->binaryPrimaryApproved(),
 		'binary_flush_packet_limit' => $config->binaryFlushPacketLimit(),
 		'binary_flush_byte_limit' => $config->binaryFlushByteLimit(),
 	)

@@ -176,19 +176,31 @@ class AIMS_Square_Replay_Service {
 				}
 			}
 
-			$projection_record = $this->project_sale_to_woo(
-				$sale_record,
-				array_merge(
-					$context,
-					array(
-						'raw_event_id'        => $raw_event_id,
-						'line_item'           => $line_item,
-						'payload'             => $payload,
-						'analysis'            => $analysis,
-						'resolved_assignment' => $resolved_assignment,
-					)
+			$projection_context                               = array_merge(
+				$context,
+				array(
+					'raw_event_id'        => $raw_event_id,
+					'line_item'           => $line_item,
+					'payload'             => $payload,
+					'analysis'            => $analysis,
+					'resolved_assignment' => $resolved_assignment,
+					'customer_data'       => (array) ( $analysis['customer_data'] ?? array() ),
+					'address_data'        => (array) ( $analysis['address_data'] ?? array() ),
+					'customer_id'         => (int) ( $sale_context['customer_id'] ?? 0 ),
+					'shipping_address_id' => (int) ( $sale_context['shipping_address_id'] ?? 0 ),
 				)
 			);
+			$projection_context['additional_projection_charges'] = $this->merge_projection_charges(
+				(array) ( $projection_context['additional_projection_charges'] ?? array() ),
+				(array) ( $analysis['charge_markers']['projection_charges'] ?? array() )
+			);
+
+			if ( ! empty( $analysis['charge_markers']['force_pending_projection'] ) ) {
+				$projection_context['projection_mode']               = 'pending';
+				$projection_context['allow_unreconciled_projection'] = true;
+			}
+
+			$projection_record = $this->project_sale_to_woo( $sale_record, $projection_context );
 			if ( ! empty( $projection_record ) ) {
 				if ( ! empty( $projection_record['woo_order_id'] ) ) {
 					$sale_record['woo_order_id'] = (int) $projection_record['woo_order_id'];
@@ -327,5 +339,26 @@ class AIMS_Square_Replay_Service {
 		}
 
 		return (array) $this->projection->project_normalized_sale( $sale_record, $context );
+	}
+
+	private function merge_projection_charges( array $base_charges, array $rule_charges ): array {
+		$merged = array();
+
+		foreach ( array_merge( $base_charges, $rule_charges ) as $charge ) {
+			if ( ! is_array( $charge ) ) {
+				continue;
+			}
+
+			$amount = round( (float) ( $charge['amount'] ?? 0 ), 2 );
+			$label  = sanitize_text_field( (string) ( $charge['label'] ?? '' ) );
+
+			if ( $amount <= 0 || '' === $label ) {
+				continue;
+			}
+
+			$merged[] = $charge;
+		}
+
+		return array_values( $merged );
 	}
 }

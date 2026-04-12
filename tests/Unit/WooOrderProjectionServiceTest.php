@@ -42,6 +42,36 @@ final class WooOrderProjectionServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'ready', $decision['status'] );
 	}
 
+	public function testEvaluateProjectionAllowsPendingProjectionMode(): void {
+		$service  = new \AIMS_Woo_Order_Projection_Service();
+		$decision = $service->evaluate_projection(
+			array( 'woo_order_id' => 0 ),
+			array(
+				'allow_woo_order_projection'   => true,
+				'allow_unreconciled_projection' => true,
+				'projection_mode'              => 'pending',
+			)
+		);
+
+		$this->assertSame( 'ready', $decision['status'] );
+		$this->assertSame( 'pending', $decision['projection_mode'] );
+	}
+
+	public function testEvaluateProjectionRejectsUnsupportedProjectionMode(): void {
+		$service  = new \AIMS_Woo_Order_Projection_Service();
+		$decision = $service->evaluate_projection(
+			array( 'woo_order_id' => 0 ),
+			array(
+				'allow_woo_order_projection'   => true,
+				'allow_unreconciled_projection' => true,
+				'projection_mode'              => 'processing',
+			)
+		);
+
+		$this->assertSame( 'skipped', $decision['status'] );
+		$this->assertSame( 'unsupported_projection_mode', $decision['reason'] );
+	}
+
 	public function testProjectNormalizedSaleWritesSyncRunIdMetaViaCreatorCallback(): void {
 		$captured_context = array();
 
@@ -68,6 +98,98 @@ final class WooOrderProjectionServiceTest extends \AIMS\Tests\TestCase {
 		$this->assertSame( 'projected', $result['status'] );
 		$this->assertSame( 501, $result['woo_order_id'] );
 		$this->assertSame( 77, $captured_context['sync_run_id'] ?? 0, 'sync_run_id should flow through to creator context.' );
+	}
+
+	public function testProjectNormalizedSalePassesPendingProjectionModeToCreatorCallback(): void {
+		$captured_context = array();
+
+		$service = new \AIMS_Woo_Order_Projection_Service(
+			static function ( array $sale_record, array $context ) use ( &$captured_context ): array {
+				unset( $sale_record );
+				$captured_context = $context;
+				return array( 'woo_order_id' => 777, 'projection_mode' => 'pending', 'reason' => 'pending_projected' );
+			}
+		);
+
+		$result = $service->project_normalized_sale(
+			array( 'woo_order_id' => 0 ),
+			array(
+				'allow_woo_order_projection'    => true,
+				'allow_unreconciled_projection' => true,
+				'projection_mode'               => 'pending',
+			)
+		);
+
+		$this->assertSame( 'projected', $result['status'] );
+		$this->assertSame( 'pending', $captured_context['projection_mode'] ?? '' );
+		$this->assertSame( 'pending', $result['projection_mode'] ?? '' );
+	}
+
+	public function testProjectNormalizedSaleBuildsUnfulfilledAndAdditionalChargesInCreatorContext(): void {
+		$captured_context = array();
+
+		$service = new \AIMS_Woo_Order_Projection_Service(
+			static function ( array $sale_record, array $context ) use ( &$captured_context ): array {
+				unset( $sale_record );
+				$captured_context = $context;
+
+				return array( 'woo_order_id' => 990, 'projection_mode' => 'draft', 'reason' => 'draft_projected' );
+			}
+		);
+
+		$result = $service->project_normalized_sale(
+			array(
+				'woo_order_id'        => 0,
+				'fulfillment_status'  => 'pending',
+			),
+			array(
+				'allow_woo_order_projection'    => true,
+				'allow_unreconciled_projection' => true,
+				'unfulfilled_charge_amount'     => 4.25,
+				'unfulfilled_charge_label'      => 'Unfulfilled Line Charge',
+				'additional_projection_charges' => array(
+					array(
+						'code'   => 'cold_pack',
+						'label'  => 'Cold Pack',
+						'amount' => 1.75,
+					),
+				),
+			)
+		);
+
+		$this->assertSame( 'projected', $result['status'] );
+		$this->assertCount( 2, $captured_context['projection_charges'] ?? array() );
+		$this->assertSame( 'unfulfilled', $captured_context['projection_charges'][0]['code'] ?? '' );
+		$this->assertSame( 4.25, $captured_context['projection_charges'][0]['amount'] ?? 0.0 );
+		$this->assertSame( 'cold_pack', $captured_context['projection_charges'][1]['code'] ?? '' );
+		$this->assertSame( 1.75, $captured_context['projection_charges'][1]['amount'] ?? 0.0 );
+	}
+
+	public function testProjectNormalizedSaleOmitsUnfulfilledChargeWhenStatusFulfilled(): void {
+		$captured_context = array();
+
+		$service = new \AIMS_Woo_Order_Projection_Service(
+			static function ( array $sale_record, array $context ) use ( &$captured_context ): array {
+				unset( $sale_record );
+				$captured_context = $context;
+
+				return array( 'woo_order_id' => 991, 'projection_mode' => 'draft', 'reason' => 'draft_projected' );
+			}
+		);
+
+		$service->project_normalized_sale(
+			array(
+				'woo_order_id'        => 0,
+				'fulfillment_status'  => 'fulfilled',
+			),
+			array(
+				'allow_woo_order_projection'    => true,
+				'allow_unreconciled_projection' => true,
+				'unfulfilled_charge_amount'     => 4.25,
+			)
+		);
+
+		$this->assertCount( 0, $captured_context['projection_charges'] ?? array() );
 	}
 
 	public function testPromoteDraftProjectionsPromotesOrdersAndSkipsNonDraft(): void {

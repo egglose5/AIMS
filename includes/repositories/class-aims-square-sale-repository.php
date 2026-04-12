@@ -192,6 +192,36 @@ class AIMS_Square_Sale_Repository {
 		return false !== $updated;
 	}
 
+	public function get_by_fulfillment_statuses( array $statuses, int $limit = 100 ): array {
+		global $wpdb;
+
+		$statuses = array_values(
+			array_filter(
+				array_map(
+					function ( string $s ): string {
+						return $this->normalize_fulfillment_status( $s );
+					},
+					$statuses
+				)
+			)
+		);
+
+		if ( empty( $statuses ) ) {
+			return array();
+		}
+
+		$placeholders = implode( ', ', array_fill( 0, count( $statuses ), '%s' ) );
+		$params       = array_merge( $statuses, array( max( 1, $limit ) ) );
+
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . $this->get_table_name() . ' WHERE fulfillment_status IN (' . $placeholders . ') ORDER BY sold_at DESC, id DESC LIMIT %d',
+				$params
+			),
+			ARRAY_A
+		) ?: array();
+	}
+
 	public function update_fulfillment_status( int $sale_id, string $status ): bool {
 		global $wpdb;
 

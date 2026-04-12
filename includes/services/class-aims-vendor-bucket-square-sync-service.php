@@ -9,17 +9,20 @@ class AIMS_Vendor_Bucket_Square_Sync_Service {
 	private $physical_buckets;
 	private $vendor_service;
 	private $client;
+	private $charge_rules;
 
 	public function __construct(
 		AIMS_Bucket_Inventory_Position_Repository $bucket_positions = null,
 		AIMS_Physical_Bucket_Repository $physical_buckets = null,
 		AIMS_Vendor_Service $vendor_service = null,
-		AIMS_Headless_Api_Client $client = null
+		AIMS_Headless_Api_Client $client = null,
+		AIMS_Square_Order_Charge_Rule_Service $charge_rules = null
 	) {
 		$this->bucket_positions = $bucket_positions ?: new AIMS_Bucket_Inventory_Position_Repository();
 		$this->physical_buckets = $physical_buckets ?: new AIMS_Physical_Bucket_Repository();
 		$this->vendor_service   = $vendor_service ?: new AIMS_Vendor_Service();
 		$this->client           = $client ?: AIMS_Headless_Api_Client::from_plugin_options();
+		$this->charge_rules     = $charge_rules ?: new AIMS_Square_Order_Charge_Rule_Service();
 	}
 
 	public function sync_bucket_to_vendor_location( int $bucket_id, int $vendor_id = 0, array $context = array() ): array {
@@ -109,7 +112,8 @@ class AIMS_Vendor_Bucket_Square_Sync_Service {
 			'sync_mode'          => 'bucket_square_sync',
 			'consistency_model'  => 'vendor_square_bucket_projection',
 			'resolved_truth'     => array(
-				'catalog' => $catalog_rows,
+				'catalog'            => $catalog_rows,
+				'order_charge_rules' => $this->get_push_order_charge_rules(),
 			),
 		);
 
@@ -221,6 +225,14 @@ class AIMS_Vendor_Bucket_Square_Sync_Service {
 	private function extract_square_results( array $response ): array {
 		$results = $response['json']['result']['square'] ?? $response['json']['square'] ?? $response['square'] ?? array();
 		return is_array( $results ) ? array_values( $results ) : array();
+	}
+
+	private function get_push_order_charge_rules(): array {
+		if ( ! is_object( $this->charge_rules ) || ! method_exists( $this->charge_rules, 'get_push_rules' ) ) {
+			return array();
+		}
+
+		return (array) $this->charge_rules->get_push_rules();
 	}
 
 	private function result(

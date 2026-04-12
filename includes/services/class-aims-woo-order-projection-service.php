@@ -77,7 +77,7 @@ class AIMS_Woo_Order_Projection_Service {
 			return $result;
 		}
 
-		if ( 'draft' !== $result['projection_mode'] ) {
+		if ( ! in_array( $result['projection_mode'], array( 'draft', 'pending' ), true ) ) {
 			$result['status'] = 'skipped';
 			$result['reason'] = 'unsupported_projection_mode';
 			return $result;
@@ -87,6 +87,9 @@ class AIMS_Woo_Order_Projection_Service {
 	}
 
 	private function create_draft_order( array $sale_record, array $context = array() ): array {
+		$resolved_charges              = $this->resolve_projection_charges( $sale_record, $context );
+		$context['projection_charges'] = $resolved_charges;
+
 		if ( is_callable( $this->draft_order_creator ) ) {
 			return $this->normalize_created_order_result(
 				call_user_func( $this->draft_order_creator, $sale_record, $context ),
@@ -97,19 +100,26 @@ class AIMS_Woo_Order_Projection_Service {
 		if ( ! function_exists( 'wc_create_order' ) ) {
 			return array(
 				'woo_order_id'    => 0,
-				'projection_mode' => 'draft',
+				'projection_mode' => sanitize_key( (string) ( $context['projection_mode'] ?? 'draft' ) ),
 				'reason'          => 'woocommerce_unavailable',
 			);
 		}
 
-		$order = wc_create_order( array( 'status' => 'draft' ) );
+		$projection_mode = sanitize_key( (string) ( $context['projection_mode'] ?? 'draft' ) );
+		$order_status    = 'pending' === $projection_mode ? 'pending' : 'draft';
+
+		$order = wc_create_order( array( 'status' => $order_status ) );
 		if ( ( function_exists( 'is_wp_error' ) && is_wp_error( $order ) ) || ! is_object( $order ) ) {
 			return array(
 				'woo_order_id'    => 0,
-				'projection_mode' => 'draft',
+				'projection_mode' => $projection_mode,
 				'reason'          => 'draft_order_create_failed',
 			);
 		}
+
+		$line_item_added = $this->add_projected_line_item_to_order( $order, $sale_record );
+		$charge_count    = $this->add_projection_charges_to_order( $order, $resolved_charges );
+		$customer_link   = $this->apply_customer_profile_to_order( $order, $sale_record, $context );
 
 		if ( method_exists( $order, 'update_meta_data' ) ) {
 			$order->update_meta_data( '_aims_square_order_id', (string) ( $sale_record['square_order_id'] ?? '' ) );
@@ -121,8 +131,16 @@ class AIMS_Woo_Order_Projection_Service {
 			}
 		}
 
+		if ( method_exists( $order, 'calculate_totals' ) ) {
+			$order->calculate_totals( false );
+		}
+
 		if ( method_exists( $order, 'add_order_note' ) ) {
-			$order->add_order_note( 'AIMS draft projection created from Square sale replay pending operational reconciliation.' );
+			if ( 'pending' === $order_status ) {
+				$order->add_order_note( 'AIMS projection created from Square sale replay and set to pending for native WooCommerce tracking.' );
+			} else {
+				$order->add_order_note( 'AIMS draft projection created from Square sale replay pending operational reconciliation.' );
+			}
 		}
 
 		if ( method_exists( $order, 'save' ) ) {
@@ -130,12 +148,323 @@ class AIMS_Woo_Order_Projection_Service {
 		}
 
 		$woo_order_id = method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
+		$reason       = $line_item_added
+			? ( 'pending' === $order_status ? 'pending_projected' : 'draft_projected' )
+			: ( 'pending' === $order_status ? 'pending_projected_without_line_item' : 'draft_projected_without_line_item' );
 
 		return array(
 			'woo_order_id'    => $woo_order_id,
-			'projection_mode' => 'draft',
-			'reason'          => $woo_order_id > 0 ? 'draft_projected' : 'draft_order_create_failed',
+			'projection_mode' => $projection_mode,
+			'projection_charge_count' => $charge_count,
+			'woo_customer_id' => (int) ( $customer_link['woo_customer_id'] ?? 0 ),
+			'account_invite_attempted' => ! empty( $customer_link['account_invite_attempted'] ),
+			'reason'          => $woo_order_id > 0 ? $reason : 'draft_order_create_failed',
 		);
+	}
+
+	private function apply_customer_profile_to_order( $order, array $sale_record, array $context = array() ): array {
+		$customer_data = (array) ( $context['customer_data'] ?? array() );
+		$address_data  = (array) ( $context['address_data'] ?? array() );
+
+		if ( ! is_object( $order ) ) {
+			return array(
+				'woo_customer_id'          => 0,
+				'account_invite_attempted' => false,
+			);
+		}
+
+		$billing_first_name = sanitize_text_field( (string) ( $customer_data['first_name'] ?? '' ) );
+		$billing_last_name  = sanitize_text_field( (string) ( $customer_data['last_name'] ?? '' ) );
+		$billing_company    = sanitize_text_field( (string) ( $customer_data['company_name'] ?? '' ) );
+		$billing_email      = sanitize_email( (string) ( $customer_data['email_address'] ?? '' ) );
+		$billing_phone      = sanitize_text_field( (string) ( $customer_data['phone_number'] ?? '' ) );
+
+		$this->set_order_field( $order, 'set_billing_first_name', $billing_first_name );
+		$this->set_order_field( $order, 'set_billing_last_name', $billing_last_name );
+		$this->set_order_field( $order, 'set_billing_company', $billing_company );
+		$this->set_order_field( $order, 'set_billing_email', $billing_email );
+		$this->set_order_field( $order, 'set_billing_phone', $billing_phone );
+
+		$shipping_address_1 = sanitize_text_field( (string) ( $address_data['address_line_1'] ?? '' ) );
+		$shipping_address_2 = sanitize_text_field( (string) ( $address_data['address_line_2'] ?? '' ) );
+		$shipping_city      = sanitize_text_field( (string) ( $address_data['city'] ?? '' ) );
+		$shipping_state     = sanitize_text_field( (string) ( $address_data['state_region'] ?? '' ) );
+		$shipping_postcode  = sanitize_text_field( (string) ( $address_data['postal_code'] ?? '' ) );
+		$shipping_country   = strtoupper( sanitize_text_field( (string) ( $address_data['country_code'] ?? 'US' ) ) );
+
+		$this->set_order_field( $order, 'set_billing_address_1', $shipping_address_1 );
+		$this->set_order_field( $order, 'set_billing_address_2', $shipping_address_2 );
+		$this->set_order_field( $order, 'set_billing_city', $shipping_city );
+		$this->set_order_field( $order, 'set_billing_state', $shipping_state );
+		$this->set_order_field( $order, 'set_billing_postcode', $shipping_postcode );
+		$this->set_order_field( $order, 'set_billing_country', $shipping_country );
+
+		$this->set_order_field( $order, 'set_shipping_first_name', $billing_first_name );
+		$this->set_order_field( $order, 'set_shipping_last_name', $billing_last_name );
+		$this->set_order_field( $order, 'set_shipping_company', $billing_company );
+		$this->set_order_field( $order, 'set_shipping_address_1', $shipping_address_1 );
+		$this->set_order_field( $order, 'set_shipping_address_2', $shipping_address_2 );
+		$this->set_order_field( $order, 'set_shipping_city', $shipping_city );
+		$this->set_order_field( $order, 'set_shipping_state', $shipping_state );
+		$this->set_order_field( $order, 'set_shipping_postcode', $shipping_postcode );
+		$this->set_order_field( $order, 'set_shipping_country', $shipping_country );
+
+		$allow_account_invite = ! array_key_exists( 'allow_customer_account_invite', $context ) || ! empty( $context['allow_customer_account_invite'] );
+		$woo_customer_id      = $allow_account_invite ? $this->resolve_or_create_wc_customer( $customer_data, $address_data ) : 0;
+
+		if ( $woo_customer_id > 0 ) {
+			$this->set_order_field( $order, 'set_customer_id', $woo_customer_id );
+		}
+
+		if ( method_exists( $order, 'update_meta_data' ) ) {
+			$order->update_meta_data( '_aims_square_customer_id', (string) ( $customer_data['square_customer_id'] ?? '' ) );
+			$order->update_meta_data( '_aims_customer_account_invite_attempted', $allow_account_invite && '' !== $billing_email ? 'yes' : 'no' );
+		}
+
+		return array(
+			'woo_customer_id'          => $woo_customer_id,
+			'account_invite_attempted' => $allow_account_invite && '' !== $billing_email,
+		);
+	}
+
+	private function set_order_field( $order, string $method, $value ): void {
+		if ( is_object( $order ) && method_exists( $order, $method ) ) {
+			$order->{$method}( $value );
+		}
+	}
+
+	private function resolve_or_create_wc_customer( array $customer_data, array $address_data = array() ): int {
+		$email = sanitize_email( (string) ( $customer_data['email_address'] ?? '' ) );
+		if ( '' === $email ) {
+			return 0;
+		}
+
+		if ( function_exists( 'email_exists' ) ) {
+			$existing_user_id = (int) email_exists( $email );
+			if ( $existing_user_id > 0 ) {
+				return $existing_user_id;
+			}
+		}
+
+		if ( ! function_exists( 'wc_create_new_customer' ) ) {
+			return 0;
+		}
+
+		$username = $this->derive_customer_username( $email );
+		$password = function_exists( 'wp_generate_password' ) ? wp_generate_password( 20, true, true ) : wp_generate_uuid4();
+		$args     = array(
+			'first_name' => sanitize_text_field( (string) ( $customer_data['first_name'] ?? '' ) ),
+			'last_name'  => sanitize_text_field( (string) ( $customer_data['last_name'] ?? '' ) ),
+		);
+
+		$billing_phone = sanitize_text_field( (string) ( $customer_data['phone_number'] ?? '' ) );
+		if ( '' !== $billing_phone ) {
+			$args['billing_phone'] = $billing_phone;
+		}
+
+		$billing_address_1 = sanitize_text_field( (string) ( $address_data['address_line_1'] ?? '' ) );
+		if ( '' !== $billing_address_1 ) {
+			$args['billing_address_1'] = $billing_address_1;
+			$args['billing_address_2'] = sanitize_text_field( (string) ( $address_data['address_line_2'] ?? '' ) );
+			$args['billing_city']      = sanitize_text_field( (string) ( $address_data['city'] ?? '' ) );
+			$args['billing_state']     = sanitize_text_field( (string) ( $address_data['state_region'] ?? '' ) );
+			$args['billing_postcode']  = sanitize_text_field( (string) ( $address_data['postal_code'] ?? '' ) );
+			$args['billing_country']   = strtoupper( sanitize_text_field( (string) ( $address_data['country_code'] ?? 'US' ) ) );
+		}
+
+		$created = wc_create_new_customer( $email, $username, $password, $args );
+		if ( function_exists( 'is_wp_error' ) && is_wp_error( $created ) ) {
+			return 0;
+		}
+
+		return (int) $created;
+	}
+
+	private function derive_customer_username( string $email ): string {
+		$raw_base = (string) preg_replace( '/@.*$/', '', strtolower( $email ) );
+		$base     = function_exists( 'sanitize_user' )
+			? sanitize_user( $raw_base, true )
+			: sanitize_key( preg_replace( '/[^a-z0-9_\-]/i', '_', $raw_base ) );
+		if ( '' === $base ) {
+			$base = 'aims_customer';
+		}
+
+		if ( ! function_exists( 'username_exists' ) ) {
+			return $base;
+		}
+
+		if ( ! username_exists( $base ) ) {
+			return $base;
+		}
+
+		for ( $suffix = 2; $suffix <= 1000; $suffix++ ) {
+			$candidate = $base . '_' . $suffix;
+			if ( ! username_exists( $candidate ) ) {
+				return $candidate;
+			}
+		}
+
+		return $base . '_' . wp_generate_uuid4();
+	}
+
+	private function add_projected_line_item_to_order( $order, array $sale_record ): bool {
+		if ( ! function_exists( 'wc_get_product' ) || ! is_object( $order ) || ! method_exists( $order, 'add_product' ) ) {
+			return false;
+		}
+
+		$product_id = (int) ( $sale_record['woo_product_id'] ?? 0 );
+		$quantity   = max( 1.0, (float) ( $sale_record['quantity'] ?? 1 ) );
+		$line_total = max( 0.0, (float) ( $sale_record['net_amount'] ?? 0 ) );
+
+		if ( $product_id <= 0 ) {
+			return false;
+		}
+
+		$product = wc_get_product( $product_id );
+		if ( ! is_object( $product ) ) {
+			return false;
+		}
+
+		$order->add_product(
+			$product,
+			$quantity,
+			array(
+				'subtotal' => $line_total,
+				'total'    => $line_total,
+			)
+		);
+
+		return true;
+	}
+
+	private function add_projection_charges_to_order( $order, array $charges ): int {
+		if ( empty( $charges ) || ! is_object( $order ) || ! method_exists( $order, 'add_item' ) || ! class_exists( 'WC_Order_Item_Fee' ) ) {
+			return 0;
+		}
+
+		$added = 0;
+
+		foreach ( $charges as $charge ) {
+			$amount = isset( $charge['amount'] ) ? (float) $charge['amount'] : 0.0;
+			$label  = sanitize_text_field( (string) ( $charge['label'] ?? '' ) );
+
+			if ( $amount <= 0 || '' === $label ) {
+				continue;
+			}
+
+			$fee = new \WC_Order_Item_Fee();
+			if ( method_exists( $fee, 'set_name' ) ) {
+				$fee->set_name( $label );
+			}
+			if ( method_exists( $fee, 'set_amount' ) ) {
+				$fee->set_amount( $amount );
+			}
+			if ( method_exists( $fee, 'set_total' ) ) {
+				$fee->set_total( $amount );
+			}
+
+			$is_taxable = ! empty( $charge['taxable'] );
+			if ( method_exists( $fee, 'set_tax_status' ) ) {
+				$fee->set_tax_status( $is_taxable ? 'taxable' : 'none' );
+			}
+
+			$tax_class = sanitize_text_field( (string) ( $charge['tax_class'] ?? '' ) );
+			if ( '' !== $tax_class && method_exists( $fee, 'set_tax_class' ) ) {
+				$fee->set_tax_class( $tax_class );
+			}
+
+			if ( ! empty( $charge['meta'] ) && is_array( $charge['meta'] ) && method_exists( $fee, 'add_meta_data' ) ) {
+				foreach ( $charge['meta'] as $meta_key => $meta_value ) {
+					$meta_key = sanitize_key( (string) $meta_key );
+					if ( '' === $meta_key ) {
+						continue;
+					}
+
+					$fee->add_meta_data( $meta_key, is_scalar( $meta_value ) ? (string) $meta_value : wp_json_encode( $meta_value ) );
+				}
+			}
+
+			$order->add_item( $fee );
+			++$added;
+		}
+
+		return $added;
+	}
+
+	private function resolve_projection_charges( array $sale_record, array $context = array() ): array {
+		$charges = array();
+
+		$unfulfilled_charge = $this->build_unfulfilled_charge( $sale_record, $context );
+		if ( ! empty( $unfulfilled_charge ) ) {
+			$charges[] = $unfulfilled_charge;
+		}
+
+		if ( ! empty( $context['additional_projection_charges'] ) && is_array( $context['additional_projection_charges'] ) ) {
+			foreach ( $context['additional_projection_charges'] as $charge ) {
+				if ( is_array( $charge ) ) {
+					$normalized = $this->normalize_projection_charge( $charge );
+					if ( ! empty( $normalized ) ) {
+						$charges[] = $normalized;
+					}
+				}
+			}
+		}
+
+		return $charges;
+	}
+
+	private function build_unfulfilled_charge( array $sale_record, array $context = array() ): array {
+		$unfulfilled_statuses = array( 'pending', 'unfulfilled', 'processing', 'backordered' );
+		$status               = sanitize_key( (string) ( $sale_record['fulfillment_status'] ?? '' ) );
+
+		if ( ! in_array( $status, $unfulfilled_statuses, true ) ) {
+			return array();
+		}
+
+		if ( ! empty( $context['unfulfilled_charge'] ) && is_array( $context['unfulfilled_charge'] ) ) {
+			return $this->normalize_projection_charge(
+				array_merge(
+					array( 'code' => 'unfulfilled' ),
+					$context['unfulfilled_charge']
+				)
+			);
+		}
+
+		$amount = isset( $context['unfulfilled_charge_amount'] ) ? (float) $context['unfulfilled_charge_amount'] : 0.0;
+		if ( $amount <= 0 ) {
+			return array();
+		}
+
+		return $this->normalize_projection_charge(
+			array(
+				'code'   => 'unfulfilled',
+				'label'  => (string) ( $context['unfulfilled_charge_label'] ?? 'Unfulfilled Line Charge' ),
+				'amount' => $amount,
+			)
+		);
+	}
+
+	private function normalize_projection_charge( array $charge ): array {
+		$amount = isset( $charge['amount'] ) ? (float) $charge['amount'] : 0.0;
+		$label  = sanitize_text_field( (string) ( $charge['label'] ?? '' ) );
+
+		if ( $amount <= 0 || '' === $label ) {
+			return array();
+		}
+
+		$normalized = array(
+			'code'     => sanitize_key( (string) ( $charge['code'] ?? '' ) ),
+			'label'    => $label,
+			'amount'   => $amount,
+			'taxable'  => ! empty( $charge['taxable'] ),
+			'tax_class'=> sanitize_text_field( (string) ( $charge['tax_class'] ?? '' ) ),
+		);
+
+		if ( ! empty( $charge['meta'] ) && is_array( $charge['meta'] ) ) {
+			$normalized['meta'] = $charge['meta'];
+		}
+
+		return $normalized;
 	}
 
 	/**

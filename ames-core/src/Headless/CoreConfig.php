@@ -20,6 +20,7 @@ final class CoreConfig {
 	private string $squareLocationId;
 	private string $squareVersion;
 	private string $binaryStreamMode;
+	private bool $binaryPrimaryApproved;
 	private int $binaryFlushPacketLimit;
 	private int $binaryFlushByteLimit;
 	private int $hotRetentionDays;
@@ -41,6 +42,7 @@ final class CoreConfig {
 		$this->squareLocationId      = $values['square_location_id'];
 		$this->squareVersion         = $values['square_version'];
 		$this->binaryStreamMode       = $values['binary_stream_mode'];
+		$this->binaryPrimaryApproved  = (bool) ( $values['binary_primary_approved'] ?? false );
 		$this->binaryFlushPacketLimit = (int) $values['binary_flush_packet_limit'];
 		$this->binaryFlushByteLimit   = (int) $values['binary_flush_byte_limit'];
 		$this->hotRetentionDays       = (int) $values['hot_retention_days'];
@@ -56,7 +58,16 @@ final class CoreConfig {
 		$sqlitePath = self::envPath( 'AIMS_SQLITE_PATH', $sinkPath . DIRECTORY_SEPARATOR . 'ames_ledger.db', $rootPath );
 
 		$binaryMode = strtolower( trim( (string) ( getenv( 'AIMS_BINARY_STREAM_MODE' ) ?: 'shadow' ) ) );
+		$binaryPrimaryApproved = in_array(
+			strtolower( trim( (string) ( getenv( 'AIMS_BINARY_PRIMARY_APPROVED' ) ?: '' ) ) ),
+			array( '1', 'true', 'yes', 'on' ),
+			true
+		);
 		if ( ! in_array( $binaryMode, array( 'off', 'shadow', 'primary' ), true ) ) {
+			$binaryMode = 'shadow';
+		}
+
+		if ( 'primary' === $binaryMode && ! $binaryPrimaryApproved ) {
 			$binaryMode = 'shadow';
 		}
 
@@ -77,6 +88,7 @@ final class CoreConfig {
 				'square_location_id'       => trim( (string) getenv( 'AIMS_SQUARE_LOCATION_ID' ) ),
 				'square_version'           => trim( (string) ( getenv( 'AIMS_SQUARE_VERSION' ) ?: '2026-01-22' ) ),
 				'binary_stream_mode'       => $binaryMode,
+				'binary_primary_approved'  => $binaryPrimaryApproved,
 				'binary_flush_packet_limit'=> max( 1, (int) ( getenv( 'AIMS_BINARY_FLUSH_PACKET_LIMIT' ) ?: 1024 ) ),
 				'binary_flush_byte_limit'  => max( 64, (int) ( getenv( 'AIMS_BINARY_FLUSH_BYTE_LIMIT' ) ?: 65536 ) ),
 				'hot_retention_days'       => max( 1, (int) ( getenv( 'AIMS_HOT_RETENTION_DAYS' ) ?: 30 ) ),
@@ -151,6 +163,10 @@ final class CoreConfig {
 
 	public function binaryStreamMode(): string {
 		return $this->binaryStreamMode;
+	}
+
+	public function binaryPrimaryApproved(): bool {
+		return $this->binaryPrimaryApproved;
 	}
 
 	public function binaryFlushPacketLimit(): int {

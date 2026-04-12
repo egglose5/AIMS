@@ -93,6 +93,8 @@ Only the deployment/runtime layer should vary by host profile.
 
 ## Required Fork Point
 
+Deferral note: formal portability-fork implementation work is deferred until after v1.1. Until then, the active runtime target is the IONOS-style shared-host profile.
+
 Because the original split happened after filesystem-heavy headless work had already begun, the portability fork point needs to be formalized now rather than treated as already solved.
 
 That fork point should be:

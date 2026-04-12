@@ -16,7 +16,7 @@ class AIMS_Shipping_Queue_Page {
 
 		echo '<div class="wrap">';
 		echo '<h1>Needs Shipping</h1>';
-		echo '<p>Orders in this queue were marked by the AIMS shipping marker and require customer fulfillment from warehouse stock.</p>';
+		echo '<p>Orders in this queue were marked by the AIMS shipping marker and require customer fulfillment from warehouse stock. Use the <strong>Pick Location</strong> link on each row to look up the FIFO bin location in the AIMS warehouse dashboard.</p>';
 
 		if ( empty( $queue_rows ) ) {
 			echo '<div class="notice notice-info inline"><p>No orders are currently waiting to be shipped.</p></div>';
@@ -27,22 +27,33 @@ class AIMS_Shipping_Queue_Page {
 		echo '<table class="widefat fixed striped">';
 		echo '<thead><tr>';
 		echo '<th>Order</th>';
-		echo '<th>Customer</th>';
-		echo '<th>Event</th>';
+		echo '<th>SKU</th>';
+		echo '<th>Qty</th>';
 		echo '<th>Shipping</th>';
 		echo '<th>Status</th>';
-		echo '<th>Created</th>';
+		echo '<th>Sold At</th>';
+		echo '<th>Pick Location</th>';
 		echo '</tr></thead>';
 		echo '<tbody>';
 
 		foreach ( $queue_rows as $row ) {
+			$fifo_url = (string) ( $row['fifo_location_url'] ?? '' );
+			$sku      = (string) ( $row['sku'] ?? '' );
+
 			echo '<tr>';
-			echo '<td>' . esc_html( $row['order_ref'] ) . '</td>';
-			echo '<td>' . esc_html( $row['customer_name'] ) . '</td>';
-			echo '<td>' . esc_html( $row['event_name'] ) . '</td>';
-			echo '<td>' . esc_html( $row['shipping_label'] ) . '</td>';
-			echo '<td>' . esc_html( $row['status'] ) . '</td>';
-			echo '<td>' . esc_html( $row['created_at'] ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['order_ref'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( $sku ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['quantity'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['shipping_label'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['status'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['created_at'] ?? '' ) ) . '</td>';
+			echo '<td>';
+			if ( '' !== $fifo_url && '' !== $sku ) {
+				echo '<a href="' . esc_url( $fifo_url ) . '" title="Find FIFO bin location for ' . esc_attr( $sku ) . ' in AIMS warehouse dashboard">&#128269; Find in Warehouse</a>';
+			} else {
+				echo '&mdash;';
+			}
+			echo '</td>';
 			echo '</tr>';
 		}
 

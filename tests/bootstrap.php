@@ -329,6 +329,18 @@ if ( ! function_exists( 'esc_url' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_js' ) ) {
+	function esc_js( string $text ): string {
+		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'get_permalink' ) ) {
+	function get_permalink( $id = 0 ): string {
+		return 'http://example.test/?p=' . (int) $id;
+	}
+}
+
 if ( ! function_exists( 'selected' ) ) {
 	function selected( $selected, $current = true, bool $echo = true ): string {
 		$result = (string) $selected === (string) $current ? ' selected="selected"' : '';

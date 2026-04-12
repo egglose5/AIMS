@@ -28,6 +28,7 @@ Core rule: only track metadata that is relevant to the current operational step.
 - `square_sale` - inventory physically sold at Square point of sale.
 - `woocommerce_fulfillment` - inventory physically fulfilled for WooCommerce order.
 - `warehouse_pick` - inventory physically picked for fulfillment staging.
+- `cycle_count` - audited physical count reconciliation that corrects bucket truth to the observed on-hand quantity.
 - `adjustment` - manual audited correction (damage/count correction).
 
 ## Non-Movement Events (must not change stock)
@@ -61,5 +62,6 @@ These event-specific materials still need a real home in AIMS planning because v
 - `square_sale` -> `square_sale_line`, `square_order`
 - `woocommerce_fulfillment` -> `woo_fulfillment_line`, `woo_order_fulfillment`
 - `warehouse_pick` -> `woo_order_fulfillment`, `warehouse_pick_ticket`
+- `cycle_count` -> `physical_count`, `cycle_count_session`
 - `adjustment` -> `manual_adjustment`, `physical_count`, `reconciliation`
 
