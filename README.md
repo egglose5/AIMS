@@ -37,6 +37,65 @@ The current standalone `ames-core` build should be treated as an `IONOS-style` o
 
 Use this path for a first manual install on the current filesystem-capable shared-host profile.
 
+### Optional: Automated Install Helper (IONOS)
+
+If your host supports shell access, you can run the installer helper:
+
+scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --core-base-url https://example.com/ames-core
+
+Or derive the expected subdomain URL pattern automatically:
+
+scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com
+
+This derives `https://aims.mybrand.sec.com` as the core URL.
+
+What it automates:
+
+- prerequisite checks (PHP version, `pdo`, `pdo_sqlite`)
+- plugin deployment into `wp-content/plugins/ai-man-sys`
+- `ames-core` deployment into your web root
+- runtime directory creation and permissions for `sink`, `vault`, `logs`, and `config`
+- `.env` creation/update for required secrets and safe binary defaults
+- optional `/status` endpoint probe when `--core-base-url` is supplied
+
+Blast radius (what can change):
+
+- writes to `wp-content/plugins/ai-man-sys` (target plugin directory)
+- writes to your deployed `ames-core` target directory
+- if `rsync` is present, deploy uses `--delete` in those target directories (files not present in the source can be removed)
+- if `rsync` is not present, fallback copy logic recreates target directories before copy
+- updates `ames-core/.env` keys and may create `.env.bak` during edits
+- enforces permissions on runtime dirs: `sink`, `vault`, `logs`, `config`
+- only when `--auto-system-prereqs` is set: may attempt host package installs (`apt-get`/`yum`)
+
+Safety controls:
+
+- installer creates timestamped directory backups before deployment
+- run `--dry-run` first to verify paths and prerequisites without writing files
+- run in staging before production
+
+Important:
+
+- on some shared-host plans, host-level extension enabling (for example `pdo_sqlite`) cannot be done by script and must be enabled in host control panel/support
+- you still need to activate the plugin in WordPress and set **AIMS API URL** + **AIMS Token**
+- DNS/subdomain creation is not automatic unless your environment exposes DNS provider API access; create `aims.<base-domain>.sec.com` in DNS first
+
+Recommended preflight command:
+
+scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run
+
+First rollout sequence (recommended):
+
+1) Dry-run preflight (no writes):
+scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run
+
+2) Live execution (writes enabled):
+scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --confirm-write
+
+Installer safety gate:
+
+- non-dry-run execution now requires `--confirm-write`
+
 1. **Confirm the host fits the current profile**
    - WordPress `6.0+`
    - PHP `7.4+`

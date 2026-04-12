@@ -27,6 +27,22 @@ The current headless `ames-core` path should be treated as an `IONOS-style` or f
 
 If this is a first manual install rather than an upgrade, use the current filesystem-capable shared-host path:
 
+If shell access is available, you can run `scripts/install-ionos.sh` to automate deployment, `.env` secret setup, runtime directory preparation, and prerequisite checks before completing wp-admin connection settings. The script can derive `https://aims.<base-domain>.sec.com` when you pass `--base-domain <name>` (and optional `--domain-suffix`).
+
+Installer impact notes:
+
+- deployment writes to plugin/core target directories and may remove files missing from source when `rsync --delete` is used
+- fallback copy mode recreates target directories before copy when `rsync` is unavailable
+- `.env` keys are updated in place and backup files may be created by `sed -i.bak`
+- runtime directory permissions are normalized for `sink`, `vault`, `logs`, and `config`
+- package-manager changes are attempted only if `--auto-system-prereqs` is explicitly provided
+
+Run `--dry-run` first and validate target paths before the first write:
+
+`scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run`
+
+For live deployment writes, pass `--confirm-write` explicitly.
+
 1. Upload the plugin to `wp-content/plugins/ai-man-sys`.
 2. Deploy `ames-core/` to a reachable URL or subpath and ensure `sink/`, `vault/`, `logs/`, and `config/` are writable.
 	- Ensure `/status` resolves at either `https://example.com/ames-core/status` (rewrite-enabled) or `https://example.com/ames-core/index.php/status` (no rewrite).
