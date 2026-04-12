@@ -6,7 +6,7 @@ usage() {
 AIMS IONOS installer
 
 Usage:
-  scripts/install-ionos.sh \
+  bash ./scripts/install-ionos.sh \
     --wp-plugin-dir /path/to/wp-content/plugins \
     --web-root /path/to/public_html \
     [--plugin-slug ai-man-sys] \

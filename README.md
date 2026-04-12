@@ -41,11 +41,11 @@ Use this path for a first manual install on the current filesystem-capable share
 
 If your host supports shell access, you can run the installer helper:
 
-scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --core-base-url https://example.com/ames-core
+bash ./scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --core-base-url https://example.com/ames-core
 
 Or derive the expected subdomain URL pattern automatically:
 
-scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com
+bash ./scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com
 
 This derives `https://aims.mybrand.sec.com` as the core URL.
 
@@ -82,15 +82,15 @@ Important:
 
 Recommended preflight command:
 
-scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run
+bash ./scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run
 
 First rollout sequence (recommended):
 
 1) Dry-run preflight (no writes):
-scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run
+bash ./scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run
 
 2) Live execution (writes enabled):
-scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --confirm-write
+bash ./scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --confirm-write
 
 Installer safety gate:
 

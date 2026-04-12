@@ -27,7 +27,7 @@ The current headless `ames-core` path should be treated as an `IONOS-style` or f
 
 If this is a first manual install rather than an upgrade, use the current filesystem-capable shared-host path:
 
-If shell access is available, you can run `scripts/install-ionos.sh` to automate deployment, `.env` secret setup, runtime directory preparation, and prerequisite checks before completing wp-admin connection settings. The script can derive `https://aims.<base-domain>.sec.com` when you pass `--base-domain <name>` (and optional `--domain-suffix`).
+If shell access is available, you can run `bash ./scripts/install-ionos.sh` to automate deployment, `.env` secret setup, runtime directory preparation, and prerequisite checks before completing wp-admin connection settings. The script can derive `https://aims.<base-domain>.sec.com` when you pass `--base-domain <name>` (and optional `--domain-suffix`).
 
 Installer impact notes:
 
@@ -39,7 +39,7 @@ Installer impact notes:
 
 Run `--dry-run` first and validate target paths before the first write:
 
-`scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run`
+`bash ./scripts/install-ionos.sh --wp-plugin-dir /path/to/wp-content/plugins --web-root /path/to/public_html --base-domain mybrand --domain-suffix sec.com --dry-run`
 
 For live deployment writes, pass `--confirm-write` explicitly.
 
