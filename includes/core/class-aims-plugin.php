@@ -48,6 +48,7 @@ class AIMS_Plugin {
 	private $cycle_count_controller;
 	private $wholesale_customer_portal_controller;
 	private $integration_rest_controller;
+	private $barcode_scanner;
 
 	public static function instance(): AIMS_Plugin {
 		if ( null === self::$instance ) {
@@ -274,6 +275,7 @@ class AIMS_Plugin {
 		$this->cycle_count_controller      = new AIMS_Cycle_Count_Controller();
 		$this->wholesale_customer_portal_controller = new AIMS_Wholesale_Customer_Portal_Controller();
 		$this->integration_rest_controller = new AIMS_Integration_Rest_Controller();
+		$this->barcode_scanner             = new AIMS_Barcode_Scanner();
 	}
 
 	public function boot(): void {

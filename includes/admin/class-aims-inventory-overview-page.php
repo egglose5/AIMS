@@ -375,8 +375,19 @@ class AIMS_Inventory_Overview_Page {
 				<?php wp_nonce_field( 'aims_inventory_transfer_add_item', '_aims_inventory_transfer_add_item_nonce' ); ?>
 				<input type="hidden" name="transfer_id" value="<?php echo esc_attr( $transfer_id ); ?>" />
 				<div>
-					<label><?php esc_html_e( 'Product (SKU or name)', 'ai-man-sys' ); ?></label>
-					<input type="text" name="product_input" placeholder="<?php esc_attr_e( 'Enter product SKU or ID', 'ai-man-sys' ); ?>" required style="width:100%;padding:5px;" />
+					<label for="product_input_<?php echo esc_attr( $transfer_id ); ?>"><?php esc_html_e( 'Product (SKU or name)', 'ai-man-sys' ); ?></label>
+					<?php
+					$product_input = new AIMS_Admin_Input_Element( array(
+						'id'          => 'product_input_' . $transfer_id,
+						'name'        => 'product_input',
+						'placeholder' => __( 'Enter product SKU or ID', 'ai-man-sys' ),
+						'required'    => true,
+						'scan'        => true,
+						'class'       => '',
+						'attributes'  => array( 'style' => 'width:100%;padding:5px;' ),
+					) );
+					echo $product_input->render();
+					?>
 				</div>
 				<div>
 					<label><?php esc_html_e( 'From Bucket', 'ai-man-sys' ); ?></label>
