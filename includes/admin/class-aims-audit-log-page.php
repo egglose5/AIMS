@@ -14,70 +14,22 @@ class AIMS_Audit_Log_Page {
 	}
 
 	public function render(): void {
-		$model = $this->data_provider->get_page_model( $this->get_filters() );
-		$rows  = (array) ( $model['rows'] ?? array() );
+		$filters = $this->get_filters();
+		$model   = $this->data_provider->get_page_model( $filters );
 
 		echo '<div class="wrap">';
-		echo '<h1>AIMS Activity Log</h1>';
-		echo '<p>Structured plugin-side action proof for the WordPress control surface. The log stays append-only and lean so the operational database does not carry audit lookup weight.</p>';
+		echo '<h1>' . esc_html__( 'AIMS Activity Log', 'ai-man-sys' ) . '</h1>';
+		echo '<p>' . esc_html__( 'Structured plugin-side action proof for the WordPress control surface.', 'ai-man-sys' ) . '</p>';
 
-		$this->render_summary( (array) ( $model['summary'] ?? array() ) );
-		$this->render_filters( (array) ( $model['filters'] ?? array() ) );
+		$widget = new AIMS_Admin_Audit_Log_Widget( new AIMS_Admin_Meta_Object( array(
+			'filters' => $model['filters'] ?? $filters,
+			'rows'    => $model['rows'] ?? array(),
+			'summary' => $model['summary'] ?? array(),
+		) ) );
 
-		if ( empty( $rows ) ) {
-			echo '<div class="notice notice-info inline"><p>No matching activity log entries were found.</p></div>';
-			echo '</div>';
-			return;
-		}
+		$widget->render();
 
-		echo '<table class="widefat fixed striped">';
-		echo '<thead><tr>';
-		echo '<th>Time</th>';
-		echo '<th>User</th>';
-		echo '<th>Capability</th>';
-		echo '<th>Action</th>';
-		echo '<th>Reference</th>';
-		echo '<th>Status</th>';
-		echo '<th>Surface</th>';
-		echo '</tr></thead><tbody>';
-
-		foreach ( $rows as $row ) {
-			echo '<tr>';
-			echo '<td>' . esc_html( (string) ( $row['ts'] ?? '' ) ) . '</td>';
-			echo '<td>' . esc_html( (string) ( $row['user_name'] ?? '' ) ) . '</td>';
-			echo '<td><code>' . esc_html( (string) ( $row['capability_key'] ?? '' ) ) . '</code></td>';
-			echo '<td><code>' . esc_html( (string) ( $row['action_key'] ?? '' ) ) . '</code></td>';
-			echo '<td>' . esc_html( (string) ( $row['reference_id'] ?? '' ) ) . '</td>';
-			echo '<td>' . esc_html( (string) ( $row['status'] ?? '' ) ) . '</td>';
-			echo '<td><code>' . esc_html( (string) ( $row['surface'] ?? '' ) ) . '</code></td>';
-			echo '</tr>';
-		}
-
-		echo '</tbody></table>';
 		echo '</div>';
-	}
-
-	private function render_summary( array $summary ): void {
-		echo '<div class="notice notice-info inline"><p>';
-		echo '<strong>Rows:</strong> ' . esc_html( (string) ( $summary['total'] ?? 0 ) );
-		echo ' | <strong>Success:</strong> ' . esc_html( (string) ( $summary['successes'] ?? 0 ) );
-		echo ' | <strong>Other:</strong> ' . esc_html( (string) ( $summary['failures'] ?? 0 ) );
-		echo ' | <strong>Latest:</strong> ' . esc_html( (string) ( $summary['latest_ts'] ?? 'n/a' ) );
-		echo '</p></div>';
-	}
-
-	private function render_filters( array $filters ): void {
-		echo '<form method="get" action="' . esc_url( admin_url( 'admin.php' ) ) . '" style="margin:16px 0;">';
-		echo '<input type="hidden" name="page" value="' . esc_attr( self::PAGE_SLUG ) . '" />';
-		echo '<table class="form-table"><tbody>';
-		echo '<tr><th scope="row"><label for="aims-audit-user-id">User ID</label></th><td><input id="aims-audit-user-id" type="number" min="0" step="1" class="small-text" name="aims_audit_user_id" value="' . esc_attr( (string) ( $filters['user_id'] ?? 0 ) ) . '" /></td></tr>';
-		echo '<tr><th scope="row"><label for="aims-audit-action">Action</label></th><td><input id="aims-audit-action" type="text" class="regular-text" name="aims_audit_action" value="' . esc_attr( (string) ( $filters['action_key'] ?? '' ) ) . '" placeholder="movement_send" /></td></tr>';
-		echo '<tr><th scope="row"><label for="aims-audit-status">Status</label></th><td><select id="aims-audit-status" name="aims_audit_status"><option value="">All</option><option value="success"' . selected( (string) ( $filters['status'] ?? '' ), 'success', false ) . '>Success</option><option value="failed"' . selected( (string) ( $filters['status'] ?? '' ), 'failed', false ) . '>Failed</option></select></td></tr>';
-		echo '<tr><th scope="row"><label for="aims-audit-search">Search</label></th><td><input id="aims-audit-search" type="text" class="regular-text" name="aims_audit_search" value="' . esc_attr( (string) ( $filters['search'] ?? '' ) ) . '" placeholder="SKU, reference, or capability" /></td></tr>';
-		echo '<tr><th scope="row"><label for="aims-audit-limit">Limit</label></th><td><input id="aims-audit-limit" type="number" min="1" max="200" step="1" class="small-text" name="aims_audit_limit" value="' . esc_attr( (string) ( $filters['limit'] ?? 50 ) ) . '" /></td></tr>';
-		echo '</tbody></table>';
-		submit_button( 'Filter Activity', 'secondary', '', false );
-		echo '</form>';
 	}
 
 	private function get_filters(): array {

@@ -29,32 +29,15 @@ class AIMS_Admin_Menu {
 	}
 
 	public function register(): void {
-			   // Add Role Editor submenu
-			   add_submenu_page(
-				   self::MENU_SLUG,
-				   'Role Editor',
-				   'Role Editor',
-				   $this->get_menu_capability(),
-				   'aims-role-editor',
-				   function() {
-					   if (class_exists('AIMS_Role_Editor_Page')) {
-						   $page = new AIMS_Role_Editor_Page();
-						   $page->render();
-					   } else {
-						   echo '<div class="notice notice-error"><p>Role editor is unavailable.</p></div>';
-					   }
-				   }
-			   );
 		add_menu_page(
-			'AIMS',
-			'AIMS',
+			"AIMS",
+			"AIMS",
 			$this->get_menu_capability(),
 			self::MENU_SLUG,
-			array( $this, 'render_dashboard' ),
-			'dashicons-database-view',
+			array( $this, "render_dashboard" ),
+			"dashicons-database-view",
 			56
 		);
-
 		add_submenu_page(
 			self::MENU_SLUG,
 			'Dashboard',
@@ -72,15 +55,6 @@ class AIMS_Admin_Menu {
 			   self::SETTINGS_PAGE_SLUG,
 			   array( $this, 'render_settings' )
 		   );
-
-		add_submenu_page(
-			self::MENU_SLUG,
-			'Square API',
-			'Square API',
-			$this->get_menu_capability(),
-			'aims-square-api',
-			array( $this, 'render_square_api_settings' )
-		);
 	   add_submenu_page(
 		   self::MENU_SLUG,
 		   'Activity Log',
@@ -348,17 +322,20 @@ public function render_square_api_settings() {
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Core Status</h2>';
-		$this->render_manifest_status( $manifest );
+		$status_widget = new AIMS_Admin_Status_Widget( new AIMS_Admin_Meta_Object( array( 'manifest' => $manifest ) ) );
+		$status_widget->render();
 		echo '</div>';
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Hot Data Pressure</h2>';
-		$this->render_hot_db_health( $hot_db_health );
+		$hot_db_widget = new AIMS_Admin_Hot_Db_Health_Widget( new AIMS_Admin_Meta_Object( array( 'snapshot' => $hot_db_health ) ) );
+		$hot_db_widget->render();
 		echo '</div>';
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
 		echo '<h2>Low Stock Alerts</h2>';
-		$this->render_low_stock_alerts( $low_stock_snapshot );
+		$low_stock_widget = new AIMS_Admin_Low_Stock_Widget( new AIMS_Admin_Meta_Object( array( 'snapshot' => $low_stock_snapshot ) ) );
+		$low_stock_widget->render();
 		echo '</div>';
 
 		echo '<div class="postbox" style="padding:16px;margin-top:16px;">';
@@ -704,8 +681,16 @@ public function render_square_api_settings() {
 		echo '<input type="hidden" name="action" value="aims_submit_remote_move" />';
 		wp_nonce_field( 'aims_submit_remote_move' );
 
+		$sku_input = new AIMS_Admin_Input_Element( array(
+			'id'       => 'aims-sku',
+			'name'     => 'sku',
+			'required' => true,
+			'scan'     => true,
+			'attributes' => array( 'autocomplete' => 'off' ),
+		) );
+
 		echo '<table class="form-table"><tbody>';
-		echo '<tr><th scope="row"><label for="aims-sku">SKU</label></th><td><input id="aims-sku" type="text" class="regular-text" name="sku" required autocomplete="off" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-sku">SKU</label></th><td>' . $sku_input->render() . '</td></tr>';
 		echo '<tr><th scope="row"><label for="aims-from-location">From Location</label></th><td><input id="aims-from-location" type="text" class="regular-text" name="from_location" required /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-to-location">To Location</label></th><td><input id="aims-to-location" type="text" class="regular-text" name="to_location" required /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-quantity">Quantity</label></th><td><input id="aims-quantity" type="number" min="1" step="1" name="quantity" value="1" required /></td></tr>';
@@ -741,37 +726,21 @@ public function render_square_api_settings() {
 			<?php
 		});
 	}
-// AJAX handler for SKU autocomplete
-add_action('wp_ajax_aims_sku_autocomplete', function() {
-	if (!function_exists('wc_get_products')) {
-		wp_send_json([]);
-	}
-	$term = isset($_GET['term']) ? sanitize_text_field($_GET['term']) : '';
-	$products = wc_get_products([
-		'sku' => $term,
-		'limit' => 20,
-		'status' => 'publish',
-		'orderby' => 'title',
-		'order' => 'ASC',
-		'search' => $term,
-	]);
-	$results = [];
-	foreach ($products as $product) {
-		$results[] = [
-			'label' => $product->get_sku() . ' - ' . $product->get_name(),
-			'value' => $product->get_sku(),
-		];
-	}
-	wp_send_json($results);
-});
 
 	private function render_remote_bucket_form(): void {
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		echo '<input type="hidden" name="action" value="aims_register_remote_bucket" />';
 		wp_nonce_field( 'aims_register_remote_bucket' );
 
+		$bucket_code_input = new AIMS_Admin_Input_Element( array(
+			'id'       => 'aims-bucket-code',
+			'name'     => 'bucket_code',
+			'required' => true,
+			'scan'     => true,
+		) );
+
 		echo '<table class="form-table"><tbody>';
-		echo '<tr><th scope="row"><label for="aims-bucket-code">Bucket Code</label></th><td><input id="aims-bucket-code" type="text" class="regular-text" name="bucket_code" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-bucket-code">Bucket Code</label></th><td>' . $bucket_code_input->render() . '</td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-label">Bucket Label</label></th><td><input id="aims-bucket-label" type="text" class="regular-text" name="bucket_label" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-type">Bucket Type</label></th><td><input id="aims-bucket-type" type="text" class="regular-text" name="bucket_type" value="physical" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-bucket-status">Status</label></th><td><input id="aims-bucket-status" type="text" class="regular-text" name="status" value="active" /></td></tr>';
@@ -836,9 +805,22 @@ add_action('wp_ajax_aims_sku_autocomplete', function() {
 		echo '<input type="hidden" name="action" value="aims_receive_remote_fifo" />';
 		wp_nonce_field( 'aims_receive_remote_fifo' );
 
+		$bucket_input = new AIMS_Admin_Input_Element( array(
+			'id'       => 'aims-receive-bucket-code',
+			'name'     => 'bucket_code',
+			'required' => true,
+			'scan'     => true,
+		) );
+		$sku_input = new AIMS_Admin_Input_Element( array(
+			'id'       => 'aims-receive-sku',
+			'name'     => 'sku',
+			'required' => true,
+			'scan'     => true,
+		) );
+
 		echo '<table class="form-table"><tbody>';
-		echo '<tr><th scope="row"><label for="aims-receive-bucket-code">Bucket Code</label></th><td><input id="aims-receive-bucket-code" type="text" class="regular-text" name="bucket_code" required /></td></tr>';
-		echo '<tr><th scope="row"><label for="aims-receive-sku">SKU</label></th><td><input id="aims-receive-sku" type="text" class="regular-text" name="sku" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-bucket-code">Bucket Code</label></th><td>' . $bucket_input->render() . '</td></tr>';
+		echo '<tr><th scope="row"><label for="aims-receive-sku">SKU</label></th><td>' . $sku_input->render() . '</td></tr>';
 		echo '<tr><th scope="row"><label for="aims-receive-show-id">Show ID</label></th><td><input id="aims-receive-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-receive-location">Current Location</label></th><td><input id="aims-receive-location" type="text" class="regular-text" name="current_location" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-receive-custody">Current Custody</label></th><td><input id="aims-receive-custody" type="text" class="regular-text" name="current_custody" /></td></tr>';
@@ -857,8 +839,15 @@ add_action('wp_ajax_aims_sku_autocomplete', function() {
 		echo '<input type="hidden" name="action" value="aims_move_remote_custody" />';
 		wp_nonce_field( 'aims_move_remote_custody' );
 
+		$bucket_input = new AIMS_Admin_Input_Element( array(
+			'id'       => 'aims-custody-bucket-code',
+			'name'     => 'bucket_code',
+			'required' => true,
+			'scan'     => true,
+		) );
+
 		echo '<table class="form-table"><tbody>';
-		echo '<tr><th scope="row"><label for="aims-custody-bucket-code">Bucket Code</label></th><td><input id="aims-custody-bucket-code" type="text" class="regular-text" name="bucket_code" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-custody-bucket-code">Bucket Code</label></th><td>' . $bucket_input->render() . '</td></tr>';
 		echo '<tr><th scope="row"><label for="aims-custody-from-location">From Location</label></th><td><input id="aims-custody-from-location" type="text" class="regular-text" name="from_location" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-custody-to-location">To Location</label></th><td><input id="aims-custody-to-location" type="text" class="regular-text" name="to_location" /></td></tr>';
 		echo '<tr><th scope="row"><label for="aims-custody-from-custody">From Custody</label></th><td><input id="aims-custody-from-custody" type="text" class="regular-text" name="from_custody" /></td></tr>';
@@ -876,8 +865,16 @@ add_action('wp_ajax_aims_sku_autocomplete', function() {
 	private function render_remote_fifo_availability( array $availability, array $query ): void {
 		echo '<form method="get" action="' . esc_url( admin_url( 'admin.php' ) ) . '">';
 		echo '<input type="hidden" name="page" value="' . esc_attr( self::MENU_SLUG ) . '" />';
+
+		$sku_input = new AIMS_Admin_Input_Element( array(
+			'id'    => 'aims-fifo-sku',
+			'name'  => 'aims_fifo_sku',
+			'value' => (string) ( $query['sku'] ?? '' ),
+			'scan'  => true,
+		) );
+
 		echo '<table class="form-table"><tbody>';
-		echo '<tr><th scope="row"><label for="aims-fifo-sku">SKU</label></th><td><input id="aims-fifo-sku" type="text" class="regular-text" name="aims_fifo_sku" value="' . esc_attr( (string) ( $query['sku'] ?? '' ) ) . '" /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-fifo-sku">SKU</label></th><td>' . $sku_input->render() . '</td></tr>';
 		echo '<tr><th scope="row"><label for="aims-fifo-show-id">Show ID</label></th><td><input id="aims-fifo-show-id" type="text" class="regular-text" name="aims_fifo_show_id" value="' . esc_attr( (string) ( $query['show_id'] ?? '' ) ) . '" /></td></tr>';
 		   // Square Location ID select for FIFO availability form
 		   $vendor_service = class_exists('AIMS_Vendor_User_Metadata_Service') ? new AIMS_Vendor_User_Metadata_Service() : null;
@@ -942,8 +939,15 @@ add_action('wp_ajax_aims_sku_autocomplete', function() {
 		echo '<input type="hidden" name="action" value="aims_pick_remote_fifo" />';
 		wp_nonce_field( 'aims_pick_remote_fifo' );
 
+		$sku_input = new AIMS_Admin_Input_Element( array(
+			'id'       => 'aims-pick-sku',
+			'name'     => 'sku',
+			'required' => true,
+			'scan'     => true,
+		) );
+
 		echo '<table class="form-table"><tbody>';
-		echo '<tr><th scope="row"><label for="aims-pick-sku">SKU</label></th><td><input id="aims-pick-sku" type="text" class="regular-text" name="sku" required /></td></tr>';
+		echo '<tr><th scope="row"><label for="aims-pick-sku">SKU</label></th><td>' . $sku_input->render() . '</td></tr>';
 		echo '<tr><th scope="row"><label for="aims-pick-show-id">Show ID</label></th><td><input id="aims-pick-show-id" type="text" class="regular-text" name="show_id" /></td></tr>';
 		   // Square Location ID select for FIFO pick form
 		   $vendor_service = class_exists('AIMS_Vendor_User_Metadata_Service') ? new AIMS_Vendor_User_Metadata_Service() : null;
@@ -1018,20 +1022,6 @@ add_action('wp_ajax_aims_sku_autocomplete', function() {
 			echo '<p><button type="submit" class="button button-primary" disabled="disabled" aria-disabled="true">Sync Manifest</button></p>';
 		}
 		echo '</form>';
-	}
-
-	private function render_manifest_status( array $manifest ): void {
-		if ( empty( $manifest['success'] ) ) {
-			echo '<p><strong>Connection error:</strong> ' . esc_html( (string) ( $manifest['message'] ?? 'Unable to reach the AIMS core.' ) ) . '</p>';
-			return;
-		}
-
-		$json = is_array( $manifest['json'] ?? null ) ? $manifest['json'] : array();
-		echo '<p><strong>HTTP:</strong> ' . esc_html( (string) ( $manifest['code'] ?? 0 ) ) . '</p>';
-		echo '<p><strong>Manifest:</strong> ' . esc_html( (string) ( $json['manifest_uuid'] ?? 'n/a' ) ) . '</p>';
-		echo '<p><strong>Generated:</strong> ' . esc_html( (string) ( $json['generated_at'] ?? 'n/a' ) ) . '</p>';
-		echo '<p><strong>Items:</strong> ' . esc_html( (string) ( $json['summary']['merged_items'] ?? 0 ) ) . '</p>';
-		echo '<pre style="max-height:320px;overflow:auto;background:#fff;padding:12px;border:1px solid #dcdcde;">' . esc_html( wp_json_encode( $json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ) . '</pre>';
 	}
 
 	private function render_cold_storage_status( array $history ): void {
@@ -1136,86 +1126,9 @@ add_action('wp_ajax_aims_sku_autocomplete', function() {
 		echo '</tbody></table>';
 	}
 
-	private function render_hot_db_health( array $snapshot ): void {
-		$band_label    = (string) ( $snapshot['band_label'] ?? 'Green' );
-		$band_color    = (string) ( $snapshot['band_color'] ?? '#2e7d32' );
-		$usage_percent = max( 0, min( 100, (int) ( $snapshot['usage_percent'] ?? 0 ) ) );
-		$total_rows    = (int) ( $snapshot['total_hot_rows'] ?? 0 );
-		$target        = (int) ( $snapshot['capacity_target'] ?? 250000 );
-		$order_guess   = (int) ( $snapshot['estimated_order_equivalent'] ?? 0 );
-		$counts        = is_array( $snapshot['counts'] ?? null ) ? $snapshot['counts'] : array();
-		$message       = (string) ( $snapshot['message'] ?? '' );
-		$thresholds    = is_array( $snapshot['thresholds'] ?? null ) ? $snapshot['thresholds'] : array();
-		$green_limit   = (int) ( $thresholds['green'] ?? 100000 );
-		$yellow_limit  = (int) ( $thresholds['yellow'] ?? 250000 );
-
-		echo '<p>This is the real impact view for the hot AIMS tables living beside WordPress. AIMS is meant to tell you what happened, where it happened, and what moved physically or financially, not to hide when the stack is nearing ERP territory.</p>';
-		echo '<div style="display:flex;align-items:center;gap:12px;margin:12px 0;">';
-		echo '<span aria-hidden="true" style="display:inline-block;width:16px;height:16px;border-radius:50%;background:' . esc_attr( $band_color ) . ';box-shadow:0 0 0 3px rgba(0,0,0,0.06);"></span>';
-		echo '<strong>' . esc_html( $band_label ) . ' Band</strong>';
-		echo '<span>' . esc_html( $usage_percent ) . '% of hot-row target</span>';
-		echo '</div>';
-		echo '<div style="height:14px;background:#e5e7eb;border-radius:999px;overflow:hidden;max-width:720px;">';
-		echo '<div style="height:14px;width:' . esc_attr( (string) $usage_percent ) . '%;background:' . esc_attr( $band_color ) . ';"></div>';
-		echo '</div>';
-		echo '<p style="margin-top:12px;">';
-		echo '<strong>Hot Rows:</strong> ' . esc_html( number_format( $total_rows ) );
-		echo ' <span style="color:#646970;">/ ' . esc_html( number_format( $target ) ) . ' target</span><br />';
-		echo '<strong>Estimated Order Equivalent:</strong> ' . esc_html( number_format( $order_guess ) );
-		echo ' <span style="color:#646970;">(based on roughly 4 sale lines per order)</span>';
-		echo '</p>';
-		echo '<p><strong>Comfort Bands:</strong> Green under ' . esc_html( number_format( $green_limit ) ) . ', Yellow from ' . esc_html( number_format( $green_limit ) ) . ' to under ' . esc_html( number_format( $yellow_limit ) ) . ', Red at ' . esc_html( number_format( $yellow_limit ) ) . ' and above.</p>';
-
-		echo '<table class="widefat striped" style="max-width:720px;"><thead><tr><th>Hot Table</th><th>Rows</th></tr></thead><tbody>';
-		echo '<tr><td>Square sale lines</td><td>' . esc_html( number_format( (int) ( $counts['square_sales'] ?? 0 ) ) ) . '</td></tr>';
-		echo '<tr><td>Bucket custody movements</td><td>' . esc_html( number_format( (int) ( $counts['bucket_inventory_moves'] ?? 0 ) ) ) . '</td></tr>';
-		echo '<tr><td>Fulfillment allocations</td><td>' . esc_html( number_format( (int) ( $counts['fulfillment_allocations'] ?? 0 ) ) ) . '</td></tr>';
-		echo '<tr><td>Inventory movements</td><td>' . esc_html( number_format( (int) ( $counts['inventory_movements'] ?? 0 ) ) ) . '</td></tr>';
-		echo '</tbody></table>';
-
-		if ( '' !== $message ) {
-			echo '<p style="margin-top:12px;">' . esc_html( $message ) . '</p>';
-		}
-	}
-
-	private function render_low_stock_alerts( array $snapshot ): void {
-		$threshold      = (int) ( $snapshot['threshold'] ?? AIMS_Plugin::get_low_stock_threshold() );
-		$tracked        = (int) ( $snapshot['tracked_products'] ?? 0 );
-		$low_stock      = (int) ( $snapshot['low_stock_products'] ?? 0 );
-		$active_rows    = (int) ( $snapshot['active_positions'] ?? 0 );
-		$alerts         = is_array( $snapshot['alerts'] ?? null ) ? $snapshot['alerts'] : array();
-
-		echo '<p>Alerts are read-only and based on active bucket position availability (`quantity - reserved_quantity`) aggregated by product.</p>';
-		echo '<p><strong>Threshold:</strong> ' . esc_html( number_format( $threshold ) ) . ' | <strong>Tracked Products:</strong> ' . esc_html( number_format( $tracked ) ) . ' | <strong>Active Positions:</strong> ' . esc_html( number_format( $active_rows ) ) . '</p>';
-
-		if ( $low_stock <= 0 ) {
-			echo '<p><strong>No low-stock products detected.</strong></p>';
-			return;
-		}
-
-		echo '<p><strong>' . esc_html( number_format( $low_stock ) ) . ' product(s) are at or below threshold.</strong></p>';
-		echo '<table class="widefat striped" style="max-width:960px;"><thead><tr><th>Product</th><th>Available</th><th>Total</th><th>Reserved</th><th>Buckets</th><th>Vendors</th><th>Status</th></tr></thead><tbody>';
-		foreach ( $alerts as $item ) {
-			if ( ! is_array( $item ) ) {
-				continue;
-			}
-
-			$status_label = 'low' === (string) ( $item['status'] ?? '' ) ? 'Low' : 'Out';
-			echo '<tr>';
-			echo '<td>' . esc_html( (string) ( $item['product_name'] ?? '' ) ) . ' <span style="color:#646970;">#' . esc_html( (string) ( $item['product_id'] ?? 0 ) ) . '</span></td>';
-			echo '<td><strong>' . esc_html( number_format( (float) ( $item['available_quantity'] ?? 0 ), 4 ) ) . '</strong></td>';
-			echo '<td>' . esc_html( number_format( (float) ( $item['total_quantity'] ?? 0 ), 4 ) ) . '</td>';
-			echo '<td>' . esc_html( number_format( (float) ( $item['reserved_quantity'] ?? 0 ), 4 ) ) . '</td>';
-			echo '<td>' . esc_html( number_format( (int) ( $item['bucket_count'] ?? 0 ) ) ) . '</td>';
-			echo '<td>' . esc_html( number_format( (int) ( $item['vendor_count'] ?? 0 ) ) ) . '</td>';
-			echo '<td>' . esc_html( $status_label ) . '</td>';
-			echo '</tr>';
-		}
-		echo '</tbody></table>';
-	}
-
 	private function render_customer_spend_window_panel( array $snapshot, array $query ): void {
-		$lookup      = (string) ( $query['lookup'] ?? '' );
+		$lookup      = (string) ( $query["lookup"] ?? "" );
+
 		$window_days = (int) ( $query['window_days'] ?? AIMS_Plugin::get_customer_spend_window_days() );
 		$threshold   = AIMS_Plugin::get_customer_spend_qualify_amount();
 

@@ -32,6 +32,7 @@ class AIMS_Loader {
 			AIMS_PLUGIN_PATH . 'includes/repositories/class-aims-' . $relative_class . '.php',
 			AIMS_PLUGIN_PATH . 'includes/services/class-aims-' . $relative_class . '.php',
 			AIMS_PLUGIN_PATH . 'includes/admin/class-aims-' . $relative_class . '.php',
+			AIMS_PLUGIN_PATH . 'includes/admin/ui/class-aims-' . $relative_class . '.php',
 			AIMS_PLUGIN_PATH . 'includes/modules/vendor-manage/class-aims-' . $relative_class . '.php',
 			AIMS_PLUGIN_PATH . 'includes/modules/event-manage/class-aims-' . $relative_class . '.php',
 			AIMS_PLUGIN_PATH . 'includes/modules/stitch-manage/class-aims-' . $relative_class . '.php',

@@ -14,12 +14,12 @@ class AIMS_Events_Overview_Page {
 	public function render(): void {
 		echo '<div class="wrap">';
 		echo '<h1>Events</h1>';
-		echo '<p>Events are the operational bridge between Square sales, runtime assignments, and physical inventory commitment.</p>';
-		echo '<ul style="list-style: disc; padding-left: 20px;">';
-		foreach ( $this->data_provider->get_outline() as $line ) {
-			echo '<li>' . esc_html( $line ) . '</li>';
-		}
-		echo '</ul>';
+
+		$events_widget = new AIMS_Admin_Events_Widget( new AIMS_Admin_Meta_Object( array(
+			'outline' => $this->data_provider->get_outline(),
+		) ) );
+		$events_widget->render();
+
 		echo '</div>';
 	}
 }
