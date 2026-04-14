@@ -6,6 +6,11 @@ namespace AIMS\Tests\Support;
 
 final class FakeWpdb {
 	public string $prefix;
+	public string $users;
+	public string $usermeta;
+	public string $posts;
+	public string $postmeta;
+	public string $options;
 	public int $insert_id = 0;
 	public string $last_query = '';
 	public array $last_prepare_args = array();
@@ -18,7 +23,12 @@ final class FakeWpdb {
 	private array $col_queue = array();
 
 	public function __construct( string $prefix = 'wp_' ) {
-		$this->prefix = $prefix;
+		$this->prefix   = $prefix;
+		$this->users    = $prefix . 'users';
+		$this->usermeta = $prefix . 'usermeta';
+		$this->posts    = $prefix . 'posts';
+		$this->postmeta = $prefix . 'postmeta';
+		$this->options  = $prefix . 'options';
 	}
 
 	public function reset(): void {

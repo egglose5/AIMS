@@ -5,15 +5,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class AIMS_Barcode_Scanner {
+	private $should_force_frontend_assets = false;
+
 	public function __construct() {
 		add_shortcode( 'aims_barcode_scan', array( $this, 'render_shortcode' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 	}
 
-	public function enqueue_assets( $hook ): void {
-		// Only enqueue on AIMS pages or if needed elsewhere
-		if ( strpos( $hook, 'aims' ) === false && strpos( $hook, 'toplevel_page_aims' ) === false ) {
-			// return;
+	public function enqueue_assets( $hook = '' ): void {
+		if ( ! $this->should_enqueue_assets( $hook ) ) {
+			return;
 		}
 
 		wp_enqueue_script( 'html5-qrcode', 'https://unpkg.com/html5-qrcode', array(), '2.3.8', true );
@@ -22,6 +24,9 @@ class AIMS_Barcode_Scanner {
 	}
 
 	public function render_shortcode( $atts ): string {
+		$this->should_force_frontend_assets = true;
+		$this->enqueue_assets();
+
 		$atts = shortcode_atts( array(
 			'target' => '',
 			'label'  => __( 'Scan', 'ai-man-sys' ),
@@ -37,5 +42,39 @@ class AIMS_Barcode_Scanner {
 			esc_attr( $atts['label'] ),
 			esc_html( $atts['label'] )
 		);
+	}
+
+	private function should_enqueue_assets( $hook = '' ): bool {
+		if ( function_exists( 'is_admin' ) && is_admin() ) {
+			$hook = (string) $hook;
+			if ( '' === $hook ) {
+				return true;
+			}
+
+			return false !== strpos( $hook, 'aims' ) || false !== strpos( $hook, 'toplevel_page_aims' );
+		}
+
+		if ( $this->should_force_frontend_assets ) {
+			return true;
+		}
+
+		if ( ! function_exists( 'is_singular' ) || ! is_singular() ) {
+			return false;
+		}
+
+		if ( ! function_exists( 'get_post' ) ) {
+			return false;
+		}
+
+		$post = get_post();
+		if ( ! is_object( $post ) || ! isset( $post->post_content ) ) {
+			return false;
+		}
+
+		if ( function_exists( 'has_shortcode' ) ) {
+			return has_shortcode( (string) $post->post_content, 'aims_barcode_scan' );
+		}
+
+		return false !== strpos( (string) $post->post_content, '[aims_barcode_scan' );
 	}
 }

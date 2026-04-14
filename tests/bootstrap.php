@@ -32,7 +32,13 @@ if ( ! defined( 'AIMS_PLUGIN_URL' ) ) {
 	define( 'AIMS_PLUGIN_URL', 'http://example.test/wp-content/plugins/ai-man-sys/' );
 }
 
-require_once $root . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php';
+$autoload = $root . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php';
+if ( file_exists( $autoload ) ) {
+	require_once $autoload;
+} else {
+	require_once $root . DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR . 'Support' . DIRECTORY_SEPARATOR . 'TestState.php';
+	require_once $root . DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR . 'Support' . DIRECTORY_SEPARATOR . 'FakeWpdb.php';
+}
 
 require_once AIMS_PLUGIN_PATH . 'includes/core/class-aims-loader.php';
 AIMS_Loader::init();
@@ -259,6 +265,24 @@ if ( ! function_exists( 'get_user_meta' ) ) {
 	}
 }
 
+if ( ! function_exists( 'update_user_meta' ) ) {
+	function update_user_meta( int $user_id, string $key, $value ) {
+		return \AIMS\Tests\Support\TestState::update_user_meta( $user_id, $key, $value );
+	}
+}
+
+if ( ! function_exists( 'delete_user_meta' ) ) {
+	function delete_user_meta( int $user_id, string $key ) {
+		return \AIMS\Tests\Support\TestState::delete_user_meta( $user_id, $key );
+	}
+}
+
+if ( ! function_exists( 'get_userdata' ) ) {
+	function get_userdata( int $user_id ) {
+		return \AIMS\Tests\Support\TestState::get_user_by( 'id', $user_id );
+	}
+}
+
 if ( ! function_exists( 'wp_get_current_user' ) ) {
 	function wp_get_current_user() {
 		return \AIMS\Tests\Support\TestState::current_user_object();
@@ -296,6 +320,13 @@ if ( ! function_exists( 'esc_html' ) ) {
 if ( ! function_exists( 'esc_html__' ) ) {
 	function esc_html__( string $text, string $domain = '' ): string {
 		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( '__' ) ) {
+	function __( string $text, string $domain = '' ): string {
+		unset( $domain );
+		return $text;
 	}
 }
 
@@ -475,14 +506,6 @@ if ( ! function_exists( 'apply_filters' ) ) {
 	}
 }
 
-if ( ! function_exists( 'add_filter' ) ) {
-	function add_filter( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): bool {
-		unset( $priority, $accepted_args );
-		\AIMS\Tests\Support\TestState::add_filter( $hook, $callback );
-		return true;
-	}
-}
-
 if ( ! function_exists( 'add_shortcode' ) ) {
 	function add_shortcode( string $tag, $callback ): void {
 		\AIMS\Tests\Support\TestState::record_hook_call(
@@ -492,6 +515,38 @@ if ( ! function_exists( 'add_shortcode' ) ) {
 				'callback' => $callback,
 			)
 		);
+	}
+}
+
+if ( ! function_exists( 'do_shortcode' ) ) {
+	function do_shortcode( $content ): string {
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			'do_shortcode',
+			array(
+				'content' => (string) $content,
+			)
+		);
+
+		return (string) $content;
+	}
+}
+
+if ( ! class_exists( 'WP_Widget' ) ) {
+	class WP_Widget {
+		public string $id_base;
+
+		public function __construct( string $id_base = '', string $name = '', array $widget_options = array(), array $control_options = array() ) {
+			unset( $name, $widget_options, $control_options );
+			$this->id_base = $id_base;
+		}
+
+		public function get_field_id( string $field_name ): string {
+			return $this->id_base . '-' . $field_name;
+		}
+
+		public function get_field_name( string $field_name ): string {
+			return $field_name;
+		}
 	}
 }
 
@@ -560,6 +615,17 @@ if ( ! function_exists( 'register_rest_route' ) ) {
 	}
 }
 
+if ( ! function_exists( 'register_widget' ) ) {
+	function register_widget( string $widget_class ): void {
+		\AIMS\Tests\Support\TestState::record_hook_call(
+			'register_widget',
+			array(
+				'widget_class' => $widget_class,
+			)
+		);
+	}
+}
+
 if ( ! function_exists( 'rest_ensure_response' ) ) {
 	function rest_ensure_response( $response ) {
 		return $response instanceof WP_REST_Response ? $response : new WP_REST_Response( $response );
@@ -576,6 +642,40 @@ if ( ! function_exists( 'add_menu_page' ) ) {
 	function add_menu_page( ...$args ) {
 		\AIMS\Tests\Support\TestState::record_hook_call( 'add_menu_page', $args );
 		return 'add_menu_page';
+	}
+}
+
+if ( ! function_exists( 'is_admin' ) ) {
+	function is_admin(): bool {
+		return false;
+	}
+}
+
+if ( ! function_exists( 'is_singular' ) ) {
+	function is_singular(): bool {
+		return true;
+	}
+}
+
+if ( ! function_exists( 'get_post' ) ) {
+	function get_post( $post = null ) {
+		unset( $post );
+
+		return (object) array(
+			'post_content' => '',
+		);
+	}
+}
+
+if ( ! function_exists( 'has_shortcode' ) ) {
+	function has_shortcode( string $content, string $tag ): bool {
+		return false !== strpos( $content, '[' . $tag );
+	}
+}
+
+if ( ! function_exists( 'site_url' ) ) {
+	function site_url( string $path = '' ): string {
+		return home_url( $path );
 	}
 }
 
@@ -663,6 +763,25 @@ if ( ! function_exists( 'submit_button' ) ) {
 	function submit_button( string $text = 'Save Changes', string $type = 'primary', string $name = 'submit', bool $wrap = true ): void {
 		$button = '<button type="submit" class="button button-' . htmlspecialchars( $type, ENT_QUOTES, 'UTF-8' ) . '" name="' . htmlspecialchars( $name, ENT_QUOTES, 'UTF-8' ) . '">' . htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' ) . '</button>';
 		echo $wrap ? '<p class="submit">' . $button . '</p>' : $button;
+	}
+}
+
+if ( ! function_exists( 'wp_enqueue_script' ) ) {
+	function wp_enqueue_script( ...$args ): void {
+		\AIMS\Tests\Support\TestState::record_hook_call( 'wp_enqueue_script', $args );
+	}
+}
+
+if ( ! function_exists( 'wp_enqueue_style' ) ) {
+	function wp_enqueue_style( ...$args ): void {
+		\AIMS\Tests\Support\TestState::record_hook_call( 'wp_enqueue_style', $args );
+	}
+}
+
+if ( ! function_exists( 'load_plugin_textdomain' ) ) {
+	function load_plugin_textdomain( string $domain, bool $deprecated = false, string $plugin_rel_path = '' ): bool {
+		unset( $domain, $deprecated, $plugin_rel_path );
+		return true;
 	}
 }
 

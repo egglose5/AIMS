@@ -374,6 +374,20 @@ final class TestState {
 		return $single ? $value : array( $value );
 	}
 
+	public static function update_user_meta( int $user_id, string $key, $value ): bool {
+		self::set_user_meta( $user_id, $key, $value );
+
+		return true;
+	}
+
+	public static function delete_user_meta( int $user_id, string $key ): bool {
+		if ( isset( self::$state['user_meta'][ $user_id ] ) && array_key_exists( $key, self::$state['user_meta'][ $user_id ] ) ) {
+			unset( self::$state['user_meta'][ $user_id ][ $key ] );
+		}
+
+		return true;
+	}
+
 	public static function set_product( int $product_id, $product ): void {
 		self::$state['products'][ $product_id ] = is_object( $product ) ? $product : (object) $product;
 	}

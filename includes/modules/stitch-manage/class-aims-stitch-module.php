@@ -14,6 +14,7 @@ class AIMS_Stitch_Module implements AIMS_Module {
 	private $workspace_data_provider;
 	private $label_template_service;
 	private $label_render_service;
+	private $stitch_portal_controller;
 
 	public function __construct(
 		$stitch_source = null,
@@ -28,10 +29,15 @@ class AIMS_Stitch_Module implements AIMS_Module {
 	}
 
 	public function register(): void {
+		add_action( 'init', array( $this, 'register_public_hooks' ) );
 		add_action( 'admin_post_aims_stitch_job_save_note', array( $this, 'handle_save_job_note' ) );
 		add_action( 'admin_post_aims_stitch_job_mark_reviewed', array( $this, 'handle_mark_job_reviewed' ) );
 		add_action( 'admin_post_' . self::LABEL_SETTINGS_ACTION, array( $this, 'handle_save_label_template_settings' ) );
 		add_action( 'admin_post_' . self::LABEL_PRINT_ACTION, array( $this, 'handle_print_stitch_labels' ) );
+	}
+
+	public function register_public_hooks(): void {
+		$this->get_stitch_portal_controller()->register();
 	}
 
 	public function render_shell(): void {
@@ -156,6 +162,14 @@ class AIMS_Stitch_Module implements AIMS_Module {
 		}
 
 		return $this->landing_data_provider;
+	}
+
+	private function get_stitch_portal_controller(): AIMS_Stitch_Portal_Controller {
+		if ( null === $this->stitch_portal_controller ) {
+			$this->stitch_portal_controller = new AIMS_Stitch_Portal_Controller();
+		}
+
+		return $this->stitch_portal_controller;
 	}
 
 	private function get_workspace_data_provider(): AIMS_Stitch_Workspace_Data_Provider {

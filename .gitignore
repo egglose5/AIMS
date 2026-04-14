@@ -6,4 +6,5 @@ vendor/
 composer.phar
 .phpunit.cache/
 *.log
+AIMS Local Repo.zip
 
