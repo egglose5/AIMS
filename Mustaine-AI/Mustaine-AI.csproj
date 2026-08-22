@@ -17,4 +17,9 @@
     <PackageReference Include="PdfPig" Version="0.1.15" />
     <PackageReference Include="MailKit" Version="4.17.0" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="Data/Schema/show-arm-baseline.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

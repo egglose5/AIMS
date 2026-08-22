@@ -284,6 +284,7 @@ if (builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
         // Self-heal critical columns in case migration history drifted from actual schema.
         await EnsureProductionQueueSchemaAsync(dbContext);
         await EnsureElementsSchemaAsync(dbContext);
+        await EnsureShowArmBaselineSchemaAsync(dbContext, app.Environment.ContentRootPath, app.Logger);
         await EnsureFulfillmentSchemaAsync(dbContext);
         await EnsureShowApplicationPlatformSchemaAsync(dbContext);
         await EnsureBrainCoreSchemaAsync(dbContext);
@@ -304,6 +305,7 @@ if (builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
         // Self-heal critical schema in case migration history drifted from the live database.
         await EnsureProductionQueueSchemaAsync(dbContext);
         await EnsureElementsSchemaAsync(dbContext);
+        await EnsureShowArmBaselineSchemaAsync(dbContext, app.Environment.ContentRootPath, app.Logger);
         await EnsureFulfillmentSchemaAsync(dbContext);
         await EnsureShowApplicationPlatformSchemaAsync(dbContext);
         await EnsureBrainCoreSchemaAsync(dbContext);
@@ -400,6 +402,64 @@ static async Task EnsureShowApplicationPlatformSchemaAsync(ApplicationDbContext 
         "ALTER TABLE IF EXISTS \"ShowApplications\" ADD COLUMN IF NOT EXISTS \"LastCheckedAt\" timestamp with time zone;"
     };
     foreach (var command in commands) await dbContext.Database.ExecuteSqlRawAsync(command);
+}
+
+static async Task EnsureShowArmBaselineSchemaAsync(
+    ApplicationDbContext dbContext,
+    string contentRootPath,
+    ILogger logger)
+{
+    var connection = dbContext.Database.GetDbConnection();
+    var openedConnection = false;
+    if (connection.State != System.Data.ConnectionState.Open)
+    {
+        await connection.OpenAsync();
+        openedConnection = true;
+    }
+
+    await using var countCommand = connection.CreateCommand();
+    countCommand.CommandText =
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name LIKE 'Show%';
+        """;
+
+    var existingShowTableCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync() ?? 0);
+    if (existingShowTableCount >= 25)
+    {
+        return;
+    }
+
+    if (existingShowTableCount != 0)
+    {
+        logger.LogWarning(
+            "Show Arm baseline schema repair skipped because a partial Show schema was detected ({ShowTableCount} tables).",
+            existingShowTableCount);
+        return;
+    }
+
+    var baselineScriptPath = Path.Combine(contentRootPath, "Data", "Schema", "show-arm-baseline.sql");
+    if (!File.Exists(baselineScriptPath))
+    {
+        logger.LogWarning(
+            "Show Arm baseline schema script was not found at {BaselineScriptPath}. Empty-database recovery cannot complete Show schema creation.",
+            baselineScriptPath);
+        return;
+    }
+
+    var baselineSql = await File.ReadAllTextAsync(baselineScriptPath);
+    await dbContext.Database.ExecuteSqlRawAsync(baselineSql);
+
+    if (openedConnection && connection.State == System.Data.ConnectionState.Open)
+    {
+        await connection.CloseAsync();
+    }
+
+    logger.LogInformation(
+        "Applied Show Arm baseline schema from {BaselineScriptPath} because the target database had no Show tables.",
+        baselineScriptPath);
 }
 
 static async Task EnsureFulfillmentSchemaAsync(ApplicationDbContext dbContext)

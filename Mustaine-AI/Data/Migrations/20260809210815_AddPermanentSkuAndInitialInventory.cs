@@ -47,44 +47,6 @@ namespace MustaineAI.Data.Migrations
                 maxLength: 40,
                 nullable: true);
 
-            migrationBuilder.AddColumn<string>(
-                name: "CombinationCategoryKeysCsv",
-                table: "FinishedGoodsTemplates",
-                type: "text",
-                nullable: true);
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "ShippingHeightInches",
-                table: "FinishedGoodsTemplates",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "ShippingLengthInches",
-                table: "FinishedGoodsTemplates",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "ShippingWeightOunces",
-                table: "FinishedGoodsTemplates",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "ShippingWidthInches",
-                table: "FinishedGoodsTemplates",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
-
             migrationBuilder.CreateTable(
                 name: "InventoryTransactions",
                 columns: table => new
@@ -189,25 +151,6 @@ namespace MustaineAI.Data.Migrations
                 name: "ProductTypeCode",
                 table: "SellableProducts");
 
-            migrationBuilder.DropColumn(
-                name: "CombinationCategoryKeysCsv",
-                table: "FinishedGoodsTemplates");
-
-            migrationBuilder.DropColumn(
-                name: "ShippingHeightInches",
-                table: "FinishedGoodsTemplates");
-
-            migrationBuilder.DropColumn(
-                name: "ShippingLengthInches",
-                table: "FinishedGoodsTemplates");
-
-            migrationBuilder.DropColumn(
-                name: "ShippingWeightOunces",
-                table: "FinishedGoodsTemplates");
-
-            migrationBuilder.DropColumn(
-                name: "ShippingWidthInches",
-                table: "FinishedGoodsTemplates");
         }
     }
 }

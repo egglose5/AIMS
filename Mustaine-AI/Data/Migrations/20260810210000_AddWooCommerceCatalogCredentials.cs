@@ -9,9 +9,17 @@ public partial class AddWooCommerceCatalogCredentials : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.AddColumn<string>(name: "StoreUrl", table: "WooCommerceConnectionSettings", type: "character varying(500)", maxLength: 500, nullable: true);
-        migrationBuilder.AddColumn<string>(name: "ConsumerKey", table: "WooCommerceConnectionSettings", type: "character varying(220)", maxLength: 220, nullable: true);
-        migrationBuilder.AddColumn<string>(name: "ConsumerSecret", table: "WooCommerceConnectionSettings", type: "text", nullable: true);
+        migrationBuilder.Sql(
+            """
+            ALTER TABLE IF EXISTS "WooCommerceConnectionSettings"
+            ADD COLUMN IF NOT EXISTS "StoreUrl" character varying(500);
+
+            ALTER TABLE IF EXISTS "WooCommerceConnectionSettings"
+            ADD COLUMN IF NOT EXISTS "ConsumerKey" character varying(220);
+
+            ALTER TABLE IF EXISTS "WooCommerceConnectionSettings"
+            ADD COLUMN IF NOT EXISTS "ConsumerSecret" text;
+            """);
     }
     protected override void Down(MigrationBuilder migrationBuilder)
     {

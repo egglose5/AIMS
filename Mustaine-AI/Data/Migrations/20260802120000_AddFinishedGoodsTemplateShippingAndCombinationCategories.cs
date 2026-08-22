@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -5,48 +6,30 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace MustaineAI.Data.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(ApplicationDbContext))]
+    [Migration("20260802120000_AddFinishedGoodsTemplateShippingAndCombinationCategories")]
     public partial class AddFinishedGoodsTemplateShippingAndCombinationCategories : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "CombinationCategoryKeysCsv",
-                table: "FinishedGoodsTemplates",
-                type: "text",
-                nullable: true);
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE IF EXISTS "FinishedGoodsTemplates"
+                ADD COLUMN IF NOT EXISTS "CombinationCategoryKeysCsv" text;
 
-            migrationBuilder.AddColumn<decimal>(
-                name: "ShippingHeightInches",
-                table: "FinishedGoodsTemplates",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
+                ALTER TABLE IF EXISTS "FinishedGoodsTemplates"
+                ADD COLUMN IF NOT EXISTS "ShippingHeightInches" numeric(10,2);
 
-            migrationBuilder.AddColumn<decimal>(
-                name: "ShippingLengthInches",
-                table: "FinishedGoodsTemplates",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
+                ALTER TABLE IF EXISTS "FinishedGoodsTemplates"
+                ADD COLUMN IF NOT EXISTS "ShippingLengthInches" numeric(10,2);
 
-            migrationBuilder.AddColumn<decimal>(
-                name: "ShippingWeightOunces",
-                table: "FinishedGoodsTemplates",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
+                ALTER TABLE IF EXISTS "FinishedGoodsTemplates"
+                ADD COLUMN IF NOT EXISTS "ShippingWeightOunces" numeric(10,2);
 
-            migrationBuilder.AddColumn<decimal>(
-                name: "ShippingWidthInches",
-                table: "FinishedGoodsTemplates",
-                type: "numeric(10,2)",
-                precision: 10,
-                scale: 2,
-                nullable: true);
+                ALTER TABLE IF EXISTS "FinishedGoodsTemplates"
+                ADD COLUMN IF NOT EXISTS "ShippingWidthInches" numeric(10,2);
+                """);
         }
 
         /// <inheritdoc />

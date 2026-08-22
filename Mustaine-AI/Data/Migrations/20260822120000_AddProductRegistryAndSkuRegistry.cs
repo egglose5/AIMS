@@ -15,6 +15,13 @@ namespace MustaineAI.Data.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
+                name: "SquareSku",
+                table: "SellableProducts",
+                type: "character varying(120)",
+                maxLength: 120,
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
                 name: "BarcodeValue",
                 table: "SellableProducts",
                 type: "character varying(160)",
@@ -191,6 +198,10 @@ namespace MustaineAI.Data.Migrations
 
             migrationBuilder.DropIndex(
                 name: "IX_SellableProducts_LifecycleStatus",
+                table: "SellableProducts");
+
+            migrationBuilder.DropColumn(
+                name: "SquareSku",
                 table: "SellableProducts");
 
             migrationBuilder.DropColumn(

@@ -11,12 +11,11 @@ namespace MustaineAI.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "Sku",
-                table: "ProductionQueueItems",
-                type: "character varying(120)",
-                maxLength: 120,
-                nullable: true);
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE IF EXISTS "ProductionQueueItems"
+                ADD COLUMN IF NOT EXISTS "Sku" character varying(120);
+                """);
         }
 
         /// <inheritdoc />

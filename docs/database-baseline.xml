@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseBaseline generatedAtUtc="2026-08-22T15:32:00Z">
+  <application name="Mustaine-AI" repositoryPath="/Users/jrmus/Documents/New project/AI-Pass-9-4-live-work">
+    <git commit="e6b32a41ed963127a34df063debf1d6c61476b80" branch="main" />
+    <project path="Mustaine-AI/Mustaine-AI.csproj" targetFramework="net10.0" />
+  </application>
+  <entityFramework>
+    <dbContext name="ApplicationDbContext" provider="PostgreSQL" providerInvariantName="Npgsql.EntityFrameworkCore.PostgreSQL">
+      <package name="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" version="10.0.8" />
+      <package name="Microsoft.AspNetCore.Identity.EntityFrameworkCore" version="10.0.8" />
+      <package name="Microsoft.EntityFrameworkCore.Design" version="10.0.8" />
+      <package name="Microsoft.EntityFrameworkCore.Tools" version="10.0.8" />
+      <package name="Npgsql.EntityFrameworkCore.PostgreSQL" version="10.0.0" />
+    </dbContext>
+    <startup providerRegistration="builder.Services.AddDbContext&lt;ApplicationDbContext&gt;(...UseNpgsql(...))" migrationsStrategy="EF Core code migrations plus verified live-schema compatibility checks" />
+  </entityFramework>
+  <migrations>
+    <sourcePresent>
+      <migration id="20260610144334_InitialCreate" />
+      <migration id="20260626033527_PersistSquareConnectionSettings" />
+      <migration id="20260626045834_AddEmployeeRosterEntries" />
+      <migration id="20260626132832_AddProductionMachines" />
+      <migration id="20260626135123_AddSellableProducts" />
+      <migration id="20260626140639_AddSellableProductElementsAndSquareCatalogSync" />
+      <migration id="20260626141237_RemoveSellableProductStandaloneClassification" />
+      <migration id="20260626142721_AddElementProductionMetadataAndSquareCategory" />
+      <migration id="20260626230425_AddSquareOrderMoneyBreakdown" />
+      <migration id="20260626235701_AddWooCommerceConnectionSettings" />
+      <migration id="20260627010549_AddStockConsumables" />
+      <migration id="20260710214703_AddProductionQueueItems" />
+      <migration id="20260710215057_AddProductionQueueItemQuantity" />
+      <migration id="20260710215858_AddProductionQueueFrontFaceTier" />
+      <migration id="20260710220449_AddProductionQueueFrontFaceColor" />
+      <migration id="20260711003202_AddFinishedGoodsTemplateAndPinnedElements" />
+      <migration id="20260711015246_AddFinishedGoodsManufacturingFiles" />
+      <migration id="20260727120000_AddProductionQueueSku" />
+      <migration id="20260802120000_AddFinishedGoodsTemplateShippingAndCombinationCategories" />
+      <migration id="20260809210815_AddPermanentSkuAndInitialInventory" />
+      <migration id="20260810210000_AddWooCommerceCatalogCredentials" />
+      <migration id="20260815210000_AddSquareShowOrderCapture" />
+      <migration id="20260816123000_AddArtworkSubcategories" />
+      <migration id="20260822120000_AddProductRegistryAndSkuRegistry" />
+      <migration id="20260822150914_AddNebulaRound2Workflow" />
+    </sourcePresent>
+    <productionHistoryBeforeRepair>
+      <migration id="20260610144334_InitialCreate" />
+      <migration id="20260626033527_PersistSquareConnectionSettings" />
+      <migration id="20260626045834_AddEmployeeRosterEntries" />
+      <migration id="20260626132832_AddProductionMachines" />
+      <migration id="20260626135123_AddSellableProducts" />
+      <migration id="20260626140639_AddSellableProductElementsAndSquareCatalogSync" />
+      <migration id="20260626141237_RemoveSellableProductStandaloneClassification" />
+      <migration id="20260626142721_AddElementProductionMetadataAndSquareCategory" />
+      <migration id="20260626230425_AddSquareOrderMoneyBreakdown" />
+      <migration id="20260626235701_AddWooCommerceConnectionSettings" />
+      <migration id="20260627010549_AddStockConsumables" />
+      <migration id="20260710214703_AddProductionQueueItems" />
+      <migration id="20260710215057_AddProductionQueueItemQuantity" />
+      <migration id="20260710215858_AddProductionQueueFrontFaceTier" />
+      <migration id="20260710220449_AddProductionQueueFrontFaceColor" />
+      <migration id="20260711003202_AddFinishedGoodsTemplateAndPinnedElements" />
+      <migration id="20260711015246_AddFinishedGoodsManufacturingFiles" />
+      <migration id="20260809210815_AddPermanentSkuAndInitialInventory" />
+      <migration id="20260822120000_AddProductRegistryAndSkuRegistry" />
+    </productionHistoryBeforeRepair>
+    <historicalDrift>
+      <migration id="20260727120000_AddProductionQueueSku" issue="Schema present in production but migration row missing from history before repair." />
+      <migration id="20260802120000_AddFinishedGoodsTemplateShippingAndCombinationCategories" issue="Overlaps later 20260809210815 finished-goods shipping columns; source replay needed de-duplication." />
+      <migration id="20260810210000_AddWooCommerceCatalogCredentials" issue="Schema present in production but migration row missing from history before repair." />
+      <migration id="20260815210000_AddSquareShowOrderCapture" issue="Schema present in production but migration row missing from history before repair; this was the first live startup blocker." />
+      <migration id="20260816123000_AddArtworkSubcategories" issue="Table present in production but migration row missing from history before repair." />
+      <migration id="20260822120000_AddProductRegistryAndSkuRegistry" issue="Round 1 migration required explicit SquareSku creation for pristine replay." />
+      <migration id="20260822150914_AddNebulaRound2Workflow" issue="Nebula tables existed in production via compatibility creation path before history reconciliation." />
+    </historicalDrift>
+  </migrations>
+  <schema>
+    <importantTables>
+      <table name="SellableProducts" />
+      <table name="SellableProductElements" />
+      <table name="SkuRegistryEntries" />
+      <table name="PermanentSkuSequences" />
+      <table name="InventoryTransactions" />
+      <table name="ProductionQueueItems" />
+      <table name="WooCommerceConnectionSettings" />
+      <table name="SquareSales" />
+      <table name="SquareSaleLineItems" />
+      <table name="ArtworkSubcategories" />
+    </importantTables>
+    <nebulaTables>
+      <table name="ProductFamilyTemplates" />
+      <table name="ProductFamilyVariantOptions" />
+      <table name="ProductArtworks" />
+      <table name="NebulaCreationBatches" />
+      <table name="NebulaCreationBatchVariants" />
+    </nebulaTables>
+    <compatibilityExceptions>
+      <exception code="LIVE_SCHEMA_DRIFT" detail="Production schema contained verified changes not fully reflected in __EFMigrationsHistory." />
+      <exception code="PRISTINE_REPLAY_GAPS" detail="Historical overlap and missing SquareSku creation required targeted repair for reliable empty-database reconstruction." />
+      <exception code="SHOW_ARM_BASELINE_SCRIPT" detail="Current empty-database recovery also applies the published Show Arm baseline SQL when no Show tables exist, because those tables are outside the historical ApplicationDbContext migration chain." />
+      <exception code="NO_DROP_RECREATE" detail="Production data must not be dropped or recreated during baseline repair." />
+    </compatibilityExceptions>
+  </schema>
+  <baselineStrategy>
+    <production>Verify schema objects first, then reconcile only missing migration-history rows whose schema already exists.</production>
+    <forwardMigrations>Use normal forward-only EF Core migrations after baseline reconciliation.</forwardMigrations>
+    <recovery>Reconstruct new databases from the repaired migration chain, then apply the published Show Arm baseline SQL automatically when the target database has no Show tables.</recovery>
+    <warning>No passwords, tokens, connection strings with credentials, or mailbox secrets are stored in this manifest.</warning>
+  </baselineStrategy>
+</databaseBaseline>

@@ -8,25 +8,17 @@ namespace MustaineAI.Data.Migrations
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "CustomerId",
-                table: "SquareSales",
-                type: "character varying(192)",
-                maxLength: 192,
-                nullable: true);
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE IF EXISTS "SquareSales"
+                ADD COLUMN IF NOT EXISTS "CustomerId" character varying(192);
 
-            migrationBuilder.AddColumn<string>(
-                name: "Note",
-                table: "SquareSaleLineItems",
-                type: "character varying(2000)",
-                maxLength: 2000,
-                nullable: true);
+                ALTER TABLE IF EXISTS "SquareSaleLineItems"
+                ADD COLUMN IF NOT EXISTS "Note" character varying(2000);
 
-            migrationBuilder.AddColumn<string>(
-                name: "ModifiersJson",
-                table: "SquareSaleLineItems",
-                type: "text",
-                nullable: true);
+                ALTER TABLE IF EXISTS "SquareSaleLineItems"
+                ADD COLUMN IF NOT EXISTS "ModifiersJson" text;
+                """);
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
