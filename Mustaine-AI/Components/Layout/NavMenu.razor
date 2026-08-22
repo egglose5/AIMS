@@ -14,142 +14,37 @@
     <nav class="nav flex-column">
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Dashboard
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="stock-and-consumables">
-                <span class="bi bi-box-seam-nav-menu" aria-hidden="true"></span> Raw Materials
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="elements">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Elements
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="finished-goods">
-                <span class="bi bi-box-seam-nav-menu" aria-hidden="true"></span> Finished Goods
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="products">
-                <span class="bi bi-tags-nav-menu" aria-hidden="true"></span> Products
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="initial-inventory">
-                <span class="bi bi-upc-scan-nav-menu" aria-hidden="true"></span> Inventory
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="production">
-                <span class="bi bi-tools-nav-menu" aria-hidden="true"></span> Production
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="purchase-orders">
-                <span class="bi bi-box-seam-nav-menu" aria-hidden="true"></span> Purchase Orders
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="sales">
-                <span class="bi bi-graph-up-arrow-nav-menu" aria-hidden="true"></span> Square Sales
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="fulfillment">
-                <span class="bi bi-box-seam-nav-menu" aria-hidden="true"></span> Fulfillment
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="brain-core">
-                <span class="bi bi-cpu-nav-menu" aria-hidden="true"></span> Brain Core
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="scout-discovery">
-                <span class="bi bi-search" aria-hidden="true"></span> Scout Discovery
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="scout-research">
-                <span class="bi bi-search" aria-hidden="true"></span> Scout Research
-            </NavLink>
-        </div>
-
-<div class="nav-item px-3">
-            <NavLink class="nav-link" href="show-brain">
-                <span class="bi bi-lightbulb-nav-menu" aria-hidden="true"></span> Show Brain
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="shows">
-                <span class="bi bi-calendar-event-nav-menu" aria-hidden="true"></span> Show Arm
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <a class="nav-link" href="/vendor-shows">
-                <span class="bi bi-person-workspace-nav-menu" aria-hidden="true"></span> Vendor Shows
-            </a>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="brain-communications">
-                <span class="bi bi-envelope-paper-nav-menu" aria-hidden="true"></span> Brain Communications
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="show-inbox">
-                <span class="bi bi-envelope-nav-menu" aria-hidden="true"></span> Show Inbox
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="show-orders">
-                <span class="bi bi-clipboard-check-nav-menu" aria-hidden="true"></span> Show Orders
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="online-orders">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Online Orders
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="employees">
-                <span class="bi bi-people-fill-nav-menu" aria-hidden="true"></span> Employees
-            </NavLink>
-        </div>
-<div class="nav-item px-3">
-            <NavLink class="nav-link" href="catalog-audit">
-                <span class="bi bi-search-nav-menu" aria-hidden="true"></span> Website Coverage
-            </NavLink>
-        </div>
-<div class="nav-item px-3">
-            <NavLink class="nav-link" href="settings">
-                <span class="bi bi-gear-fill-nav-menu" aria-hidden="true"></span> Settings
-            </NavLink>
-        </div>
+        @foreach (var section in Sections)
+        {
+            <details class="nav-section" open="@IsSectionOpen(section)">
+                <summary class="nav-section-summary px-3">@section.Title</summary>
+                @foreach (var item in section.Items)
+                {
+                    <div class="nav-item nav-item-child px-3">
+                        @if (item.IsPlainAnchor)
+                        {
+                            <a class="nav-link" href="@item.Href">
+                                <span class="@item.IconClass" aria-hidden="true"></span> @item.Label
+                            </a>
+                        }
+                        else
+                        {
+                            <NavLink class="nav-link" href="@item.Href" Match="@item.Match">
+                                <span class="@item.IconClass" aria-hidden="true"></span> @item.Label
+                            </NavLink>
+                        }
+                    </div>
+                }
+            </details>
+        }
 
         <AuthorizeView>
             <Authorized>
-                <div class="nav-item px-3">
+                <div class="nav-item px-3 nav-auth">
                     <form action="Account/Logout" method="post">
                         <AntiforgeryToken />
                         <input type="hidden" name="ReturnUrl" value="@currentUrl" />
@@ -160,23 +55,86 @@
                 </div>
             </Authorized>
             <NotAuthorized>
-                <div class="nav-item px-3">
+                <div class="nav-item px-3 nav-auth">
                     <NavLink class="nav-link" href="Account/Login">
                         <span class="bi bi-person-badge-nav-menu" aria-hidden="true"></span> Login
                     </NavLink>
                 </div>
             </NotAuthorized>
         </AuthorizeView>
-</nav>
+    </nav>
 </div>
 
 @code {
     private string? currentUrl;
 
+    private IReadOnlyList<NavSection> Sections => navSections;
+
+    private static readonly IReadOnlyList<NavSection> navSections =
+    [
+        new("Mercury", "/brain-core", [
+            new("Core", "brain-core", "bi bi-cpu-nav-menu"),
+            new("Communications", "brain-communications", "bi bi-envelope-paper-nav-menu"),
+            new("Email Hub", "email-hub", "bi bi-envelope-nav-menu")
+        ]),
+        new("Nebula", "/products", [
+            new("Catalog & Creation", "products", "bi bi-tags-nav-menu")
+        ]),
+        new("Stash", "/initial-inventory", [
+            new("Inventory + Barcodes", "initial-inventory", "bi bi-upc-scan-nav-menu"),
+            new("Raw Materials", "stock-and-consumables", "bi bi-box-seam-nav-menu"),
+            new("Elements", "elements", "bi bi-list-nested-nav-menu"),
+            new("Finished Goods", "finished-goods", "bi bi-box-seam-nav-menu"),
+            new("Purchase Orders", "purchase-orders", "bi bi-box-seam-nav-menu")
+        ]),
+        new("Dynamo", "/production", [
+            new("Production Queue", "production", "bi bi-tools-nav-menu"),
+            new("Stitch Orders", "stitch-orders", "bi bi-tools-nav-menu")
+        ]),
+        new("Dash", "/fulfillment", [
+            new("Fulfillment", "fulfillment", "bi bi-box-seam-nav-menu"),
+            new("Show Orders", "show-orders", "bi bi-clipboard-check-nav-menu"),
+            new("Online Orders", "online-orders", "bi bi-list-nested-nav-menu"),
+            new("Square Sales", "sales", "bi bi-graph-up-arrow-nav-menu")
+        ]),
+        new("Lynks", "/shows", [
+            new("Show Operations", "shows", "bi bi-calendar-event-nav-menu"),
+            new("Show Inbox", "show-inbox", "bi bi-envelope-nav-menu"),
+            new("Vendor Schedule", "vendor-shows", "bi bi-person-workspace-nav-menu"),
+            new("Vendor Login", "vendor-login", "bi bi-person-badge-nav-menu", IsPlainAnchor: true)
+        ]),
+        new("Scout", "/scout-discovery", [
+            new("Discovery", "scout-discovery", "bi bi-search"),
+            new("Research", "scout-research", "bi bi-search"),
+            new("Show Brain", "show-brain", "bi bi-lightbulb-nav-menu")
+        ]),
+        new("Picasso", "/catalog-audit", [
+            new("Website Coverage", "catalog-audit", "bi bi-search-nav-menu")
+        ]),
+        new("Control", "/settings", [
+            new("Settings", "settings", "bi bi-gear-fill-nav-menu"),
+            new("Square Control", "square-control", "bi bi-gear-fill-nav-menu"),
+            new("Employees", "employees", "bi bi-people-fill-nav-menu"),
+            new("Auth Check", "auth", "bi bi-person-fill-nav-menu")
+        ])
+    ];
+
     protected override void OnInitialized()
     {
         currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
         NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private bool IsSectionOpen(NavSection section)
+    {
+        var relativePath = NormalizePath(currentUrl);
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            return false;
+        }
+
+        return section.Items.Any(item => relativePath.Equals(NormalizePath(item.Href), StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith($"{NormalizePath(item.Href)}/", StringComparison.OrdinalIgnoreCase));
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -185,8 +143,20 @@
         StateHasChanged();
     }
 
+    private static string NormalizePath(string? path)
+        => (path ?? string.Empty).Trim('/').Split('?', '#')[0];
+
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
     }
+
+    private sealed record NavSection(string Title, string RootPath, IReadOnlyList<NavItem> Items);
+
+    private sealed record NavItem(
+        string Label,
+        string Href,
+        string IconClass,
+        bool IsPlainAnchor = false,
+        NavLinkMatch Match = NavLinkMatch.Prefix);
 }

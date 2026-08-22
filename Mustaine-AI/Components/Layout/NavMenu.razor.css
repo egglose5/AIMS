@@ -117,6 +117,38 @@
     color: white;
 }
 
+.nav-section {
+    margin: 0;
+    padding: 0.35rem 0 0.15rem;
+}
+
+.nav-section-summary {
+    color: rgba(255, 255, 255, 0.72);
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    list-style: none;
+    padding-bottom: 0.35rem;
+    text-transform: uppercase;
+}
+
+.nav-section-summary::-webkit-details-marker {
+    display: none;
+}
+
+.nav-section[open] > .nav-section-summary {
+    color: white;
+}
+
+.nav-item-child {
+    padding-left: 1.75rem;
+}
+
+.nav-auth {
+    margin-top: 0.25rem;
+}
+
 .nav-scrollable {
     display: none;
 }

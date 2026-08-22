@@ -8,11 +8,11 @@
 @inject IBrainReasoningService Reasoning
 @inject IBrainDecisionLearningService DecisionLearning
 
-<PageTitle>Brain Core</PageTitle>
+<PageTitle>Mercury</PageTitle>
 
 <div class="shows-hero">
-    <p class="shows-eyebrow">Ancient Innovations Brain</p>
-    <h1>Brain Core</h1>
+    <p class="shows-eyebrow">Mercury · Ancient Innovations Brain</p>
+    <h1>Mercury</h1>
     <p>The permanent governance, memory, learning and controlled tool-access layer. Models and runtimes are replaceable; Ancient Innovations owns the memory, permissions, evidence and decisions.</p>
 </div>
 
@@ -22,7 +22,7 @@
 }
 else if (_loading)
 {
-    <p>Loading Brain Core…</p>
+    <p>Loading Mercury…</p>
 }
 else
 {
@@ -280,7 +280,7 @@ else
     </section>
 
     <section class="shows-card mt-3">
-        <div class="shows-card-head"><div><h2>What Brain Core deliberately does not do</h2><p>The Brain now has a governed tool gateway, but no external autonomous runtime has been connected yet.</p></div></div>
+        <div class="shows-card-head"><div><h2>What Mercury deliberately does not do</h2><p>The Brain now has a governed tool gateway, but no external autonomous runtime has been connected yet.</p></div></div>
         <p class="mb-0">B3 does not install or connect Hermes yet. It proves the boundary Hermes must use: registered tools only, capability checks first, human gates where explicitly allowed, and audit records for every request. Applications, spending, vendor assignment and raw database access remain denied.</p>
     </section>
 }
@@ -315,7 +315,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         try { await ReloadAsync(); }
-        catch (Exception ex) { _error = $"Brain Core could not initialize: {ex.Message}"; }
+        catch (Exception ex) { _error = $"Mercury could not initialize: {ex.Message}"; }
         finally { _loading = false; }
     }
 
