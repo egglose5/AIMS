@@ -1,20 +1,22 @@
 @page "/products"
 @rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Forms
 @using MustaineAI.Services
 @inject IProductRegistryService ProductRegistry
+@inject INebulaAssetStorageService NebulaAssetStorage
 
 <PageTitle>Products</PageTitle>
 
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
         <div>
-            <p class="text-uppercase small text-secondary fw-semibold mb-1">Product registry</p>
+            <p class="text-uppercase small text-secondary fw-semibold mb-1">Nebula</p>
             <h1 class="mb-2">Products</h1>
-            <p class="text-body-secondary mb-0">Square remains the commerce source of truth. This registry manages sellable variant SKU assignment in the existing Square convention, plus draft intake before downstream sync.</p>
+            <p class="text-body-secondary mb-0">Create artwork, variants, and reusable family defaults inside the live Control App. Square SKUs stay in the verified 4-digit convention, and each sellable variant keeps its own identity.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-secondary" @onclick="RefreshWorkspaceAsync" disabled="@_loading">@(_loading ? "Refreshing…" : "Refresh Nebula")</button>
             <button class="btn btn-outline-secondary" @onclick="RefreshReconciliationAsync" disabled="@_reconLoading">@(_reconLoading ? "Refreshing…" : "Refresh Square Reconciliation")</button>
-            <button class="btn btn-primary" @onclick="ToggleComposer">@(ShowComposer ? "Close Add Product" : "+ Add Product")</button>
         </div>
     </div>
 
@@ -23,88 +25,342 @@
         <div class="alert @(_hasError ? "alert-danger" : "alert-success")">@_message</div>
     }
 
-    @if (_dashboard is null)
+    @if (_workspace is null)
     {
-        <div class="alert alert-info">Loading product registry…</div>
+        <div class="alert alert-info">Loading Nebula…</div>
     }
     else
     {
+        var dashboard = _workspace.Dashboard;
+
         <div class="row g-3 mb-4">
-            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Products</div><div class="fs-2 fw-bold">@_dashboard.TotalProducts</div></div></div></div>
-            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Drafts</div><div class="fs-2 fw-bold">@_dashboard.DraftProducts</div></div></div></div>
-            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Active</div><div class="fs-2 fw-bold">@_dashboard.ActiveProducts</div></div></div></div>
-            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Mapped to Square</div><div class="fs-2 fw-bold">@_dashboard.SquareMappedProducts</div></div></div></div>
-            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Reserved SKUs</div><div class="fs-2 fw-bold">@_dashboard.ReservedSkuCount</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Products</div><div class="fs-2 fw-bold">@dashboard.TotalProducts</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Drafts</div><div class="fs-2 fw-bold">@dashboard.DraftProducts</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Active</div><div class="fs-2 fw-bold">@dashboard.ActiveProducts</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Mapped to Square</div><div class="fs-2 fw-bold">@dashboard.SquareMappedProducts</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Reserved SKUs</div><div class="fs-2 fw-bold">@dashboard.ReservedSkuCount</div></div></div></div>
         </div>
 
-        @if (ShowComposer)
-        {
-            <section class="card p-3 mb-4">
-                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-3">
-                    <div>
-                        <h2 class="h4 mb-1">Add Product</h2>
-                        <p class="text-body-secondary mb-0">Round 1 intake creates a safe draft product, verifies the live SKU registry, and assigns the next valid Square SKU without manual guessing.</p>
-                    </div>
-                    <span class="badge text-bg-secondary">Status on save: Draft</span>
+        <section class="card p-3 mb-4">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+                <div>
+                    <h2 class="h4 mb-1">+ Add Product</h2>
+                    <p class="text-body-secondary mb-0">Choose the fastest path. Nebula keeps the decisions short and pulls defaults from the family/template layer whenever possible.</p>
                 </div>
+                <span class="badge text-bg-secondary">Round 2 operational workflow</span>
+            </div>
 
-                <EditForm Model="_input" OnValidSubmit="CreateDraftAsync">
+            <div class="d-flex gap-2 flex-wrap mb-4">
+                <button class="btn @(FlowButton("NEW_ARTWORK"))" @onclick="@(() => SetFlow("NEW_ARTWORK"))">New Artwork / Design</button>
+                <button class="btn @(FlowButton("NEW_PRODUCT"))" @onclick="@(() => SetFlow("NEW_PRODUCT"))">New Product</button>
+                <button class="btn @(FlowButton("NEW_FAMILY"))" @onclick="@(() => SetFlow("NEW_FAMILY"))">New Product Family</button>
+                <button class="btn @(FlowButton("DUPLICATE"))" @onclick="@(() => SetFlow("DUPLICATE"))">Duplicate Existing Product</button>
+            </div>
+
+            @if (_activeFlow == "NEW_ARTWORK")
+            {
+                <EditForm Model="_artworkInput" OnValidSubmit="SubmitArtworkAsync">
                     <DataAnnotationsValidator />
                     <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Product name</label>
-                            <InputText class="form-control" @bind-Value="_input.ProductName" />
+                        <div class="col-lg-4">
+                            <label class="form-label">Artwork / design name</label>
+                            <InputText class="form-control" @bind-Value="_artworkInput.ArtworkName" />
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Product family / category</label>
-                            <InputText class="form-control" @bind-Value="_input.ProductFamily" list="product-family-options" />
-                            <datalist id="product-family-options">
-                                @foreach (var option in _dashboard.FamilyOptions)
+                        <div class="col-lg-4">
+                            <label class="form-label">Artwork asset upload</label>
+                            <InputFile class="form-control" OnChange="OnArtworkDesignFileChanged" accept=".jpg,.jpeg,.png,.webp" />
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Product image upload</label>
+                            <InputFile class="form-control" OnChange="OnArtworkProductImageChanged" accept=".jpg,.jpeg,.png,.webp" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Product types / families</label>
+                            <div class="row g-2">
+                                @foreach (var family in _workspace.FamilyTemplates)
                                 {
-                                    <option value="@option"></option>
+                                    <div class="col-md-6 col-xl-4">
+                                        <label class="border rounded p-2 d-block">
+                                            <input class="form-check-input me-2" type="checkbox" checked="@_artworkInput.FamilyKeys.Contains(family.FamilyKey)" @onchange="args => ToggleArtworkFamily(family.FamilyKey, args.Value as bool? == true)" />
+                                            <span class="fw-semibold">@family.FamilyName</span>
+                                            <span class="small text-body-secondary d-block">@((family.ProductTypeCode ?? "—")) · @VariantPreview(family)</span>
+                                        </label>
+                                    </div>
                                 }
-                            </datalist>
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Design / artwork name</label>
-                            <InputText class="form-control" @bind-Value="_input.DesignName" />
+                        <div class="col-12">
+                            <label class="form-label">Listing notes / overrides</label>
+                            <InputText class="form-control" @bind-Value="_artworkInput.Notes" />
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Production family</label>
-                            <InputText class="form-control" @bind-Value="_input.ProductionFamily" />
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Price (USD)</label>
-                            <InputNumber class="form-control" @bind-Value="_input.Price" />
-                        </div>
-                        <div class="col-md-8">
-                            <label class="form-label">Notes</label>
-                            <InputText class="form-control" @bind-Value="_input.Notes" />
+                        <div class="col-12 form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="_artworkInput.SyncToSquare" />
+                            <label class="form-check-label">Create Square catalog records now</label>
                         </div>
                     </div>
-
                     <div class="d-flex gap-2 mt-3">
-                        <button class="btn btn-primary" type="submit" disabled="@_saving">@(_saving ? "Saving…" : "Save Draft Product")</button>
-                        <button class="btn btn-outline-secondary" type="button" @onclick="ResetComposer">Clear</button>
+                        <button class="btn btn-primary" type="submit" disabled="@_saving">@(_saving ? "Creating…" : "Create Artwork Variants")</button>
+                        <button class="btn btn-outline-secondary" type="button" @onclick="ResetArtworkForm">Clear</button>
                     </div>
                 </EditForm>
-
-                @if (_createdResult is not null)
-                {
-                    <div class="alert alert-success mt-3 mb-0">
-                        <div class="fw-semibold">Product saved</div>
-                        <div>Assigned Square SKU: @_createdResult.AssignedSku</div>
-                        <div>Status: @_createdResult.Status</div>
+            }
+            else if (_activeFlow == "NEW_PRODUCT")
+            {
+                <EditForm Model="_productInput" OnValidSubmit="SubmitProductAsync">
+                    <DataAnnotationsValidator />
+                    <div class="row g-3">
+                        <div class="col-lg-4">
+                            <label class="form-label">Product name</label>
+                            <InputText class="form-control" @bind-Value="_productInput.ProductName" />
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Family</label>
+                            <InputSelect class="form-select" @bind-Value="_productInput.FamilyKey" @bind-Value:after="OnProductFamilyChangedAsync">
+                                <option value="">Select a family…</option>
+                                @foreach (var family in _workspace.FamilyTemplates)
+                                {
+                                    <option value="@family.FamilyKey">@family.FamilyName (@family.ProductTypeCode)</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Artwork name if applicable</label>
+                            <InputText class="form-control" @bind-Value="_productInput.ArtworkName" />
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label">Price override (USD)</label>
+                            <InputNumber class="form-control" @bind-Value="_productInput.PriceOverride" />
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Artwork asset upload</label>
+                            <InputFile class="form-control" OnChange="OnProductDesignFileChanged" accept=".jpg,.jpeg,.png,.webp" />
+                        </div>
+                        <div class="col-lg-5">
+                            <label class="form-label">Product image upload</label>
+                            <InputFile class="form-control" OnChange="OnProductProductImageChanged" accept=".jpg,.jpeg,.png,.webp" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Variants to create</label>
+                            @if (SelectedProductFamily is null)
+                            {
+                                <div class="text-body-secondary small">Pick a family first.</div>
+                            }
+                            else if (SelectedProductFamily.VariantOptions.Count == 0)
+                            {
+                                <div class="text-body-secondary small">This family currently creates one Regular variant.</div>
+                            }
+                            else
+                            {
+                                <div class="row g-2">
+                                    @foreach (var option in SelectedProductFamily.VariantOptions.OrderBy(x => x.SortOrder))
+                                    {
+                                        <div class="col-md-4">
+                                            <label class="border rounded p-2 d-block">
+                                                <input class="form-check-input me-2" type="checkbox" checked="@_productInput.SelectedVariantCodes.Contains(option.OptionCode)" @onchange="args => ToggleProductVariant(option.OptionCode, args.Value as bool? == true)" />
+                                                <span class="fw-semibold">@option.OptionName</span>
+                                                <span class="small text-body-secondary d-block">@option.OptionCode</span>
+                                            </label>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notes</label>
+                            <InputText class="form-control" @bind-Value="_productInput.Notes" />
+                        </div>
+                        <div class="col-12 form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="_productInput.SyncToSquare" />
+                            <label class="form-check-label">Create Square catalog records now</label>
+                        </div>
                     </div>
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-primary" type="submit" disabled="@_saving">@(_saving ? "Creating…" : "Create Product")</button>
+                        <button class="btn btn-outline-secondary" type="button" @onclick="ResetProductForm">Clear</button>
+                    </div>
+                </EditForm>
+            }
+            else if (_activeFlow == "NEW_FAMILY")
+            {
+                <EditForm Model="_familyInput" OnValidSubmit="SubmitFamilyAsync">
+                    <DataAnnotationsValidator />
+                    <div class="row g-3">
+                        <div class="col-lg-4">
+                            <label class="form-label">Family name</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.FamilyName" />
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Product type code</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.ProductTypeCode" />
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Production family</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.ProductionFamily" />
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Square category</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.SquareCategoryName" />
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Woo category</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.WooCategoryName" />
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Default price (USD)</label>
+                            <InputNumber class="form-control" @bind-Value="_familyInput.DefaultPrice" />
+                        </div>
+                        <div class="col-lg-6">
+                            <label class="form-label">Variant options</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.VariantOptionsText" />
+                            <div class="form-text">Use `BK:Black, BR:Brown` style entries.</div>
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label">Tax behavior</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.TaxBehavior" />
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label">Fulfillment model</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.FulfillmentModel" />
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label">Shipping length</label>
+                            <InputNumber class="form-control" @bind-Value="_familyInput.ShippingLengthInches" />
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label">Shipping width</label>
+                            <InputNumber class="form-control" @bind-Value="_familyInput.ShippingWidthInches" />
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label">Shipping height</label>
+                            <InputNumber class="form-control" @bind-Value="_familyInput.ShippingHeightInches" />
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label">Shipping weight oz</label>
+                            <InputNumber class="form-control" @bind-Value="_familyInput.ShippingWeightOunces" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Default description</label>
+                            <InputText class="form-control" @bind-Value="_familyInput.DefaultDescription" />
+                        </div>
+                        <div class="col-12 d-flex gap-3 flex-wrap">
+                            <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_familyInput.SellInPerson" /> <span class="form-check-label">Sell in person</span></label>
+                            <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_familyInput.SellOnline" /> <span class="form-check-label">Sell online</span></label>
+                            <label class="form-check"><InputCheckbox class="form-check-input" @bind-Value="_familyInput.TrackInventory" /> <span class="form-check-label">Track inventory</span></label>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-primary" type="submit" disabled="@_saving">@(_saving ? "Saving…" : "Save Product Family")</button>
+                        <button class="btn btn-outline-secondary" type="button" @onclick="ResetFamilyForm">Clear</button>
+                    </div>
+                </EditForm>
+            }
+            else if (_activeFlow == "DUPLICATE")
+            {
+                <EditForm Model="_duplicateInput" OnValidSubmit="SubmitDuplicateAsync">
+                    <DataAnnotationsValidator />
+                    <div class="row g-3">
+                        <div class="col-lg-5">
+                            <label class="form-label">Source product</label>
+                            <InputSelect class="form-select" @bind-Value="_duplicateSourceId">
+                                <option value="">Select a product…</option>
+                                @foreach (var product in dashboard.Products.Take(100))
+                                {
+                                    <option value="@product.Id.ToString()">@product.Name (@VariantLabel(product))</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">New product name</label>
+                            <InputText class="form-control" @bind-Value="_duplicateInput.NewProductName" />
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label">New artwork name</label>
+                            <InputText class="form-control" @bind-Value="_duplicateInput.ArtworkName" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notes</label>
+                            <InputText class="form-control" @bind-Value="_duplicateInput.Notes" />
+                        </div>
+                        <div class="col-12 form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="_duplicateInput.SyncToSquare" />
+                            <label class="form-check-label">Create Square catalog record now</label>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-primary" type="submit" disabled="@_saving">@(_saving ? "Duplicating…" : "Duplicate Product")</button>
+                        <button class="btn btn-outline-secondary" type="button" @onclick="ResetDuplicateForm">Clear</button>
+                    </div>
+                </EditForm>
+            }
+        </section>
+
+        <section class="card mb-4">
+            <div class="card-header">
+                <strong>Recent Nebula batches</strong>
+                <div class="small text-body-secondary">Each row shows the per-variant creation state so failed Square work can be retried without reusing SKUs.</div>
+            </div>
+            <div class="card-body">
+                @if (_workspace.RecentBatches.Count == 0)
+                {
+                    <div class="text-body-secondary">No Nebula batches yet.</div>
                 }
-            </section>
-        }
+                else
+                {
+                    @foreach (var batch in _workspace.RecentBatches)
+                    {
+                        <div class="border rounded p-3 mb-3">
+                            <div class="d-flex justify-content-between gap-3 flex-wrap align-items-start">
+                                <div>
+                                    <div class="fw-semibold">@batch.RequestedName</div>
+                                    <div class="small text-body-secondary">@batch.WorkflowType · @batch.CreatedAt.ToLocalTime().ToString("g") · @batch.OperationKey</div>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge @BatchBadge(batch.Status)">@batch.Status</span>
+                                    @if (batch.Variants.Any(x => x.RetryAllowed))
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => RetryBatchAsync(batch.BatchId)">Retry Failed</button>
+                                    }
+                                </div>
+                            </div>
+                            <div class="table-responsive mt-3">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Variant</th>
+                                            <th>Square SKU</th>
+                                            <th>Status</th>
+                                            <th>Square IDs</th>
+                                            <th>Error</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var variant in batch.Variants)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold">@variant.ProductName</div>
+                                                    <div class="small text-body-secondary">@BuildVariantLabel(variant.ProductTypeCode, variant.LeatherCode)</div>
+                                                </td>
+                                                <td>@(variant.ReservedSquareSku ?? "Pending")</td>
+                                                <td><span class="badge @VariantBadge(variant.Status)">@variant.Status</span></td>
+                                                <td class="small text-body-secondary">@(string.IsNullOrWhiteSpace(variant.SquareCatalogVariationId) ? (variant.SquareCatalogItemId ?? "—") : $"{variant.SquareCatalogItemId} / {variant.SquareCatalogVariationId}")</td>
+                                                <td class="small text-body-secondary">@(variant.LastError ?? "—")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </section>
 
         <section class="card mb-4">
             <div class="card-header d-flex justify-content-between gap-2 flex-wrap">
                 <div>
                     <strong>Registry products</strong>
-                    <div class="small text-body-secondary">Newest 200 products from the live Control App registry.</div>
+                    <div class="small text-body-secondary">Newest 200 sellable variants in the live Control App registry.</div>
                 </div>
                 <input class="form-control form-control-sm" style="max-width: 280px;" placeholder="Filter products…" @bind="_filter" @bind:event="oninput" />
             </div>
@@ -175,88 +431,6 @@
                         <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Safe matches</div><div class="fs-4 fw-bold">@_reconciliation.SafeMatchCount</div></div></div>
                         <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Conflicts</div><div class="fs-4 fw-bold">@_reconciliation.ConflictCount</div></div></div>
                     </div>
-
-                    <div class="row g-3">
-                        <div class="col-lg-6">
-                            <h3 class="h6">Duplicate SKUs</h3>
-                            @if (_reconciliation.DuplicateSkus.Count == 0)
-                            {
-                                <div class="text-body-secondary small">No duplicate SKUs found.</div>
-                            }
-                            else
-                            {
-                                <ul class="list-group list-group-flush">
-                                    @foreach (var row in _reconciliation.DuplicateSkus)
-                                    {
-                                        <li class="list-group-item px-0">
-                                            <div class="fw-semibold">@row.Sku</div>
-                                            <div class="small text-body-secondary">@row.Message</div>
-                                            <div class="small">@string.Join(" | ", row.Details)</div>
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-                        <div class="col-lg-6">
-                            <h3 class="h6">Safe Control App matches</h3>
-                            @if (_reconciliation.SafeMatches.Count == 0)
-                            {
-                                <div class="text-body-secondary small">No safe auto-match candidates were found.</div>
-                            }
-                            else
-                            {
-                                <ul class="list-group list-group-flush">
-                                    @foreach (var row in _reconciliation.SafeMatches)
-                                    {
-                                        <li class="list-group-item px-0">
-                                            <div class="fw-semibold">@row.ProductName (@row.Sku)</div>
-                                            <div class="small text-body-secondary">@row.SquareDisplayName</div>
-                                            <div class="small">Square IDs: @row.SquareItemId / @(row.SquareVariationId ?? "item-only")</div>
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-                        <div class="col-lg-6">
-                            <h3 class="h6">Square rows missing SKUs</h3>
-                            @if (_reconciliation.MissingSquareSkus.Count == 0)
-                            {
-                                <div class="text-body-secondary small">No missing SKUs found in the current Square catalog sample.</div>
-                            }
-                            else
-                            {
-                                <ul class="list-group list-group-flush">
-                                    @foreach (var row in _reconciliation.MissingSquareSkus)
-                                    {
-                                        <li class="list-group-item px-0">
-                                            <div class="fw-semibold">@row.DisplayName</div>
-                                            <div class="small text-body-secondary">Square IDs: @row.ItemId / @(row.VariationId ?? "item-only")</div>
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-                        <div class="col-lg-6">
-                            <h3 class="h6">Conflicts needing review</h3>
-                            @if (_reconciliation.Conflicts.Count == 0)
-                            {
-                                <div class="text-body-secondary small">No registry conflicts were detected.</div>
-                            }
-                            else
-                            {
-                                <ul class="list-group list-group-flush">
-                                    @foreach (var row in _reconciliation.Conflicts)
-                                    {
-                                        <li class="list-group-item px-0">
-                                            <div class="fw-semibold">@row.Sku</div>
-                                            <div class="small text-body-secondary">@row.Message</div>
-                                            <div class="small">@string.Join(" | ", row.Details)</div>
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-                    </div>
                 </div>
             }
         </section>
@@ -264,19 +438,31 @@
 </div>
 
 @code {
-    private ProductRegistryDashboard? _dashboard;
+    private NebulaWorkspace? _workspace;
     private SquareSkuReconciliationReport? _reconciliation;
-    private ProductComposerInput _input = new();
-    private CreateDraftProductResult? _createdResult;
+    private string _activeFlow = "NEW_ARTWORK";
     private string _filter = string.Empty;
     private string? _message;
     private bool _hasError;
+    private bool _loading;
     private bool _saving;
     private bool _reconLoading;
 
-    private bool ShowComposer { get; set; }
+    private SaveFamilyTemplateInput _familyInput = new()
+    {
+        VariantOptionsText = "BK:Black, BR:Brown"
+    };
+    private NebulaArtworkWorkflowInput _artworkInput = new();
+    private NebulaProductWorkflowInput _productInput = new();
+    private NebulaDuplicateWorkflowInput _duplicateInput = new();
+    private string? _duplicateSourceId;
 
-    private IReadOnlyList<ProductRegistryRow> FilteredProducts => _dashboard?.Products
+    private IBrowserFile? _artworkDesignFile;
+    private IBrowserFile? _artworkProductImageFile;
+    private IBrowserFile? _productDesignFile;
+    private IBrowserFile? _productProductImageFile;
+
+    private IReadOnlyList<ProductRegistryRow> FilteredProducts => _workspace?.Dashboard.Products
         .Where(x => string.IsNullOrWhiteSpace(_filter)
                     || x.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)
                     || (x.SquareSku?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
@@ -285,46 +471,171 @@
                     || (x.ArtworkName?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false))
         .ToList() ?? [];
 
+    private NebulaFamilyTemplateSummary? SelectedProductFamily => _workspace?.FamilyTemplates
+        .FirstOrDefault(x => string.Equals(x.FamilyKey, _productInput.FamilyKey, StringComparison.OrdinalIgnoreCase));
+
     protected override async Task OnInitializedAsync()
     {
-        await LoadDashboardAsync();
+        await RefreshWorkspaceAsync();
     }
 
-    private async Task LoadDashboardAsync()
+    private async Task RefreshWorkspaceAsync()
     {
-        _dashboard = await ProductRegistry.GetDashboardAsync();
+        _loading = true;
+        try
+        {
+            _workspace = await ProductRegistry.GetWorkspaceAsync();
+            if (SelectedProductFamily is not null && _productInput.SelectedVariantCodes.Count == 0)
+                SeedProductVariantDefaults(SelectedProductFamily);
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
-    private void ToggleComposer()
+    private void SetFlow(string flow)
     {
-        ShowComposer = !ShowComposer;
-        if (!ShowComposer)
-            ResetComposer();
+        _activeFlow = flow;
+        _message = null;
+        _hasError = false;
     }
 
-    private void ResetComposer()
-    {
-        _input = new ProductComposerInput();
-        _createdResult = null;
-    }
-
-    private async Task CreateDraftAsync()
+    private async Task SubmitArtworkAsync()
     {
         _saving = true;
         _hasError = false;
         _message = null;
         try
         {
-            _createdResult = await ProductRegistry.CreateDraftProductAsync(
-                new NewProductIntakeInput(
-                    _input.ProductName ?? string.Empty,
-                    _input.ProductFamily,
-                    _input.DesignName,
-                    _input.Price,
-                    _input.ProductionFamily,
-                    _input.Notes));
-            _message = $"Product saved. Assigned Square SKU: {_createdResult.AssignedSku}. Status: {_createdResult.Status}.";
-            await LoadDashboardAsync();
+            var input = new NebulaArtworkWorkflowInput
+            {
+                ArtworkName = _artworkInput.ArtworkName,
+                FamilyKeys = _artworkInput.FamilyKeys.ToList(),
+                Notes = _artworkInput.Notes,
+                SyncToSquare = _artworkInput.SyncToSquare
+            };
+
+            if (_artworkDesignFile is not null)
+                input.DesignAssetPath = (await NebulaAssetStorage.SaveAssetAsync(_artworkDesignFile, "artwork")).RelativeUrl;
+            if (_artworkProductImageFile is not null)
+                input.ProductImagePath = (await NebulaAssetStorage.SaveAssetAsync(_artworkProductImageFile, "product-image")).RelativeUrl;
+
+            var result = await ProductRegistry.CreateArtworkBatchAsync(input);
+            _message = result.Message;
+            ResetArtworkForm();
+            await RefreshWorkspaceAsync();
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SubmitProductAsync()
+    {
+        _saving = true;
+        _hasError = false;
+        _message = null;
+        try
+        {
+            var input = new NebulaProductWorkflowInput
+            {
+                ProductName = _productInput.ProductName,
+                FamilyKey = _productInput.FamilyKey,
+                ArtworkName = _productInput.ArtworkName,
+                Notes = _productInput.Notes,
+                PriceOverride = _productInput.PriceOverride,
+                SelectedVariantCodes = _productInput.SelectedVariantCodes.ToList(),
+                SyncToSquare = _productInput.SyncToSquare
+            };
+
+            if (_productDesignFile is not null)
+                input.DesignAssetPath = (await NebulaAssetStorage.SaveAssetAsync(_productDesignFile, "artwork")).RelativeUrl;
+            if (_productProductImageFile is not null)
+                input.ProductImagePath = (await NebulaAssetStorage.SaveAssetAsync(_productProductImageFile, "product-image")).RelativeUrl;
+
+            var result = await ProductRegistry.CreateProductBatchAsync(input);
+            _message = result.Message;
+            ResetProductForm();
+            await RefreshWorkspaceAsync();
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SubmitFamilyAsync()
+    {
+        _saving = true;
+        _hasError = false;
+        _message = null;
+        try
+        {
+            var result = await ProductRegistry.SaveFamilyTemplateAsync(_familyInput);
+            _message = $"Saved family template {result.FamilyName}.";
+            ResetFamilyForm();
+            await RefreshWorkspaceAsync();
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SubmitDuplicateAsync()
+    {
+        _saving = true;
+        _hasError = false;
+        _message = null;
+        try
+        {
+            if (!Guid.TryParse(_duplicateSourceId, out var sourceId))
+                throw new InvalidOperationException("Pick a source product first.");
+
+            _duplicateInput.SourceProductId = sourceId;
+            var result = await ProductRegistry.DuplicateProductAsync(_duplicateInput);
+            _message = result.Message;
+            ResetDuplicateForm();
+            await RefreshWorkspaceAsync();
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RetryBatchAsync(Guid batchId)
+    {
+        _saving = true;
+        _hasError = false;
+        _message = null;
+        try
+        {
+            var result = await ProductRegistry.RetryBatchAsync(batchId);
+            _message = result.Message;
+            await RefreshWorkspaceAsync();
         }
         catch (Exception ex)
         {
@@ -357,6 +668,112 @@
         }
     }
 
+    private Task OnArtworkDesignFileChanged(InputFileChangeEventArgs e)
+    {
+        _artworkDesignFile = e.File;
+        return Task.CompletedTask;
+    }
+
+    private Task OnArtworkProductImageChanged(InputFileChangeEventArgs e)
+    {
+        _artworkProductImageFile = e.File;
+        return Task.CompletedTask;
+    }
+
+    private Task OnProductDesignFileChanged(InputFileChangeEventArgs e)
+    {
+        _productDesignFile = e.File;
+        return Task.CompletedTask;
+    }
+
+    private Task OnProductProductImageChanged(InputFileChangeEventArgs e)
+    {
+        _productProductImageFile = e.File;
+        return Task.CompletedTask;
+    }
+
+    private Task OnProductFamilyChangedAsync()
+    {
+        if (SelectedProductFamily is not null)
+            SeedProductVariantDefaults(SelectedProductFamily);
+        return Task.CompletedTask;
+    }
+
+    private void SeedProductVariantDefaults(NebulaFamilyTemplateSummary family)
+    {
+        _productInput.SelectedVariantCodes = family.VariantOptions.Count == 0
+            ? []
+            : family.VariantOptions.Where(x => x.IsDefaultSelected).Select(x => x.OptionCode).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private void ToggleArtworkFamily(string familyKey, bool isSelected)
+    {
+        if (isSelected)
+        {
+            if (!_artworkInput.FamilyKeys.Contains(familyKey, StringComparer.OrdinalIgnoreCase))
+                _artworkInput.FamilyKeys.Add(familyKey);
+        }
+        else
+        {
+            _artworkInput.FamilyKeys.RemoveAll(x => string.Equals(x, familyKey, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private void ToggleProductVariant(string optionCode, bool isSelected)
+    {
+        if (isSelected)
+        {
+            if (!_productInput.SelectedVariantCodes.Contains(optionCode, StringComparer.OrdinalIgnoreCase))
+                _productInput.SelectedVariantCodes.Add(optionCode);
+        }
+        else
+        {
+            _productInput.SelectedVariantCodes.RemoveAll(x => string.Equals(x, optionCode, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private void ResetArtworkForm()
+    {
+        _artworkInput = new NebulaArtworkWorkflowInput();
+        _artworkDesignFile = null;
+        _artworkProductImageFile = null;
+    }
+
+    private void ResetProductForm()
+    {
+        _productInput = new NebulaProductWorkflowInput();
+        _productDesignFile = null;
+        _productProductImageFile = null;
+    }
+
+    private void ResetFamilyForm()
+    {
+        _familyInput = new SaveFamilyTemplateInput
+        {
+            VariantOptionsText = "BK:Black, BR:Brown"
+        };
+    }
+
+    private void ResetDuplicateForm()
+    {
+        _duplicateInput = new NebulaDuplicateWorkflowInput();
+        _duplicateSourceId = null;
+    }
+
+    private static string VariantPreview(NebulaFamilyTemplateSummary family)
+        => family.VariantOptions.Count == 0
+            ? "Regular"
+            : string.Join(", ", family.VariantOptions.OrderBy(x => x.SortOrder).Select(x => x.OptionName));
+
+    private static string BuildVariantLabel(string? productTypeCode, string? leatherCode)
+    {
+        var parts = new[] { productTypeCode, leatherCode }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return parts.Length == 0 ? "—" : string.Join(" / ", parts);
+    }
+
     private static string LifecycleBadge(string status) => status switch
     {
         "ACTIVE" => "text-bg-success",
@@ -365,22 +782,26 @@
         _ => "text-bg-primary"
     };
 
+    private static string BatchBadge(string status) => status switch
+    {
+        "COMPLETE" => "text-bg-success",
+        "DRAFT_READY" => "text-bg-primary",
+        "PARTIAL_FAILURE" => "text-bg-warning",
+        "FAILED" => "text-bg-danger",
+        _ => "text-bg-secondary"
+    };
+
+    private static string VariantBadge(string status) => status switch
+    {
+        "SQUARE_SYNCED" => "text-bg-success",
+        "SQUARE_FAILED" => "text-bg-danger",
+        "DRAFT_READY" => "text-bg-primary",
+        _ => "text-bg-secondary"
+    };
+
     private static string VariantLabel(ProductRegistryRow product)
-    {
-        var parts = new[] { product.ProductTypeCode, product.LeatherCode }
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToArray();
+        => BuildVariantLabel(product.ProductTypeCode, product.LeatherCode);
 
-        return parts.Length == 0 ? "—" : string.Join(" / ", parts);
-    }
-
-    private sealed class ProductComposerInput
-    {
-        public string? ProductName { get; set; }
-        public string? ProductFamily { get; set; }
-        public string? DesignName { get; set; }
-        public decimal? Price { get; set; }
-        public string? ProductionFamily { get; set; }
-        public string? Notes { get; set; }
-    }
+    private string FlowButton(string flow)
+        => _activeFlow == flow ? "btn-primary" : "btn-outline-primary";
 }

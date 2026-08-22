@@ -335,6 +335,218 @@ public sealed class SkuRegistryEntryEntity
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class ProductFamilyTemplateEntity
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [MaxLength(120)]
+    public string FamilyKey { get; set; } = string.Empty;
+
+    [MaxLength(160)]
+    public string FamilyName { get; set; } = string.Empty;
+
+    [MaxLength(40)]
+    public string? ProductTypeCode { get; set; }
+
+    [MaxLength(120)]
+    public string? ProductionFamily { get; set; }
+
+    [MaxLength(120)]
+    public string? SquareCategoryName { get; set; }
+
+    [MaxLength(192)]
+    public string? SquareCategoryId { get; set; }
+
+    [MaxLength(160)]
+    public string? WooCategoryName { get; set; }
+
+    [MaxLength(40)]
+    public string TaxBehavior { get; set; } = "STANDARD";
+
+    [MaxLength(40)]
+    public string InventoryBehavior { get; set; } = "TRACKED";
+
+    [MaxLength(40)]
+    public string FulfillmentModel { get; set; } = "MANUFACTURED";
+
+    public long DefaultPriceCents { get; set; }
+
+    [MaxLength(4)]
+    public string Currency { get; set; } = "USD";
+
+    public decimal? ShippingLengthInches { get; set; }
+
+    public decimal? ShippingWidthInches { get; set; }
+
+    public decimal? ShippingHeightInches { get; set; }
+
+    public decimal? ShippingWeightOunces { get; set; }
+
+    public bool SellInPerson { get; set; } = true;
+
+    public bool SellOnline { get; set; } = true;
+
+    public bool TrackInventory { get; set; } = true;
+
+    public string? DefaultDescription { get; set; }
+
+    public string? DefaultNotes { get; set; }
+
+    public bool IsActive { get; set; } = true;
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class ProductFamilyVariantOptionEntity
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid ProductFamilyTemplateId { get; set; }
+
+    public ProductFamilyTemplateEntity? ProductFamilyTemplate { get; set; }
+
+    [MaxLength(40)]
+    public string DimensionKey { get; set; } = "LEATHER";
+
+    [MaxLength(40)]
+    public string OptionCode { get; set; } = string.Empty;
+
+    [MaxLength(120)]
+    public string OptionName { get; set; } = string.Empty;
+
+    public bool IsDefaultSelected { get; set; } = true;
+
+    public bool IsEnabled { get; set; } = true;
+
+    public int SortOrder { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class ProductArtworkEntity
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [MaxLength(260)]
+    public string ArtworkKey { get; set; } = string.Empty;
+
+    [MaxLength(220)]
+    public string ArtworkName { get; set; } = string.Empty;
+
+    [MaxLength(400)]
+    public string? DesignAssetPath { get; set; }
+
+    [MaxLength(400)]
+    public string? ProductImagePath { get; set; }
+
+    [MaxLength(500)]
+    public string? Notes { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class NebulaCreationBatchEntity
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [MaxLength(80)]
+    public string OperationKey { get; set; } = string.Empty;
+
+    [MaxLength(40)]
+    public string WorkflowType { get; set; } = string.Empty;
+
+    [MaxLength(40)]
+    public string Status { get; set; } = "DRAFT";
+
+    [MaxLength(220)]
+    public string RequestedName { get; set; } = string.Empty;
+
+    [MaxLength(260)]
+    public string? ArtworkKey { get; set; }
+
+    [MaxLength(220)]
+    public string? ArtworkName { get; set; }
+
+    public string? PayloadJson { get; set; }
+
+    [MaxLength(2000)]
+    public string? LastError { get; set; }
+
+    public DateTimeOffset? CompletedAt { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class NebulaCreationBatchVariantEntity
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid BatchId { get; set; }
+
+    public NebulaCreationBatchEntity? Batch { get; set; }
+
+    public Guid? ProductFamilyTemplateId { get; set; }
+
+    public ProductFamilyTemplateEntity? ProductFamilyTemplate { get; set; }
+
+    public Guid? SellableProductId { get; set; }
+
+    public SellableProductEntity? SellableProduct { get; set; }
+
+    [MaxLength(220)]
+    public string ProductName { get; set; } = string.Empty;
+
+    [MaxLength(40)]
+    public string? ProductTypeCode { get; set; }
+
+    [MaxLength(8)]
+    public string? LeatherCode { get; set; }
+
+    [MaxLength(40)]
+    public string Status { get; set; } = "PENDING_DRAFT";
+
+    [MaxLength(120)]
+    public string? ReservedSquareSku { get; set; }
+
+    [MaxLength(192)]
+    public string? SquareCatalogItemId { get; set; }
+
+    [MaxLength(192)]
+    public string? SquareCatalogVariationId { get; set; }
+
+    [MaxLength(192)]
+    public string? WooProductId { get; set; }
+
+    [MaxLength(192)]
+    public string? WooVariationId { get; set; }
+
+    [MaxLength(2000)]
+    public string? LastError { get; set; }
+
+    public int AttemptCount { get; set; }
+
+    public bool RetryAllowed { get; set; } = true;
+
+    public DateTimeOffset? LastAttemptedAt { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class SellableProductElementEntity
 {
     [Key]

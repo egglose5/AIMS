@@ -54,6 +54,7 @@ builder.Services.AddScoped<IWooCommerceApiService, WooCommerceApiService>();
 builder.Services.AddScoped<IPermanentSkuService, PermanentSkuService>();
 builder.Services.AddScoped<ISellableSkuService, SellableSkuService>();
 builder.Services.AddScoped<IProductRegistryService, ProductRegistryService>();
+builder.Services.AddScoped<INebulaAssetStorageService, NebulaAssetStorageService>();
 builder.Services.AddSingleton<IArtworkVisualService, ArtworkVisualService>();
 builder.Services.AddScoped<IShowWebResearchService, ShowWebResearchService>();
 builder.Services.AddScoped<IShowPlacementService, ShowPlacementService>();
@@ -296,6 +297,25 @@ if (builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
         app.Logger.LogWarning(
             exception,
             "Database migrations could not be applied at startup. The database may be unavailable.");
+    }
+
+    try
+    {
+        // Self-heal critical schema in case migration history drifted from the live database.
+        await EnsureProductionQueueSchemaAsync(dbContext);
+        await EnsureElementsSchemaAsync(dbContext);
+        await EnsureFulfillmentSchemaAsync(dbContext);
+        await EnsureShowApplicationPlatformSchemaAsync(dbContext);
+        await EnsureBrainCoreSchemaAsync(dbContext);
+        await EnsureBrainMemorySchemaAsync(dbContext);
+        await EnsureNebulaSchemaAsync(dbContext);
+    }
+    catch (Exception exception)
+    {
+        canSeedDefaultAdminUser = false;
+        app.Logger.LogWarning(
+            exception,
+            "Database compatibility checks could not complete at startup.");
     }
 }
 
@@ -578,4 +598,34 @@ static async Task EnsureBrainMemorySchemaAsync(ApplicationDbContext dbContext)
         """CREATE INDEX IF NOT EXISTS "IX_BrainContradictions_MemoryBId" ON "BrainContradictions" ("MemoryBId");"""
     };
     foreach (var command in commands) await dbContext.Database.ExecuteSqlRawAsync(command);
+}
+
+static async Task EnsureNebulaSchemaAsync(ApplicationDbContext dbContext)
+{
+    var commands = new[]
+    {
+        """CREATE TABLE IF NOT EXISTS "ProductFamilyTemplates" ("Id" uuid NOT NULL, "FamilyKey" varchar(120) NOT NULL, "FamilyName" varchar(160) NOT NULL, "ProductTypeCode" varchar(40), "ProductionFamily" varchar(120), "SquareCategoryName" varchar(120), "SquareCategoryId" varchar(192), "WooCategoryName" varchar(160), "TaxBehavior" varchar(40) NOT NULL DEFAULT 'STANDARD', "InventoryBehavior" varchar(40) NOT NULL DEFAULT 'TRACKED', "FulfillmentModel" varchar(40) NOT NULL DEFAULT 'MANUFACTURED', "DefaultPriceCents" bigint NOT NULL DEFAULT 0, "Currency" varchar(4) NOT NULL DEFAULT 'USD', "ShippingLengthInches" numeric(10,2), "ShippingWidthInches" numeric(10,2), "ShippingHeightInches" numeric(10,2), "ShippingWeightOunces" numeric(10,2), "SellInPerson" boolean NOT NULL DEFAULT TRUE, "SellOnline" boolean NOT NULL DEFAULT TRUE, "TrackInventory" boolean NOT NULL DEFAULT TRUE, "DefaultDescription" text, "DefaultNotes" varchar(500), "IsActive" boolean NOT NULL DEFAULT TRUE, "CreatedAt" timestamptz NOT NULL DEFAULT NOW(), "UpdatedAt" timestamptz NOT NULL DEFAULT NOW(), CONSTRAINT "PK_ProductFamilyTemplates" PRIMARY KEY ("Id"));""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_ProductFamilyTemplates_FamilyKey" ON "ProductFamilyTemplates" ("FamilyKey");""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_ProductFamilyTemplates_FamilyName_ProductTypeCode" ON "ProductFamilyTemplates" ("FamilyName", "ProductTypeCode");""",
+        """CREATE TABLE IF NOT EXISTS "ProductFamilyVariantOptions" ("Id" uuid NOT NULL, "ProductFamilyTemplateId" uuid NOT NULL, "DimensionKey" varchar(40) NOT NULL DEFAULT 'LEATHER', "OptionCode" varchar(40) NOT NULL, "OptionName" varchar(120) NOT NULL, "IsDefaultSelected" boolean NOT NULL DEFAULT TRUE, "IsEnabled" boolean NOT NULL DEFAULT TRUE, "SortOrder" integer NOT NULL DEFAULT 0, "CreatedAt" timestamptz NOT NULL DEFAULT NOW(), "UpdatedAt" timestamptz NOT NULL DEFAULT NOW(), CONSTRAINT "PK_ProductFamilyVariantOptions" PRIMARY KEY ("Id"), CONSTRAINT "FK_ProductFamilyVariantOptions_ProductFamilyTemplates_ProductFamilyTemplateId" FOREIGN KEY ("ProductFamilyTemplateId") REFERENCES "ProductFamilyTemplates" ("Id") ON DELETE CASCADE);""",
+        """CREATE INDEX IF NOT EXISTS "IX_ProductFamilyVariantOptions_ProductFamilyTemplateId" ON "ProductFamilyVariantOptions" ("ProductFamilyTemplateId");""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_ProductFamilyVariantOptions_ProductFamilyTemplateId_DimensionKey_OptionCode" ON "ProductFamilyVariantOptions" ("ProductFamilyTemplateId", "DimensionKey", "OptionCode");""",
+        """CREATE TABLE IF NOT EXISTS "ProductArtworks" ("Id" uuid NOT NULL, "ArtworkKey" varchar(260) NOT NULL, "ArtworkName" varchar(220) NOT NULL, "DesignAssetPath" varchar(400), "ProductImagePath" varchar(400), "Notes" varchar(500), "CreatedAt" timestamptz NOT NULL DEFAULT NOW(), "UpdatedAt" timestamptz NOT NULL DEFAULT NOW(), CONSTRAINT "PK_ProductArtworks" PRIMARY KEY ("Id"));""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_ProductArtworks_ArtworkKey" ON "ProductArtworks" ("ArtworkKey");""",
+        """CREATE TABLE IF NOT EXISTS "NebulaCreationBatches" ("Id" uuid NOT NULL, "OperationKey" varchar(80) NOT NULL, "WorkflowType" varchar(40) NOT NULL, "Status" varchar(40) NOT NULL, "RequestedName" varchar(220) NOT NULL, "ArtworkKey" varchar(260), "ArtworkName" varchar(220), "PayloadJson" text, "LastError" varchar(2000), "CompletedAt" timestamptz, "CreatedAt" timestamptz NOT NULL DEFAULT NOW(), "UpdatedAt" timestamptz NOT NULL DEFAULT NOW(), CONSTRAINT "PK_NebulaCreationBatches" PRIMARY KEY ("Id"));""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_NebulaCreationBatches_OperationKey" ON "NebulaCreationBatches" ("OperationKey");""",
+        """CREATE INDEX IF NOT EXISTS "IX_NebulaCreationBatches_Status" ON "NebulaCreationBatches" ("Status");""",
+        """CREATE INDEX IF NOT EXISTS "IX_NebulaCreationBatches_WorkflowType_CreatedAt" ON "NebulaCreationBatches" ("WorkflowType", "CreatedAt");""",
+        """CREATE TABLE IF NOT EXISTS "NebulaCreationBatchVariants" ("Id" uuid NOT NULL, "BatchId" uuid NOT NULL, "ProductFamilyTemplateId" uuid, "SellableProductId" uuid, "ProductName" varchar(220) NOT NULL, "ProductTypeCode" varchar(40), "LeatherCode" varchar(8), "Status" varchar(40) NOT NULL DEFAULT 'PENDING_DRAFT', "ReservedSquareSku" varchar(120), "SquareCatalogItemId" varchar(192), "SquareCatalogVariationId" varchar(192), "WooProductId" varchar(192), "WooVariationId" varchar(192), "LastError" varchar(2000), "AttemptCount" integer NOT NULL DEFAULT 0, "RetryAllowed" boolean NOT NULL DEFAULT TRUE, "LastAttemptedAt" timestamptz, "CreatedAt" timestamptz NOT NULL DEFAULT NOW(), "UpdatedAt" timestamptz NOT NULL DEFAULT NOW(), CONSTRAINT "PK_NebulaCreationBatchVariants" PRIMARY KEY ("Id"), CONSTRAINT "FK_NebulaCreationBatchVariants_NebulaCreationBatches_BatchId" FOREIGN KEY ("BatchId") REFERENCES "NebulaCreationBatches" ("Id") ON DELETE CASCADE, CONSTRAINT "FK_NebulaCreationBatchVariants_ProductFamilyTemplates_ProductFamilyTemplateId" FOREIGN KEY ("ProductFamilyTemplateId") REFERENCES "ProductFamilyTemplates" ("Id") ON DELETE RESTRICT, CONSTRAINT "FK_NebulaCreationBatchVariants_SellableProducts_SellableProductId" FOREIGN KEY ("SellableProductId") REFERENCES "SellableProducts" ("Id") ON DELETE RESTRICT);""",
+        """CREATE INDEX IF NOT EXISTS "IX_NebulaCreationBatchVariants_BatchId" ON "NebulaCreationBatchVariants" ("BatchId");""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_NebulaCreationBatchVariants_BatchId_ProductTypeCode_LeatherCode" ON "NebulaCreationBatchVariants" ("BatchId", "ProductTypeCode", "LeatherCode");""",
+        """CREATE INDEX IF NOT EXISTS "IX_NebulaCreationBatchVariants_ProductFamilyTemplateId" ON "NebulaCreationBatchVariants" ("ProductFamilyTemplateId");""",
+        """CREATE INDEX IF NOT EXISTS "IX_NebulaCreationBatchVariants_SellableProductId" ON "NebulaCreationBatchVariants" ("SellableProductId");""",
+        """CREATE INDEX IF NOT EXISTS "IX_NebulaCreationBatchVariants_Status" ON "NebulaCreationBatchVariants" ("Status");"""
+    };
+
+    foreach (var command in commands)
+    {
+        await dbContext.Database.ExecuteSqlRawAsync(command);
+    }
 }

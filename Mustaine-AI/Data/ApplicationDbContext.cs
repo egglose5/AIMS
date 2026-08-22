@@ -52,6 +52,21 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     /// <summary>Permanent registry of Ancient Innovations SKU assignments, reservations, and retirements.</summary>
     public DbSet<SkuRegistryEntryEntity> SkuRegistryEntries => Set<SkuRegistryEntryEntity>();
 
+    /// <summary>Reusable Nebula family templates that define defaults for future products and artwork variants.</summary>
+    public DbSet<ProductFamilyTemplateEntity> ProductFamilyTemplates => Set<ProductFamilyTemplateEntity>();
+
+    /// <summary>Configured variant options for each Nebula family template.</summary>
+    public DbSet<ProductFamilyVariantOptionEntity> ProductFamilyVariantOptions => Set<ProductFamilyVariantOptionEntity>();
+
+    /// <summary>Artwork/design identities and their associated uploaded assets.</summary>
+    public DbSet<ProductArtworkEntity> ProductArtworks => Set<ProductArtworkEntity>();
+
+    /// <summary>Round 2 Nebula creation operations for retry-safe partial-failure handling.</summary>
+    public DbSet<NebulaCreationBatchEntity> NebulaCreationBatches => Set<NebulaCreationBatchEntity>();
+
+    /// <summary>Per-variant creation/sync state within a Nebula batch.</summary>
+    public DbSet<NebulaCreationBatchVariantEntity> NebulaCreationBatchVariants => Set<NebulaCreationBatchVariantEntity>();
+
     /// <summary>Immutable inventory movement ledger.</summary>
     public DbSet<InventoryTransactionEntity> InventoryTransactions => Set<InventoryTransactionEntity>();
 
@@ -458,6 +473,102 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.HasIndex(x => x.Sku).IsUnique();
             entity.HasIndex(x => x.Status);
             entity.HasIndex(x => x.SellableProductId);
+        });
+
+        builder.Entity<ProductFamilyTemplateEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FamilyKey).HasMaxLength(120);
+            entity.Property(x => x.FamilyName).HasMaxLength(160);
+            entity.Property(x => x.ProductTypeCode).HasMaxLength(40);
+            entity.Property(x => x.ProductionFamily).HasMaxLength(120);
+            entity.Property(x => x.SquareCategoryName).HasMaxLength(120);
+            entity.Property(x => x.SquareCategoryId).HasMaxLength(192);
+            entity.Property(x => x.WooCategoryName).HasMaxLength(160);
+            entity.Property(x => x.TaxBehavior).HasMaxLength(40);
+            entity.Property(x => x.InventoryBehavior).HasMaxLength(40);
+            entity.Property(x => x.FulfillmentModel).HasMaxLength(40);
+            entity.Property(x => x.Currency).HasMaxLength(4);
+            entity.Property(x => x.ShippingLengthInches).HasPrecision(10, 2);
+            entity.Property(x => x.ShippingWidthInches).HasPrecision(10, 2);
+            entity.Property(x => x.ShippingHeightInches).HasPrecision(10, 2);
+            entity.Property(x => x.ShippingWeightOunces).HasPrecision(10, 2);
+            entity.Property(x => x.DefaultDescription).HasColumnType("text");
+            entity.Property(x => x.DefaultNotes).HasMaxLength(500);
+            entity.HasIndex(x => x.FamilyKey).IsUnique();
+            entity.HasIndex(x => new { x.FamilyName, x.ProductTypeCode }).IsUnique();
+        });
+
+        builder.Entity<ProductFamilyVariantOptionEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.DimensionKey).HasMaxLength(40);
+            entity.Property(x => x.OptionCode).HasMaxLength(40);
+            entity.Property(x => x.OptionName).HasMaxLength(120);
+            entity.HasOne(x => x.ProductFamilyTemplate)
+                .WithMany()
+                .HasForeignKey(x => x.ProductFamilyTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => x.ProductFamilyTemplateId);
+            entity.HasIndex(x => new { x.ProductFamilyTemplateId, x.DimensionKey, x.OptionCode }).IsUnique();
+        });
+
+        builder.Entity<ProductArtworkEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ArtworkKey).HasMaxLength(260);
+            entity.Property(x => x.ArtworkName).HasMaxLength(220);
+            entity.Property(x => x.DesignAssetPath).HasMaxLength(400);
+            entity.Property(x => x.ProductImagePath).HasMaxLength(400);
+            entity.Property(x => x.Notes).HasMaxLength(500);
+            entity.HasIndex(x => x.ArtworkKey).IsUnique();
+        });
+
+        builder.Entity<NebulaCreationBatchEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OperationKey).HasMaxLength(80);
+            entity.Property(x => x.WorkflowType).HasMaxLength(40);
+            entity.Property(x => x.Status).HasMaxLength(40);
+            entity.Property(x => x.RequestedName).HasMaxLength(220);
+            entity.Property(x => x.ArtworkKey).HasMaxLength(260);
+            entity.Property(x => x.ArtworkName).HasMaxLength(220);
+            entity.Property(x => x.PayloadJson).HasColumnType("text");
+            entity.Property(x => x.LastError).HasMaxLength(2000);
+            entity.HasIndex(x => x.OperationKey).IsUnique();
+            entity.HasIndex(x => new { x.WorkflowType, x.CreatedAt });
+            entity.HasIndex(x => x.Status);
+        });
+
+        builder.Entity<NebulaCreationBatchVariantEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ProductName).HasMaxLength(220);
+            entity.Property(x => x.ProductTypeCode).HasMaxLength(40);
+            entity.Property(x => x.LeatherCode).HasMaxLength(8);
+            entity.Property(x => x.Status).HasMaxLength(40);
+            entity.Property(x => x.ReservedSquareSku).HasMaxLength(120);
+            entity.Property(x => x.SquareCatalogItemId).HasMaxLength(192);
+            entity.Property(x => x.SquareCatalogVariationId).HasMaxLength(192);
+            entity.Property(x => x.WooProductId).HasMaxLength(192);
+            entity.Property(x => x.WooVariationId).HasMaxLength(192);
+            entity.Property(x => x.LastError).HasMaxLength(2000);
+            entity.HasOne(x => x.Batch)
+                .WithMany()
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.ProductFamilyTemplate)
+                .WithMany()
+                .HasForeignKey(x => x.ProductFamilyTemplateId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.SellableProduct)
+                .WithMany()
+                .HasForeignKey(x => x.SellableProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => x.BatchId);
+            entity.HasIndex(x => x.SellableProductId);
+            entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => new { x.BatchId, x.ProductTypeCode, x.LeatherCode }).IsUnique();
         });
 
         // ===== CONFIGURATION: Inventory Ledger =====

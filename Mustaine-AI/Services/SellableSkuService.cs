@@ -132,7 +132,6 @@ public sealed class SellableSkuService(
                 cancellationToken);
 
         if (entry is not null &&
-            !string.Equals(entry.Sku, sku, StringComparison.OrdinalIgnoreCase) &&
             entry.SellableProductId != product.Id)
         {
             throw new InvalidOperationException($"SKU registry conflict: {sku} is already attached to another product.");
