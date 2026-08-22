@@ -1,6 +1,0 @@
-V10 Pass 2 - Show Order Fulfillment
-- Adds Show Orders navigation/page.
-- Displays Square Show Order product, quantity, seller, modifiers, note/artwork, and whether a Square customer is attached.
-- Adds persistent fulfillment status: Needs Production, Ready to Ship, Shipped, Complete.
-- Excludes Show Order line items from ordinary replacement-stock Production reconciliation.
-- Customer contact/address retrieval is intentionally deferred to the next pass; current Square sync stores CustomerId only.

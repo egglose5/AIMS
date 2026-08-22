@@ -1,8 +1,0 @@
-Ancient Innovations Control App v10 Pass 8.4
-
-- Based on known-good Pass 8.2 routing baseline.
-- Customer-order production rows now display a unique Code 128 completion barcode tied to the shared order-line ID.
-- Scanning SO:<order-line-id> completes that exact customer production job and releases it directly to Fulfillment.
-- Customer-specific completion scans do NOT add the item to free Finished Goods shelf inventory.
-- Normal stock/replacement production continues to use ordinary permanent SKU finished-inventory scans.
-- Customer order quantity display is cleaned up (1 instead of 1.0000).

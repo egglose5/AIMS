@@ -28,6 +28,16 @@ BlazorApp1/
 *.tgz
 *.7z
 *.bak
+PASS*.txt
+TEST-*.txt
+V*-CHANGES.txt
+V*-*.sql
+upgrade-v*.sh
+install-pass*.sh
+bob-*.sh
+Square Changes
+ops/show-arm/*.sql
+ops/show-arm/*.txt
 pass10.1-package/
 Mustaine-AI/HistoricalEmailArchives/
 docker-compose.override.yml

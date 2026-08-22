@@ -1,8 +1,0 @@
-v10 Pass 8.13.2
-- Keeps the existing permanent SKU / Code 128 barcode encoding unchanged.
-- Forces each barcode label onto its own 2.00 x 0.75 inch print page.
-- Shrinks printable card slightly to 0.74in to prevent browser rounding from creating a second blank label.
-- Prevents page breaks inside a label and forces a page break between multiple labels.
-- Visible stitcher text is now color-first: BLK · Artwork Name or BR · Artwork Name.
-- The permanent SKU remains encoded in the barcode; the human-readable line is reserved for leather color + artwork.
-- All Pass 8.13.1 inventory/category/subcategory behavior is preserved.

@@ -1,6 +1,0 @@
-Pass 8.5 — 2 x .75 Customer Order Completion Label
-- Shrinks on-screen completion barcode to approximate the physical 2 x .75 inch DYMO label.
-- Hides the raw SO barcode value from the Production page.
-- Adds a one-click Print 2 x .75 label action for each customer order.
-- Dedicated print view auto-opens the browser print dialog and uses a 2in x .75in print page.
-- Barcode payload and one-scan completion behavior are unchanged.

@@ -1,7 +1,0 @@
-Ancient Innovations Control App v10 Pass 8.1
-Compile fix for Pass 8 automatic order routing/reservation.
-
-Fix:
-- InventoryTransactionEntity.QuantityDelta is an integer while FulfillmentOrderLineEntity.Quantity is decimal.
-- Explicitly converts the whole-unit order quantity to int when writing an inventory reservation transaction.
-- No workflow or database behavior was otherwise changed from Pass 8.

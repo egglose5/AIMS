@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-TARGET=""
-if [ -d "$HOME/Downloads/AI-Pass-9-4/Mustaine-AI" ]; then TARGET="$HOME/Downloads/AI-Pass-9-4"
-elif [ -d "$HOME/Downloads/AI Brain Files Lots so we have everything/AI-Pass-9-4/Mustaine-AI" ]; then TARGET="$HOME/Downloads/AI Brain Files Lots so we have everything/AI-Pass-9-4"
-elif [ -d "$PWD/Mustaine-AI" ]; then TARGET="$PWD"
-else echo "ERROR: Could not find the live Control App source."; exit 1; fi
-TARGET="$(cd "$TARGET" && pwd -P)"
-cd "$TARGET"
+
+ROOT="$(cd "$(dirname "$0")" && pwd -P)"
+[ -d "$ROOT/Mustaine-AI" ] || { echo "ERROR: Could not find Mustaine-AI under $ROOT"; exit 1; }
+cd "$ROOT"
 
 echo "B5 live reasoning provider setup"
 echo "The API key will be stored only in local .env.brain-b5 (mode 600)."

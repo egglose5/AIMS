@@ -1,9 +1,0 @@
-B4 test
-
-1. Open http://localhost:8080/show-brain
-2. Confirm Reasoning router is ACTIVE.
-3. Click "Run B4 contract self-test".
-4. Expected message begins: "B4 PASS".
-5. Confirm Brain Core still shows durable memory and the B3 gateway ledger.
-6. If no live provider is configured, the page should clearly say Provider not configured; that is NOT a B4 failure.
-7. A live reasoning call is only expected after environment provider/model/key configuration is deliberately supplied.
