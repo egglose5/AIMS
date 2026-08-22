@@ -10,13 +10,13 @@
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
         <div>
-            <p class="text-uppercase small text-secondary fw-semibold mb-1">Nebula</p>
+            <p class="text-uppercase small text-secondary fw-semibold mb-1">Nebula Round 3</p>
             <h1 class="mb-2">Products</h1>
-            <p class="text-body-secondary mb-0">Create artwork, variants, and reusable family defaults inside the live Control App. Square SKUs stay in the verified 4-digit convention, and each sellable variant keeps its own identity.</p>
+            <p class="text-body-secondary mb-0">Bulk-add artwork, review variant creation before any external writes, manage the live catalog, and surface Square/Woo mismatches without losing sellable identity history.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <button class="btn btn-outline-secondary" @onclick="RefreshWorkspaceAsync" disabled="@_loading">@(_loading ? "Refreshing…" : "Refresh Nebula")</button>
-            <button class="btn btn-outline-secondary" @onclick="RefreshReconciliationAsync" disabled="@_reconLoading">@(_reconLoading ? "Refreshing…" : "Refresh Square Reconciliation")</button>
+            <button class="btn btn-outline-secondary" @onclick="RefreshHealthAsync" disabled="@_healthLoading">@(_healthLoading ? "Refreshing…" : "Refresh Catalog Health")</button>
         </div>
     </div>
 
@@ -44,65 +44,133 @@
         <section class="card p-3 mb-4">
             <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
                 <div>
-                    <h2 class="h4 mb-1">+ Add Product</h2>
-                    <p class="text-body-secondary mb-0">Choose the fastest path. Nebula keeps the decisions short and pulls defaults from the family/template layer whenever possible.</p>
+                    <h2 class="h4 mb-1">Create In Nebula</h2>
+                    <p class="text-body-secondary mb-0">Bulk artwork review is the fastest path. The existing single-product and family tools remain here for exceptions and setup.</p>
                 </div>
-                <span class="badge text-bg-secondary">Round 2 operational workflow</span>
+                <span class="badge text-bg-secondary">Review before external create</span>
             </div>
 
             <div class="d-flex gap-2 flex-wrap mb-4">
-                <button class="btn @(FlowButton("NEW_ARTWORK"))" @onclick="@(() => SetFlow("NEW_ARTWORK"))">New Artwork / Design</button>
+                <button class="btn @(FlowButton("BULK_ARTWORK"))" @onclick="@(() => SetFlow("BULK_ARTWORK"))">Bulk Add Artwork</button>
                 <button class="btn @(FlowButton("NEW_PRODUCT"))" @onclick="@(() => SetFlow("NEW_PRODUCT"))">New Product</button>
                 <button class="btn @(FlowButton("NEW_FAMILY"))" @onclick="@(() => SetFlow("NEW_FAMILY"))">New Product Family</button>
                 <button class="btn @(FlowButton("DUPLICATE"))" @onclick="@(() => SetFlow("DUPLICATE"))">Duplicate Existing Product</button>
             </div>
 
-            @if (_activeFlow == "NEW_ARTWORK")
+            @if (_activeFlow == "BULK_ARTWORK")
             {
-                <EditForm Model="_artworkInput" OnValidSubmit="SubmitArtworkAsync">
-                    <DataAnnotationsValidator />
-                    <div class="row g-3">
-                        <div class="col-lg-4">
-                            <label class="form-label">Artwork / design name</label>
-                            <InputText class="form-control" @bind-Value="_artworkInput.ArtworkName" />
-                        </div>
-                        <div class="col-lg-4">
-                            <label class="form-label">Artwork asset upload</label>
-                            <InputFile class="form-control" OnChange="OnArtworkDesignFileChanged" accept=".jpg,.jpeg,.png,.webp" />
-                        </div>
-                        <div class="col-lg-4">
-                            <label class="form-label">Product image upload</label>
-                            <InputFile class="form-control" OnChange="OnArtworkProductImageChanged" accept=".jpg,.jpeg,.png,.webp" />
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Product types / families</label>
-                            <div class="row g-2">
-                                @foreach (var family in _workspace.FamilyTemplates)
-                                {
-                                    <div class="col-md-6 col-xl-4">
-                                        <label class="border rounded p-2 d-block">
-                                            <input class="form-check-input me-2" type="checkbox" checked="@_artworkInput.FamilyKeys.Contains(family.FamilyKey)" @onchange="args => ToggleArtworkFamily(family.FamilyKey, args.Value as bool? == true)" />
-                                            <span class="fw-semibold">@family.FamilyName</span>
-                                            <span class="small text-body-secondary d-block">@((family.ProductTypeCode ?? "—")) · @VariantPreview(family)</span>
-                                        </label>
-                                    </div>
-                                }
+                <div class="row g-4">
+                    <div class="col-xl-4">
+                        <div class="border rounded p-3 h-100">
+                            <h3 class="h5">1. Intake</h3>
+                            <div class="mb-3">
+                                <label class="form-label">Product families</label>
+                                <div class="row g-2">
+                                    @foreach (var family in _workspace.FamilyTemplates)
+                                    {
+                                        <div class="col-12">
+                                            <label class="border rounded p-2 d-block">
+                                                <input class="form-check-input me-2" type="checkbox" checked="@_bulkArtworkInput.FamilyKeys.Contains(family.FamilyKey)" @onchange="args => ToggleBulkArtworkFamily(family.FamilyKey, args.Value as bool? == true)" />
+                                                <span class="fw-semibold">@family.FamilyName</span>
+                                                <span class="small text-body-secondary d-block">@((family.ProductTypeCode ?? "—")) · @VariantPreview(family)</span>
+                                            </label>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Artwork names</label>
+                                <InputTextArea class="form-control" @bind-Value="_bulkArtworkInput.ArtworkNamesText" rows="8" />
+                                <div class="form-text">Paste one artwork per line, or use commas.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Batch notes</label>
+                                <InputText class="form-control" @bind-Value="_bulkArtworkInput.Notes" />
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary" @onclick="PrepareBulkPreviewAsync" disabled="@_saving">@(_saving ? "Preparing…" : "Prepare Review")</button>
+                                <button class="btn btn-outline-secondary" type="button" @onclick="ResetBulkArtwork">Clear</button>
                             </div>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label">Listing notes / overrides</label>
-                            <InputText class="form-control" @bind-Value="_artworkInput.Notes" />
-                        </div>
-                        <div class="col-12 form-check">
-                            <InputCheckbox class="form-check-input" @bind-Value="_artworkInput.SyncToSquare" />
-                            <label class="form-check-label">Create Square catalog records now</label>
+                    </div>
+
+                    <div class="col-xl-8">
+                        <div class="border rounded p-3 h-100">
+                            <div class="d-flex justify-content-between gap-2 flex-wrap align-items-start mb-3">
+                                <div>
+                                    <h3 class="h5 mb-1">2. Review</h3>
+                                    <div class="small text-body-secondary">Deselect anything you do not want to create. Proposed 4-digit Square SKUs are previewed here and are reserved on confirmation.</div>
+                                </div>
+                                @if (_bulkPreviewRows.Count > 0)
+                                {
+                                    <label class="form-check mt-1">
+                                        <input class="form-check-input" type="checkbox" @bind="_bulkSyncToSquare" />
+                                        <span class="form-check-label">Create Square records after draft creation</span>
+                                    </label>
+                                }
+                            </div>
+
+                            @if (_bulkPreviewRows.Count == 0)
+                            {
+                                <div class="text-body-secondary">Prepare a review batch to see generated variants here.</div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle">
+                                        <thead>
+                                            <tr>
+                                                <th>Create?</th>
+                                                <th>Artwork</th>
+                                                <th>Family</th>
+                                                <th>Variant</th>
+                                                <th>Proposed SKU</th>
+                                                <th>Price</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var row in _bulkPreviewRows)
+                                            {
+                                                <tr>
+                                                    <td><input class="form-check-input" type="checkbox" @bind="row.Create" disabled="@(!string.IsNullOrWhiteSpace(row.ConflictMessage))" /></td>
+                                                    <td><input class="form-control form-control-sm" @bind="row.ArtworkName" /></td>
+                                                    <td>
+                                                        <div class="fw-semibold">@row.FamilyName</div>
+                                                        <div class="small text-body-secondary">@row.ProductTypeCode</div>
+                                                    </td>
+                                                    <td>@row.VariantName</td>
+                                                    <td>@row.ProposedSquareSku</td>
+                                                    <td><InputNumber class="form-control form-control-sm" @bind-Value="row.Price" /></td>
+                                                    <td class="small">
+                                                        @if (string.IsNullOrWhiteSpace(row.ConflictMessage))
+                                                        {
+                                                            <span class="badge text-bg-success">Ready</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge text-bg-danger">Conflict</span>
+                                                            <div class="text-body-secondary mt-1">@row.ConflictMessage</div>
+                                                            @if (!string.IsNullOrWhiteSpace(row.ExistingProductName))
+                                                            {
+                                                                <div class="text-body-secondary">Existing: @row.ExistingProductName</div>
+                                                            }
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="d-flex justify-content-between gap-2 flex-wrap align-items-center mt-3">
+                                    <div class="small text-body-secondary">@_bulkPreviewSummary</div>
+                                    <button class="btn btn-primary" @onclick="CommitBulkArtworkAsync" disabled="@_saving || !_bulkPreviewRows.Any(x => x.Create && string.IsNullOrWhiteSpace(x.ConflictMessage))">@(_saving ? "Creating…" : "Confirm Batch")</button>
+                                </div>
+                            }
                         </div>
                     </div>
-                    <div class="d-flex gap-2 mt-3">
-                        <button class="btn btn-primary" type="submit" disabled="@_saving">@(_saving ? "Creating…" : "Create Artwork Variants")</button>
-                        <button class="btn btn-outline-secondary" type="button" @onclick="ResetArtworkForm">Clear</button>
-                    </div>
-                </EditForm>
+                </div>
             }
             else if (_activeFlow == "NEW_PRODUCT")
             {
@@ -263,7 +331,7 @@
                             <label class="form-label">Source product</label>
                             <InputSelect class="form-select" @bind-Value="_duplicateSourceId">
                                 <option value="">Select a product…</option>
-                                @foreach (var product in dashboard.Products.Take(100))
+                                @foreach (var product in _workspace.Catalog.Products.Take(200))
                                 {
                                     <option value="@product.Id.ToString()">@product.Name (@VariantLabel(product))</option>
                                 }
@@ -296,8 +364,193 @@
 
         <section class="card mb-4">
             <div class="card-header">
+                <strong>Catalog Management</strong>
+                <div class="small text-body-secondary">Filter by business dimensions, then open the selected sellable variant for identity, lifecycle, and relationship management.</div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-lg-3">
+                        <label class="form-label small text-body-secondary">Search</label>
+                        <input class="form-control" placeholder="Name, SKU, artwork…" @bind="_filter" @bind:event="oninput" />
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label small text-body-secondary">Family</label>
+                        <InputSelect class="form-select" @bind-Value="_familyFilter">
+                            <option value="">All</option>
+                            @foreach (var family in _workspace.Catalog.ProductFamilies)
+                            {
+                                <option value="@family">@family</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label small text-body-secondary">Lifecycle</label>
+                        <InputSelect class="form-select" @bind-Value="_lifecycleFilter">
+                            <option value="">All</option>
+                            @foreach (var status in _workspace.Catalog.LifecycleStatuses)
+                            {
+                                <option value="@status">@status</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label small text-body-secondary">Square Sync</label>
+                        <InputSelect class="form-select" @bind-Value="_squareSyncFilter">
+                            <option value="">All</option>
+                            <option value="MAPPED">Mapped</option>
+                            <option value="PENDING">Pending</option>
+                            <option value="DISCONTINUED">Discontinued</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label small text-body-secondary">Woo Sync</label>
+                        <InputSelect class="form-select" @bind-Value="_wooSyncFilter">
+                            <option value="">All</option>
+                            <option value="MAPPED">Mapped</option>
+                            <option value="MISSING">Missing</option>
+                            <option value="N/A">N/A</option>
+                            <option value="DISCONTINUED">Discontinued</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-lg-1">
+                        <label class="form-label small text-body-secondary">Variant</label>
+                        <InputSelect class="form-select" @bind-Value="_variantFilter">
+                            <option value="">All</option>
+                            @foreach (var variant in _workspace.Catalog.VariantCodes)
+                            {
+                                <option value="@variant">@variant</option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+
+                <div class="row g-4">
+                    <div class="col-xl-8">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Square SKU</th>
+                                        <th>Internal</th>
+                                        <th>Lifecycle</th>
+                                        <th>Variant</th>
+                                        <th>Square</th>
+                                        <th>Woo</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var product in FilteredProducts)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold">@product.Name</div>
+                                                <div class="small text-body-secondary">@((product.ArtworkName ?? product.ProductFamily ?? "—"))</div>
+                                            </td>
+                                            <td>@(product.SquareSku ?? "Pending")</td>
+                                            <td class="small text-body-secondary">@(product.PermanentSku ?? "—")</td>
+                                            <td><span class="badge @LifecycleBadge(product.LifecycleStatus)">@product.LifecycleStatus</span></td>
+                                            <td class="small text-body-secondary">@VariantLabel(product)</td>
+                                            <td><span class="badge @SyncBadge(product.SquareSyncState)">@product.SquareSyncState</span></td>
+                                            <td><span class="badge @SyncBadge(product.WooSyncState)">@product.WooSyncState</span></td>
+                                            <td><button class="btn btn-sm btn-outline-secondary" @onclick="() => SelectProductAsync(product.Id)">View</button></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="col-xl-4">
+                        <div class="border rounded p-3 h-100">
+                            @if (_selectedDetail is null)
+                            {
+                                <div class="text-body-secondary">Select a sellable variant to see identity details, related variants, lifecycle controls, and safe relationship actions.</div>
+                            }
+                            else
+                            {
+                                <div class="d-flex justify-content-between gap-2 mb-2">
+                                    <div>
+                                        <h3 class="h5 mb-1">@_selectedDetail.Product.Name</h3>
+                                        <div class="small text-body-secondary">@(_selectedDetail.Product.ArtworkName ?? _selectedDetail.Product.ProductFamily ?? "—")</div>
+                                    </div>
+                                    <span class="badge @LifecycleBadge(_selectedDetail.Product.LifecycleStatus)">@_selectedDetail.Product.LifecycleStatus</span>
+                                </div>
+
+                                <dl class="row small mb-3">
+                                    <dt class="col-5">Family</dt><dd class="col-7">@(_selectedDetail.Product.ProductFamily ?? "—")</dd>
+                                    <dt class="col-5">Permanent SKU</dt><dd class="col-7">@(_selectedDetail.Product.PermanentSku ?? "—")</dd>
+                                    <dt class="col-5">Square SKU</dt><dd class="col-7">@(_selectedDetail.Product.SquareSku ?? "—")</dd>
+                                    <dt class="col-5">Square IDs</dt><dd class="col-7">@(JoinIdentity(_selectedDetail.Product.SquareCatalogItemId, _selectedDetail.Product.SquareCatalogVariationId))</dd>
+                                    <dt class="col-5">Woo IDs</dt><dd class="col-7">@(JoinIdentity(_selectedDetail.Product.WooProductId, _selectedDetail.Product.WooVariationId))</dd>
+                                    <dt class="col-5">Production</dt><dd class="col-7">@(_selectedDetail.Product.ProductionFamily ?? "—")</dd>
+                                    <dt class="col-5">Channels</dt><dd class="col-7">@ChannelSummary(_selectedDetail.Product)</dd>
+                                    <dt class="col-5">Barcode</dt><dd class="col-7">@_selectedDetail.BarcodeStatus</dd>
+                                    <dt class="col-5">Readiness</dt><dd class="col-7">@_selectedDetail.ProductionReadiness</dd>
+                                </dl>
+
+                                <div class="mb-3">
+                                    <div class="small text-body-secondary mb-2">Lifecycle</div>
+                                    <div class="d-flex gap-2 flex-wrap">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick='() => UpdateLifecycleAsync(_selectedDetail.Product.Id, "DRAFT")'>Draft</button>
+                                        <button class="btn btn-sm btn-outline-success" @onclick='() => UpdateLifecycleAsync(_selectedDetail.Product.Id, "ACTIVE")'>Active</button>
+                                        <button class="btn btn-sm btn-outline-warning" @onclick='() => UpdateLifecycleAsync(_selectedDetail.Product.Id, "PAUSED")'>Paused</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick='() => UpdateLifecycleAsync(_selectedDetail.Product.Id, "DISCONTINUED")'>Discontinued</button>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <div class="small text-body-secondary mb-2">Related variants</div>
+                                    @foreach (var variant in _selectedDetail.RelatedVariants)
+                                    {
+                                        <div class="border rounded px-2 py-1 mb-2">
+                                            <div class="fw-semibold">@variant.Name</div>
+                                            <div class="small text-body-secondary">@VariantLabel(variant) · SKU @(variant.SquareSku ?? "Pending")</div>
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="mb-3">
+                                    <div class="small text-body-secondary mb-2">Relationship foundation</div>
+                                    <InputSelect class="form-select mb-2" @bind-Value="_relationshipTargetId">
+                                        <option value="">Select another product…</option>
+                                        @foreach (var candidate in _workspace.Catalog.Products.Where(x => x.Id != _selectedDetail.Product.Id).Take(250))
+                                        {
+                                            <option value="@candidate.Id.ToString()">@candidate.Name (@(candidate.SquareSku ?? candidate.PermanentSku ?? "pending"))</option>
+                                        }
+                                    </InputSelect>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick='() => SaveRelationshipAsync("MERGE")' disabled="@string.IsNullOrWhiteSpace(_relationshipTargetId)">Mark Merged Into</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick='() => SaveRelationshipAsync("REPLACEMENT")' disabled="@string.IsNullOrWhiteSpace(_relationshipTargetId)">Mark Replaced By</button>
+                                    </div>
+                                </div>
+
+                                @if (_selectedDetail.Issues.Count > 0)
+                                {
+                                    <div>
+                                        <div class="small text-body-secondary mb-2">Current issues</div>
+                                        @foreach (var issue in _selectedDetail.Issues.Take(6))
+                                        {
+                                            <div class="border rounded px-2 py-2 mb-2">
+                                                <div class="fw-semibold">@issue.Title</div>
+                                                <div class="small text-body-secondary">@issue.Message</div>
+                                                <div class="small">@issue.SuggestedAction</div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card mb-4">
+            <div class="card-header">
                 <strong>Recent Nebula batches</strong>
-                <div class="small text-body-secondary">Each row shows the per-variant creation state so failed Square work can be retried without reusing SKUs.</div>
+                <div class="small text-body-secondary">Round 3 keeps partial successes and reserved SKUs intact. Retry only targets failed/pending downstream work.</div>
             </div>
             <div class="card-body">
                 @if (_workspace.RecentBatches.Count == 0)
@@ -327,9 +580,9 @@
                                     <thead>
                                         <tr>
                                             <th>Variant</th>
+                                            <th>Artwork</th>
                                             <th>Square SKU</th>
                                             <th>Status</th>
-                                            <th>Square IDs</th>
                                             <th>Error</th>
                                         </tr>
                                     </thead>
@@ -341,9 +594,9 @@
                                                     <div class="fw-semibold">@variant.ProductName</div>
                                                     <div class="small text-body-secondary">@BuildVariantLabel(variant.ProductTypeCode, variant.LeatherCode)</div>
                                                 </td>
+                                                <td class="small text-body-secondary">@(variant.ArtworkName ?? "—")</td>
                                                 <td>@(variant.ReservedSquareSku ?? "Pending")</td>
                                                 <td><span class="badge @VariantBadge(variant.Status)">@variant.Status</span></td>
-                                                <td class="small text-body-secondary">@(string.IsNullOrWhiteSpace(variant.SquareCatalogVariationId) ? (variant.SquareCatalogItemId ?? "—") : $"{variant.SquareCatalogItemId} / {variant.SquareCatalogVariationId}")</td>
                                                 <td class="small text-body-secondary">@(variant.LastError ?? "—")</td>
                                             </tr>
                                         }
@@ -356,119 +609,126 @@
             </div>
         </section>
 
-        <section class="card mb-4">
-            <div class="card-header d-flex justify-content-between gap-2 flex-wrap">
-                <div>
-                    <strong>Registry products</strong>
-                    <div class="small text-body-secondary">Newest 200 sellable variants in the live Control App registry.</div>
-                </div>
-                <input class="form-control form-control-sm" style="max-width: 280px;" placeholder="Filter products…" @bind="_filter" @bind:event="oninput" />
-            </div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th>Product</th>
-                            <th>Square SKU</th>
-                            <th>Internal SKU</th>
-                            <th>Status</th>
-                            <th>Variant</th>
-                            <th>Family</th>
-                            <th>Square</th>
-                            <th>Woo</th>
-                            <th>Created</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var product in FilteredProducts)
-                        {
-                            <tr>
-                                <td>
-                                    <div class="fw-semibold">@product.Name</div>
-                                    @if (!string.IsNullOrWhiteSpace(product.ArtworkName))
-                                    {
-                                        <div class="small text-body-secondary">@product.ArtworkName</div>
-                                    }
-                                </td>
-                                <td>@(product.SquareSku ?? "Pending")</td>
-                                <td class="small text-body-secondary">@(product.PermanentSku ?? "—")</td>
-                                <td><span class="badge @LifecycleBadge(product.LifecycleStatus)">@product.LifecycleStatus</span></td>
-                                <td class="small text-body-secondary">@VariantLabel(product)</td>
-                                <td>@(product.ProductFamily ?? "—")</td>
-                                <td class="small text-body-secondary">@(string.IsNullOrWhiteSpace(product.SquareCatalogVariationId) ? (product.SquareCatalogItemId ?? "—") : $"{product.SquareCatalogItemId} / {product.SquareCatalogVariationId}")</td>
-                                <td class="small text-body-secondary">@(string.IsNullOrWhiteSpace(product.WooVariationId) ? (product.WooProductId ?? "—") : $"{product.WooProductId} / {product.WooVariationId}")</td>
-                                <td>@product.CreatedAt.ToLocalTime().ToString("g")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
         <section class="card">
             <div class="card-header d-flex justify-content-between gap-2 flex-wrap">
                 <div>
-                    <strong>Square SKU reconciliation</strong>
-                    <div class="small text-body-secondary">Compares live Square catalog SKU usage with the Control App registry without auto-linking uncertain matches.</div>
+                    <strong>Catalog Health</strong>
+                    <div class="small text-body-secondary">Unified Control App, Square, and Woo review. Safe Square link suggestions appear only when a single exact SKU match is available.</div>
                 </div>
-                @if (_reconciliation is not null)
+                @if (_health is not null)
                 {
-                    <span class="badge text-bg-secondary">Assigned SKUs: @_reconciliation.AssignedSkuCount</span>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <span class="badge text-bg-secondary">Total issues: @_health.IssueCount</span>
+                        <span class="badge text-bg-secondary">Square: @_health.SquareIssueCount</span>
+                        <span class="badge text-bg-secondary">Woo: @_health.WooIssueCount</span>
+                        <span class="badge text-bg-secondary">Internal: @_health.InternalIssueCount</span>
+                    </div>
                 }
             </div>
+            <div class="card-body">
+                @if (_health is null)
+                {
+                    <div class="text-body-secondary">Refresh the catalog health panel when you want a fresh downstream comparison.</div>
+                }
+                else
+                {
+                    @if (_health.SafeSquareMatches.Count > 0)
+                    {
+                        <div class="mb-4">
+                            <h3 class="h6">Safe Square matches</h3>
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Product</th>
+                                            <th>Permanent SKU</th>
+                                            <th>Square row</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var match in _health.SafeSquareMatches)
+                                        {
+                                            <tr>
+                                                <td>@match.ProductName</td>
+                                                <td>@match.PermanentSku</td>
+                                                <td class="small text-body-secondary">@match.SquareDisplayName</td>
+                                                <td><button class="btn btn-sm btn-outline-primary" @onclick="() => ApplySafeSquareMatchAsync(match)">Adopt Square IDs</button></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
 
-            @if (_reconciliation is null)
-            {
-                <div class="card-body text-body-secondary">Run the reconciliation when you want a fresh Square comparison.</div>
-            }
-            else
-            {
-                <div class="card-body">
-                    <div class="row g-3 mb-4">
-                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Duplicate SKUs</div><div class="fs-4 fw-bold">@_reconciliation.DuplicateSkuCount</div></div></div>
-                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Missing Square SKUs</div><div class="fs-4 fw-bold">@_reconciliation.MissingSquareSkuCount</div></div></div>
-                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Square not mapped</div><div class="fs-4 fw-bold">@_reconciliation.UnmappedSquareCount</div></div></div>
-                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Safe matches</div><div class="fs-4 fw-bold">@_reconciliation.SafeMatchCount</div></div></div>
-                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Conflicts</div><div class="fs-4 fw-bold">@_reconciliation.ConflictCount</div></div></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Scope</th>
+                                    <th>Severity</th>
+                                    <th>Item</th>
+                                    <th>Issue</th>
+                                    <th>Suggested action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var issue in _health.Issues.Take(80))
+                                {
+                                    <tr>
+                                        <td><span class="badge text-bg-secondary">@issue.Scope</span></td>
+                                        <td><span class="badge @SeverityBadge(issue.Severity)">@issue.Severity</span></td>
+                                        <td>
+                                            <div class="fw-semibold">@issue.Title</div>
+                                            <div class="small text-body-secondary">@issue.Sku</div>
+                                        </td>
+                                        <td class="small">@issue.Message</td>
+                                        <td class="small text-body-secondary">@issue.SuggestedAction</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
-                </div>
-            }
+                }
+            </div>
         </section>
     }
 </div>
 
 @code {
     private NebulaWorkspace? _workspace;
-    private SquareSkuReconciliationReport? _reconciliation;
-    private string _activeFlow = "NEW_ARTWORK";
+    private NebulaCatalogHealthReport? _health;
+    private NebulaProductDetail? _selectedDetail;
+    private string _activeFlow = "BULK_ARTWORK";
     private string _filter = string.Empty;
+    private string _familyFilter = string.Empty;
+    private string _lifecycleFilter = string.Empty;
+    private string _squareSyncFilter = string.Empty;
+    private string _wooSyncFilter = string.Empty;
+    private string _variantFilter = string.Empty;
+    private string? _relationshipTargetId;
     private string? _message;
     private bool _hasError;
     private bool _loading;
     private bool _saving;
-    private bool _reconLoading;
+    private bool _healthLoading;
+    private bool _bulkSyncToSquare;
+    private string _bulkPreviewSummary = string.Empty;
 
-    private SaveFamilyTemplateInput _familyInput = new()
-    {
-        VariantOptionsText = "BK:Black, BR:Brown"
-    };
-    private NebulaArtworkWorkflowInput _artworkInput = new();
+    private SaveFamilyTemplateInput _familyInput = new() { VariantOptionsText = "BK:Black, BR:Brown" };
+    private NebulaBulkArtworkPreviewInput _bulkArtworkInput = new();
+    private readonly List<BulkPreviewEditorRow> _bulkPreviewRows = [];
     private NebulaProductWorkflowInput _productInput = new();
     private NebulaDuplicateWorkflowInput _duplicateInput = new();
     private string? _duplicateSourceId;
 
-    private IBrowserFile? _artworkDesignFile;
-    private IBrowserFile? _artworkProductImageFile;
     private IBrowserFile? _productDesignFile;
     private IBrowserFile? _productProductImageFile;
 
-    private IReadOnlyList<ProductRegistryRow> FilteredProducts => _workspace?.Dashboard.Products
-        .Where(x => string.IsNullOrWhiteSpace(_filter)
-                    || x.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)
-                    || (x.SquareSku?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (x.PermanentSku?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (x.ProductFamily?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (x.ArtworkName?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false))
+    private IReadOnlyList<ProductRegistryRow> FilteredProducts => _workspace?.Catalog.Products
+        .Where(ApplyCatalogFilters)
+        .Take(500)
         .ToList() ?? [];
 
     private NebulaFamilyTemplateSummary? SelectedProductFamily => _workspace?.FamilyTemplates
@@ -477,7 +737,28 @@
     protected override async Task OnInitializedAsync()
     {
         await RefreshWorkspaceAsync();
+        await RefreshHealthAsync();
     }
+
+    private bool ApplyCatalogFilters(ProductRegistryRow product)
+    {
+        var matchesText = string.IsNullOrWhiteSpace(_filter)
+            || product.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)
+            || (product.SquareSku?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (product.PermanentSku?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (product.ProductFamily?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (product.ArtworkName?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false);
+
+        return matchesText
+               && MatchesFilter(_familyFilter, product.ProductFamily)
+               && MatchesFilter(_lifecycleFilter, product.LifecycleStatus)
+               && MatchesFilter(_squareSyncFilter, product.SquareSyncState)
+               && MatchesFilter(_wooSyncFilter, product.WooSyncState)
+               && MatchesFilter(_variantFilter, product.LeatherCode);
+    }
+
+    private static bool MatchesFilter(string filter, string? value)
+        => string.IsNullOrWhiteSpace(filter) || string.Equals(filter, value, StringComparison.OrdinalIgnoreCase);
 
     private async Task RefreshWorkspaceAsync()
     {
@@ -485,13 +766,44 @@
         try
         {
             _workspace = await ProductRegistry.GetWorkspaceAsync();
+            if (_selectedDetail is not null)
+                await SelectProductAsync(_selectedDetail.Product.Id);
             if (SelectedProductFamily is not null && _productInput.SelectedVariantCodes.Count == 0)
                 SeedProductVariantDefaults(SelectedProductFamily);
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
         }
         finally
         {
             _loading = false;
         }
+    }
+
+    private async Task RefreshHealthAsync()
+    {
+        _healthLoading = true;
+        try
+        {
+            _health = await ProductRegistry.ReconcileCatalogAsync();
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _healthLoading = false;
+        }
+    }
+
+    private async Task SelectProductAsync(Guid productId)
+    {
+        _selectedDetail = await ProductRegistry.GetProductDetailAsync(productId);
+        _relationshipTargetId = null;
     }
 
     private void SetFlow(string flow)
@@ -501,30 +813,72 @@
         _hasError = false;
     }
 
-    private async Task SubmitArtworkAsync()
+    private async Task PrepareBulkPreviewAsync()
     {
         _saving = true;
         _hasError = false;
         _message = null;
         try
         {
-            var input = new NebulaArtworkWorkflowInput
+            var result = await ProductRegistry.PrepareBulkArtworkPreviewAsync(_bulkArtworkInput);
+            _bulkPreviewRows.Clear();
+            _bulkPreviewRows.AddRange(result.Rows.Select(row => new BulkPreviewEditorRow
             {
-                ArtworkName = _artworkInput.ArtworkName,
-                FamilyKeys = _artworkInput.FamilyKeys.ToList(),
-                Notes = _artworkInput.Notes,
-                SyncToSquare = _artworkInput.SyncToSquare
+                ClientRowId = row.ClientRowId,
+                ArtworkName = row.ArtworkName,
+                FamilyKey = row.FamilyKey,
+                FamilyName = row.FamilyName,
+                ProductTypeCode = row.ProductTypeCode,
+                VariantCode = row.VariantCode,
+                VariantName = row.VariantName,
+                Price = row.Price,
+                ProposedSquareSku = row.ProposedSquareSku,
+                Create = row.Create,
+                ConflictMessage = row.ConflictMessage,
+                ExistingProductName = row.ExistingProductName
+            }));
+            _bulkPreviewSummary = result.Message;
+            _message = result.Message;
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CommitBulkArtworkAsync()
+    {
+        _saving = true;
+        _hasError = false;
+        _message = null;
+        try
+        {
+            var input = new NebulaBulkArtworkCommitInput
+            {
+                Notes = _bulkArtworkInput.Notes,
+                SyncToSquare = _bulkSyncToSquare,
+                Rows = _bulkPreviewRows.Select(row => new NebulaBulkArtworkCommitRowInput
+                {
+                    ClientRowId = row.ClientRowId,
+                    ArtworkName = row.ArtworkName,
+                    FamilyKey = row.FamilyKey,
+                    VariantCode = row.VariantCode,
+                    VariantName = row.VariantName,
+                    Price = row.Price,
+                    Create = row.Create && string.IsNullOrWhiteSpace(row.ConflictMessage)
+                }).ToList()
             };
 
-            if (_artworkDesignFile is not null)
-                input.DesignAssetPath = (await NebulaAssetStorage.SaveAssetAsync(_artworkDesignFile, "artwork")).RelativeUrl;
-            if (_artworkProductImageFile is not null)
-                input.ProductImagePath = (await NebulaAssetStorage.SaveAssetAsync(_artworkProductImageFile, "product-image")).RelativeUrl;
-
-            var result = await ProductRegistry.CreateArtworkBatchAsync(input);
+            var result = await ProductRegistry.CommitBulkArtworkBatchAsync(input);
             _message = result.Message;
-            ResetArtworkForm();
+            ResetBulkArtwork();
             await RefreshWorkspaceAsync();
+            await RefreshHealthAsync();
         }
         catch (Exception ex)
         {
@@ -564,6 +918,7 @@
             _message = result.Message;
             ResetProductForm();
             await RefreshWorkspaceAsync();
+            await RefreshHealthAsync();
         }
         catch (Exception ex)
         {
@@ -614,6 +969,7 @@
             _message = result.Message;
             ResetDuplicateForm();
             await RefreshWorkspaceAsync();
+            await RefreshHealthAsync();
         }
         catch (Exception ex)
         {
@@ -636,6 +992,7 @@
             var result = await ProductRegistry.RetryBatchAsync(batchId);
             _message = result.Message;
             await RefreshWorkspaceAsync();
+            await RefreshHealthAsync();
         }
         catch (Exception ex)
         {
@@ -648,36 +1005,86 @@
         }
     }
 
-    private async Task RefreshReconciliationAsync()
+    private async Task UpdateLifecycleAsync(Guid productId, string status)
     {
-        _reconLoading = true;
+        _saving = true;
         _hasError = false;
-        _message = null;
         try
         {
-            _reconciliation = await ProductRegistry.ReconcileSquareCatalogAsync();
+            await ProductRegistry.UpdateLifecycleAsync(new NebulaLifecycleUpdateInput { ProductId = productId, LifecycleStatus = status });
+            _message = $"Lifecycle updated to {status}.";
+            await RefreshWorkspaceAsync();
+            await RefreshHealthAsync();
+            await SelectProductAsync(productId);
         }
         catch (Exception ex)
         {
             _hasError = true;
-            _message = $"Square reconciliation failed: {ex.Message}";
+            _message = ex.Message;
         }
         finally
         {
-            _reconLoading = false;
+            _saving = false;
         }
     }
 
-    private Task OnArtworkDesignFileChanged(InputFileChangeEventArgs e)
+    private async Task SaveRelationshipAsync(string relationshipType)
     {
-        _artworkDesignFile = e.File;
-        return Task.CompletedTask;
+        if (_selectedDetail is null || !Guid.TryParse(_relationshipTargetId, out var targetId))
+            return;
+
+        _saving = true;
+        _hasError = false;
+        try
+        {
+            await ProductRegistry.SaveProductRelationshipAsync(new NebulaProductRelationshipInput
+            {
+                ProductId = _selectedDetail.Product.Id,
+                RelatedProductId = targetId,
+                RelationshipType = relationshipType
+            });
+            _message = relationshipType == "MERGE" ? "Merge relationship saved." : "Replacement relationship saved.";
+            await RefreshWorkspaceAsync();
+            await SelectProductAsync(_selectedDetail.Product.Id);
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 
-    private Task OnArtworkProductImageChanged(InputFileChangeEventArgs e)
+    private async Task ApplySafeSquareMatchAsync(SquareSafeMatchRow match)
     {
-        _artworkProductImageFile = e.File;
-        return Task.CompletedTask;
+        _saving = true;
+        _hasError = false;
+        try
+        {
+            await ProductRegistry.LinkSquareIdentityAsync(new NebulaSquareLinkInput
+            {
+                ProductId = match.ProductId,
+                SquareItemId = match.SquareItemId,
+                SquareVariationId = match.SquareVariationId
+            });
+            _message = $"Linked {match.ProductName} to the live Square record.";
+            await RefreshWorkspaceAsync();
+            await RefreshHealthAsync();
+            if (_selectedDetail?.Product.Id == match.ProductId)
+                await SelectProductAsync(match.ProductId);
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 
     private Task OnProductDesignFileChanged(InputFileChangeEventArgs e)
@@ -706,16 +1113,16 @@
             : family.VariantOptions.Where(x => x.IsDefaultSelected).Select(x => x.OptionCode).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    private void ToggleArtworkFamily(string familyKey, bool isSelected)
+    private void ToggleBulkArtworkFamily(string familyKey, bool isSelected)
     {
         if (isSelected)
         {
-            if (!_artworkInput.FamilyKeys.Contains(familyKey, StringComparer.OrdinalIgnoreCase))
-                _artworkInput.FamilyKeys.Add(familyKey);
+            if (!_bulkArtworkInput.FamilyKeys.Contains(familyKey, StringComparer.OrdinalIgnoreCase))
+                _bulkArtworkInput.FamilyKeys.Add(familyKey);
         }
         else
         {
-            _artworkInput.FamilyKeys.RemoveAll(x => string.Equals(x, familyKey, StringComparison.OrdinalIgnoreCase));
+            _bulkArtworkInput.FamilyKeys.RemoveAll(x => string.Equals(x, familyKey, StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -732,11 +1139,12 @@
         }
     }
 
-    private void ResetArtworkForm()
+    private void ResetBulkArtwork()
     {
-        _artworkInput = new NebulaArtworkWorkflowInput();
-        _artworkDesignFile = null;
-        _artworkProductImageFile = null;
+        _bulkArtworkInput = new NebulaBulkArtworkPreviewInput();
+        _bulkPreviewRows.Clear();
+        _bulkPreviewSummary = string.Empty;
+        _bulkSyncToSquare = false;
     }
 
     private void ResetProductForm()
@@ -748,10 +1156,7 @@
 
     private void ResetFamilyForm()
     {
-        _familyInput = new SaveFamilyTemplateInput
-        {
-            VariantOptionsText = "BK:Black, BR:Brown"
-        };
+        _familyInput = new SaveFamilyTemplateInput { VariantOptionsText = "BK:Black, BR:Brown" };
     }
 
     private void ResetDuplicateForm()
@@ -767,17 +1172,42 @@
 
     private static string BuildVariantLabel(string? productTypeCode, string? leatherCode)
     {
-        var parts = new[] { productTypeCode, leatherCode }
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToArray();
-
+        var parts = new[] { productTypeCode, leatherCode }.Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
         return parts.Length == 0 ? "—" : string.Join(" / ", parts);
+    }
+
+    private static string JoinIdentity(string? left, string? right)
+        => string.IsNullOrWhiteSpace(right) ? (left ?? "—") : $"{left} / {right}";
+
+    private static string ChannelSummary(ProductRegistryRow product)
+    {
+        var channels = new List<string>();
+        if (product.SellInPerson) channels.Add("Square");
+        if (product.SellOnline) channels.Add("Woo");
+        if (product.TrackInventory) channels.Add("Tracked");
+        return channels.Count == 0 ? "None" : string.Join(", ", channels);
     }
 
     private static string LifecycleBadge(string status) => status switch
     {
         "ACTIVE" => "text-bg-success",
         "PAUSED" => "text-bg-warning",
+        "DISCONTINUED" => "text-bg-secondary",
+        _ => "text-bg-primary"
+    };
+
+    private static string SeverityBadge(string severity) => severity switch
+    {
+        "ERROR" => "text-bg-danger",
+        "WARN" => "text-bg-warning",
+        _ => "text-bg-info"
+    };
+
+    private static string SyncBadge(string state) => state switch
+    {
+        "MAPPED" => "text-bg-success",
+        "PENDING" => "text-bg-warning",
+        "MISSING" => "text-bg-warning",
         "DISCONTINUED" => "text-bg-secondary",
         _ => "text-bg-primary"
     };
@@ -796,6 +1226,7 @@
         "SQUARE_SYNCED" => "text-bg-success",
         "SQUARE_FAILED" => "text-bg-danger",
         "DRAFT_READY" => "text-bg-primary",
+        "DRAFT_FAILED" => "text-bg-danger",
         _ => "text-bg-secondary"
     };
 
@@ -804,4 +1235,20 @@
 
     private string FlowButton(string flow)
         => _activeFlow == flow ? "btn-primary" : "btn-outline-primary";
+
+    private sealed class BulkPreviewEditorRow
+    {
+        public string ClientRowId { get; set; } = Guid.NewGuid().ToString("N");
+        public string ArtworkName { get; set; } = string.Empty;
+        public string FamilyKey { get; set; } = string.Empty;
+        public string FamilyName { get; set; } = string.Empty;
+        public string? ProductTypeCode { get; set; }
+        public string VariantCode { get; set; } = string.Empty;
+        public string VariantName { get; set; } = "Regular";
+        public decimal Price { get; set; }
+        public string ProposedSquareSku { get; set; } = string.Empty;
+        public bool Create { get; set; }
+        public string? ConflictMessage { get; set; }
+        public string? ExistingProductName { get; set; }
+    }
 }

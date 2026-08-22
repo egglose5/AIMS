@@ -6,13 +6,22 @@ namespace MustaineAI.Services;
 public interface IPermanentSkuService
 {
     Task<string> GetOrAssignAsync(Guid sellableProductId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, string>> GetOrAssignManyAsync(IReadOnlyList<Guid> sellableProductIds, CancellationToken cancellationToken = default);
 }
 
 public sealed class PermanentSkuService(
     ApplicationDbContext db) : IPermanentSkuService
 {
     public async Task<string> GetOrAssignAsync(Guid sellableProductId, CancellationToken cancellationToken = default)
+        => (await GetOrAssignManyAsync([sellableProductId], cancellationToken))[sellableProductId];
+
+    public async Task<IReadOnlyDictionary<Guid, string>> GetOrAssignManyAsync(
+        IReadOnlyList<Guid> sellableProductIds,
+        CancellationToken cancellationToken = default)
     {
+        if (sellableProductIds.Count == 0)
+            return new Dictionary<Guid, string>();
+
         var strategy = db.Database.CreateExecutionStrategy();
 
         return await strategy.ExecuteAsync(async () =>
@@ -21,16 +30,13 @@ public sealed class PermanentSkuService(
                 System.Data.IsolationLevel.Serializable,
                 cancellationToken);
 
-            var product = await db.SellableProducts
-                .SingleAsync(x => x.Id == sellableProductId, cancellationToken);
+            var products = await db.SellableProducts
+                .Where(x => sellableProductIds.Contains(x.Id))
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(cancellationToken);
 
-            if (!string.IsNullOrWhiteSpace(product.PermanentSku))
-            {
-                await UpsertRegistryEntryAsync(product, product.PermanentSku, cancellationToken);
-                await db.SaveChangesAsync(cancellationToken);
-                await tx.CommitAsync(cancellationToken);
-                return product.PermanentSku;
-            }
+            if (products.Count != sellableProductIds.Distinct().Count())
+                throw new InvalidOperationException("One or more sellable products were not found for permanent SKU allocation.");
 
             var sequence = await db.PermanentSkuSequences
                 .SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
@@ -51,24 +57,36 @@ public sealed class PermanentSkuService(
                 : Math.Max(sequence.LastIssuedNumber, reservedNumbers.Max());
 
             var next = currentMax;
-            do
+            var assigned = new Dictionary<Guid, string>();
+            foreach (var product in products)
             {
-                next++;
-                if (next > 99999)
-                    throw new InvalidOperationException("Permanent SKU range 00001-99999 is exhausted.");
+                if (!string.IsNullOrWhiteSpace(product.PermanentSku))
+                {
+                    await UpsertRegistryEntryAsync(product, product.PermanentSku, cancellationToken);
+                    assigned[product.Id] = product.PermanentSku;
+                    continue;
+                }
+
+                do
+                {
+                    next++;
+                    if (next > 99999)
+                        throw new InvalidOperationException("Permanent SKU range 00001-99999 is exhausted.");
+                }
+                while (reservedNumbers.Contains(next));
+
+                var assignedSku = next.ToString("D5");
+                reservedNumbers.Add(next);
+                sequence.LastIssuedNumber = next;
+                product.PermanentSku = assignedSku;
+                product.UpdatedAt = DateTimeOffset.UtcNow;
+
+                await UpsertRegistryEntryAsync(product, assignedSku, cancellationToken);
+                assigned[product.Id] = assignedSku;
             }
-            while (reservedNumbers.Contains(next));
-
-            var assignedSku = next.ToString("D5");
-            sequence.LastIssuedNumber = next;
-            product.PermanentSku = assignedSku;
-            product.UpdatedAt = DateTimeOffset.UtcNow;
-
-            await UpsertRegistryEntryAsync(product, assignedSku, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await tx.CommitAsync(cancellationToken);
-
-            return assignedSku;
+            return assigned;
         });
     }
 
@@ -103,9 +121,7 @@ public sealed class PermanentSkuService(
     {
         var now = DateTimeOffset.UtcNow;
         var entry = await db.SkuRegistryEntries
-            .SingleOrDefaultAsync(
-                x => x.SellableProductId == product.Id || x.Sku == sku,
-                cancellationToken);
+            .SingleOrDefaultAsync(x => x.Sku == sku, cancellationToken);
 
         if (entry is not null &&
             entry.SellableProductId != product.Id)

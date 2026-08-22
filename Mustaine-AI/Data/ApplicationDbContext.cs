@@ -433,6 +433,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.Property(x => x.WooProductId).HasMaxLength(192);
             entity.Property(x => x.WooVariationId).HasMaxLength(192);
             entity.Property(x => x.BarcodeValue).HasMaxLength(160);
+            entity.Property(x => x.SellInPerson).HasDefaultValue(true);
+            entity.Property(x => x.SellOnline).HasDefaultValue(true);
+            entity.Property(x => x.TrackInventory).HasDefaultValue(true);
 
             entity.HasIndex(x => x.Identifier).IsUnique();
             entity.HasIndex(x => x.PermanentSku).IsUnique();
@@ -444,6 +447,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasFilter("\"ProductTypeCode\" IS NOT NULL AND \"ArtworkKey\" IS NOT NULL AND \"LeatherCode\" IS NOT NULL");
             entity.HasIndex(x => x.IsActive);  // Filter for active products
             entity.HasIndex(x => x.LifecycleStatus);
+            entity.HasIndex(x => x.MergedIntoProductId);
+            entity.HasIndex(x => x.ReplacedByProductId);
         });
 
 
@@ -544,6 +549,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         {
             entity.HasKey(x => x.Id);
             entity.Property(x => x.ProductName).HasMaxLength(220);
+            entity.Property(x => x.ArtworkKey).HasMaxLength(260);
+            entity.Property(x => x.ArtworkName).HasMaxLength(220);
             entity.Property(x => x.ProductTypeCode).HasMaxLength(40);
             entity.Property(x => x.LeatherCode).HasMaxLength(8);
             entity.Property(x => x.Status).HasMaxLength(40);
@@ -568,7 +575,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.HasIndex(x => x.BatchId);
             entity.HasIndex(x => x.SellableProductId);
             entity.HasIndex(x => x.Status);
-            entity.HasIndex(x => new { x.BatchId, x.ProductTypeCode, x.LeatherCode }).IsUnique();
+            entity.HasIndex(x => new { x.BatchId, x.ArtworkKey, x.ProductTypeCode, x.LeatherCode }).IsUnique();
         });
 
         // ===== CONFIGURATION: Inventory Ledger =====

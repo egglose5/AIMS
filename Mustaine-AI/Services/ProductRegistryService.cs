@@ -11,10 +11,16 @@ public interface IProductRegistryService
     Task<CreateDraftProductResult> CreateDraftProductAsync(NewProductIntakeInput input, CancellationToken cancellationToken = default);
     Task<SaveFamilyTemplateResult> SaveFamilyTemplateAsync(SaveFamilyTemplateInput input, CancellationToken cancellationToken = default);
     Task<NebulaBatchResult> CreateArtworkBatchAsync(NebulaArtworkWorkflowInput input, CancellationToken cancellationToken = default);
+    Task<BulkArtworkPreviewResult> PrepareBulkArtworkPreviewAsync(NebulaBulkArtworkPreviewInput input, CancellationToken cancellationToken = default);
+    Task<NebulaBatchResult> CommitBulkArtworkBatchAsync(NebulaBulkArtworkCommitInput input, CancellationToken cancellationToken = default);
     Task<NebulaBatchResult> CreateProductBatchAsync(NebulaProductWorkflowInput input, CancellationToken cancellationToken = default);
     Task<NebulaBatchResult> DuplicateProductAsync(NebulaDuplicateWorkflowInput input, CancellationToken cancellationToken = default);
     Task<NebulaBatchResult> RetryBatchAsync(Guid batchId, CancellationToken cancellationToken = default);
-    Task<SquareSkuReconciliationReport> ReconcileSquareCatalogAsync(CancellationToken cancellationToken = default);
+    Task<NebulaCatalogHealthReport> ReconcileCatalogAsync(CancellationToken cancellationToken = default);
+    Task<NebulaProductDetail> GetProductDetailAsync(Guid productId, CancellationToken cancellationToken = default);
+    Task UpdateLifecycleAsync(NebulaLifecycleUpdateInput input, CancellationToken cancellationToken = default);
+    Task SaveProductRelationshipAsync(NebulaProductRelationshipInput input, CancellationToken cancellationToken = default);
+    Task LinkSquareIdentityAsync(NebulaSquareLinkInput input, CancellationToken cancellationToken = default);
 }
 
 public sealed class ProductRegistryService(
@@ -22,6 +28,7 @@ public sealed class ProductRegistryService(
     ISellableSkuService sellableSkuService,
     IPermanentSkuService permanentSkuService,
     ISquareApiService squareApiService,
+    IWooCommerceApiService wooCommerceApiService,
     IArtworkVisualService artworkVisualService,
     ILogger<ProductRegistryService> logger) : IProductRegistryService
 {
@@ -36,7 +43,15 @@ public sealed class ProductRegistryService(
         var families = await LoadFamilyTemplatesAsync(cancellationToken);
         var artworks = await LoadArtworkOptionsAsync(cancellationToken);
         var batches = await LoadRecentBatchesAsync(cancellationToken);
-        return new NebulaWorkspace(dashboard, families, artworks, batches);
+        var catalogProducts = await LoadCatalogProductsAsync(cancellationToken);
+        var catalog = new NebulaCatalogSummary(
+            catalogProducts,
+            catalogProducts.Select(x => x.ProductFamily).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).Cast<string>().ToList(),
+            catalogProducts.Select(x => x.ProductionFamily).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).Cast<string>().ToList(),
+            catalogProducts.Select(x => x.LifecycleStatus).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(),
+            catalogProducts.Select(x => x.ProductTypeCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).Cast<string>().ToList(),
+            catalogProducts.Select(x => x.LeatherCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).Cast<string>().ToList());
+        return new NebulaWorkspace(dashboard, families, artworks, batches, catalog);
     }
 
     public async Task<ProductRegistryDashboard> GetDashboardAsync(CancellationToken cancellationToken = default)
@@ -119,8 +134,8 @@ public sealed class ProductRegistryService(
         db.SellableProducts.Add(product);
         await db.SaveChangesAsync(cancellationToken);
 
-        var permanentSku = await permanentSkuService.GetOrAssignAsync(product.Id, cancellationToken);
-        var squareSku = await sellableSkuService.GetOrAssignAsync(product.Id, cancellationToken);
+        var permanentSku = (await permanentSkuService.GetOrAssignManyAsync([product.Id], cancellationToken))[product.Id];
+        var squareSku = (await sellableSkuService.GetOrAssignManyAsync([product.Id], cancellationToken))[product.Id];
 
         return new CreateDraftProductResult(product.Id, squareSku, permanentSku, product.LifecycleStatus, product.Name);
     }
@@ -133,10 +148,8 @@ public sealed class ProductRegistryService(
         var familyName = input.FamilyName.Trim();
         var familyKey = BuildFamilyKey(familyName, input.ProductTypeCode);
         var template = input.TemplateId is { } templateId
-            ? await db.ProductFamilyTemplates
-                .SingleOrDefaultAsync(x => x.Id == templateId, cancellationToken)
-            : await db.ProductFamilyTemplates
-                .SingleOrDefaultAsync(x => x.FamilyKey == familyKey, cancellationToken);
+            ? await db.ProductFamilyTemplates.SingleOrDefaultAsync(x => x.Id == templateId, cancellationToken)
+            : await db.ProductFamilyTemplates.SingleOrDefaultAsync(x => x.FamilyKey == familyKey, cancellationToken);
 
         template ??= new ProductFamilyTemplateEntity
         {
@@ -229,25 +242,210 @@ public sealed class ProductRegistryService(
 
         foreach (var template in selectedTemplates)
         {
-            var options = template.VariantOptions.Count == 0
-                ? [new NebulaVariantOption("LEATHER", "", "Regular", true, 0)]
-                : template.VariantOptions.Where(x => x.IsDefaultSelected).OrderBy(x => x.SortOrder).ToList();
-
+            var options = ResolveDefaultOptions(template);
             foreach (var option in options)
             {
+                try
+                {
+                    await CreateVariantDraftAsync(
+                        batch,
+                        template,
+                        BuildArtworkProductName(artwork.ArtworkName, template.FamilyName, option.OptionName),
+                        artwork,
+                        option,
+                        template.DefaultPrice,
+                        input.Notes,
+                        input.SyncToSquare,
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    await CreateFailedBatchVariantAsync(
+                        batch,
+                        template,
+                        artwork.ArtworkKey,
+                        artwork.ArtworkName,
+                        BuildArtworkProductName(artwork.ArtworkName, template.FamilyName, option.OptionName),
+                        option,
+                        ex.Message,
+                        cancellationToken);
+                }
+            }
+        }
+
+        await ReserveBatchSkusAsync(batch.Id, cancellationToken);
+        return await FinalizeBatchAsync(batch.Id, input.SyncToSquare, cancellationToken);
+    }
+
+    public async Task<BulkArtworkPreviewResult> PrepareBulkArtworkPreviewAsync(NebulaBulkArtworkPreviewInput input, CancellationToken cancellationToken = default)
+    {
+        if (input.FamilyKeys.Count == 0)
+            throw new InvalidOperationException("Select at least one product family.");
+
+        var artworkNames = ParseArtworkNames(input.ArtworkNamesText);
+        if (artworkNames.Count == 0)
+            throw new InvalidOperationException("Enter at least one artwork name.");
+
+        var templates = (await LoadFamilyTemplatesAsync(cancellationToken))
+            .Where(x => input.FamilyKeys.Contains(x.FamilyKey, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        if (templates.Count == 0)
+            throw new InvalidOperationException("The selected family templates were not found.");
+
+        var existingProducts = await db.SellableProducts
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var rows = new List<BulkArtworkPreviewRow>();
+        var duplicateTracker = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var artworkName in artworkNames)
+        {
+            var artworkKey = ResolveArtworkKey(artworkName);
+            foreach (var template in templates)
+            {
+                foreach (var option in ResolveDefaultOptions(template))
+                {
+                    var productTypeCode = CleanCode(template.ProductTypeCode) ?? NormalizeFamilyCode(template.FamilyName);
+                    var leatherCode = string.IsNullOrWhiteSpace(option.OptionCode) ? null : CleanCode(option.OptionCode);
+                    var productName = BuildArtworkProductName(artworkName, template.FamilyName, option.OptionName);
+                    var rowKey = $"{artworkKey}|{template.FamilyKey}|{productTypeCode}|{leatherCode}";
+
+                    string? conflict = null;
+                    string? existingProductName = null;
+                    if (!duplicateTracker.Add(rowKey))
+                    {
+                        conflict = "This artwork/family/variant combination appears more than once in the current batch.";
+                    }
+                    else
+                    {
+                        var existing = existingProducts.FirstOrDefault(x =>
+                            string.Equals(x.ProductTypeCode, productTypeCode, StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(x.ArtworkKey, artworkKey, StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(x.LeatherCode, leatherCode, StringComparison.OrdinalIgnoreCase));
+                        if (existing is not null)
+                        {
+                            conflict = "A sellable variant with this artwork and variant identity already exists.";
+                            existingProductName = existing.Name;
+                        }
+                    }
+
+                    rows.Add(new BulkArtworkPreviewRow(
+                        Guid.NewGuid().ToString("N"),
+                        artworkName,
+                        template.FamilyKey,
+                        template.FamilyName,
+                        template.ProductTypeCode,
+                        template.ProductionFamily,
+                        option.OptionCode,
+                        option.OptionName,
+                        productName,
+                        template.DefaultPrice,
+                        string.Empty,
+                        conflict is null,
+                        conflict,
+                        existingProductName));
+                }
+            }
+        }
+
+        var creatableRows = rows.Where(x => x.Create).ToList();
+        var proposedSkus = await sellableSkuService.PreviewNextSkusAsync(creatableRows.Count, cancellationToken);
+        var proposedLookup = creatableRows
+            .Select((row, index) => new { row.ClientRowId, ProposedSku = proposedSkus[index] })
+            .ToDictionary(x => x.ClientRowId, x => x.ProposedSku, StringComparer.OrdinalIgnoreCase);
+
+        rows = rows.Select(row => row with
+        {
+            ProposedSquareSku = proposedLookup.TryGetValue(row.ClientRowId, out var proposed) ? proposed : "Conflict"
+        }).ToList();
+
+        return new BulkArtworkPreviewResult(
+            $"Prepared {rows.Count} variant row(s); {creatableRows.Count} are ready for creation.",
+            rows);
+    }
+
+    public async Task<NebulaBatchResult> CommitBulkArtworkBatchAsync(NebulaBulkArtworkCommitInput input, CancellationToken cancellationToken = default)
+    {
+        var selectedRows = input.Rows
+            .Where(x => x.Create)
+            .Where(x => !string.IsNullOrWhiteSpace(x.ArtworkName) && !string.IsNullOrWhiteSpace(x.FamilyKey))
+            .ToList();
+
+        if (selectedRows.Count == 0)
+            throw new InvalidOperationException("Select at least one preview row to create.");
+
+        var templates = (await LoadFamilyTemplatesAsync(cancellationToken))
+            .Where(x => selectedRows.Select(r => r.FamilyKey).Contains(x.FamilyKey, StringComparer.OrdinalIgnoreCase))
+            .ToDictionary(x => x.FamilyKey, StringComparer.OrdinalIgnoreCase);
+
+        var batch = await CreateBatchAsync(
+            "BULK_ARTWORK",
+            $"Bulk artwork batch ({selectedRows.Count} variants)",
+            null,
+            null,
+            input,
+            cancellationToken);
+
+        var artworks = new Dictionary<string, ProductArtworkEntity>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in selectedRows)
+        {
+            if (!templates.TryGetValue(row.FamilyKey, out var template))
+            {
+                await CreateFailedBatchVariantAsync(
+                    batch,
+                    null,
+                    ResolveArtworkKey(row.ArtworkName),
+                    row.ArtworkName,
+                    BuildArtworkProductName(row.ArtworkName, row.FamilyKey, row.VariantName),
+                    new NebulaVariantOption("LEATHER", row.VariantCode, row.VariantName, true, 0),
+                    "The selected product family template was not found.",
+                    cancellationToken);
+                continue;
+            }
+
+            try
+            {
+                if (!artworks.TryGetValue(row.ArtworkName.Trim(), out var artwork))
+                {
+                    artwork = await UpsertArtworkAsync(
+                        row.ArtworkName,
+                        row.DesignAssetPath,
+                        row.ProductImagePath,
+                        input.Notes,
+                        cancellationToken);
+                    artworks[row.ArtworkName.Trim()] = artwork;
+                }
+
+                var option = template.VariantOptions.FirstOrDefault(x => string.Equals(x.OptionCode, row.VariantCode, StringComparison.OrdinalIgnoreCase))
+                    ?? new NebulaVariantOption("LEATHER", row.VariantCode, string.IsNullOrWhiteSpace(row.VariantName) ? FriendlyOptionName(row.VariantCode) : row.VariantName, true, 0);
+
                 await CreateVariantDraftAsync(
                     batch,
                     template,
                     BuildArtworkProductName(artwork.ArtworkName, template.FamilyName, option.OptionName),
                     artwork,
                     option,
-                    template.DefaultPrice,
+                    row.Price,
                     input.Notes,
                     input.SyncToSquare,
                     cancellationToken);
             }
+            catch (Exception ex)
+            {
+                await CreateFailedBatchVariantAsync(
+                    batch,
+                    template,
+                    ResolveArtworkKey(row.ArtworkName),
+                    row.ArtworkName,
+                    BuildArtworkProductName(row.ArtworkName, template.FamilyName, row.VariantName),
+                    new NebulaVariantOption("LEATHER", row.VariantCode, row.VariantName, true, 0),
+                    ex.Message,
+                    cancellationToken);
+            }
         }
 
+        await ReserveBatchSkusAsync(batch.Id, cancellationToken);
         return await FinalizeBatchAsync(batch.Id, input.SyncToSquare, cancellationToken);
     }
 
@@ -297,18 +495,34 @@ public sealed class ProductRegistryService(
 
         foreach (var option in selectedOptions)
         {
-            await CreateVariantDraftAsync(
-                batch,
-                template,
-                BuildProductName(input.ProductName.Trim(), option.OptionName),
-                artwork,
-                option,
-                input.PriceOverride ?? template.DefaultPrice,
-                input.Notes,
-                input.SyncToSquare,
-                cancellationToken);
+            try
+            {
+                await CreateVariantDraftAsync(
+                    batch,
+                    template,
+                    BuildProductName(input.ProductName.Trim(), option.OptionName),
+                    artwork,
+                    option,
+                    input.PriceOverride ?? template.DefaultPrice,
+                    input.Notes,
+                    input.SyncToSquare,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await CreateFailedBatchVariantAsync(
+                    batch,
+                    template,
+                    artwork?.ArtworkKey,
+                    artwork?.ArtworkName,
+                    BuildProductName(input.ProductName.Trim(), option.OptionName),
+                    option,
+                    ex.Message,
+                    cancellationToken);
+            }
         }
 
+        await ReserveBatchSkusAsync(batch.Id, cancellationToken);
         return await FinalizeBatchAsync(batch.Id, input.SyncToSquare, cancellationToken);
     }
 
@@ -332,10 +546,11 @@ public sealed class ProductRegistryService(
                 source.ProductionFamily,
                 source.SquareCategoryName,
                 source.PriceCents / 100m,
-                source.LeatherCode is null
-                    ? []
-                    : [new NebulaVariantOption("LEATHER", source.LeatherCode, FriendlyOptionName(source.LeatherCode), true, 0)],
-                false);
+                source.LeatherCode is null ? [] : [new NebulaVariantOption("LEATHER", source.LeatherCode, FriendlyOptionName(source.LeatherCode), true, 0)],
+                false,
+                source.SellInPerson,
+                source.SellOnline,
+                source.TrackInventory);
 
         var artworkName = string.IsNullOrWhiteSpace(input.ArtworkName)
             ? $"{source.ArtworkName ?? source.Name} Copy"
@@ -357,20 +572,36 @@ public sealed class ProductRegistryService(
             true,
             0);
 
-        await CreateVariantDraftAsync(
-            batch,
-            template,
-            BuildProductName(input.NewProductName.Trim(), option.OptionName),
-            artwork,
-            option,
-            source.PriceCents / 100m,
-            input.Notes ?? source.Notes,
-            input.SyncToSquare,
-            cancellationToken,
-            productTypeOverride: source.ProductTypeCode,
-            productionFamilyOverride: source.ProductionFamily,
-            squareCategoryOverride: source.SquareCategoryName);
+        try
+        {
+            await CreateVariantDraftAsync(
+                batch,
+                template,
+                BuildProductName(input.NewProductName.Trim(), option.OptionName),
+                artwork,
+                option,
+                source.PriceCents / 100m,
+                input.Notes ?? source.Notes,
+                input.SyncToSquare,
+                cancellationToken,
+                productTypeOverride: source.ProductTypeCode,
+                productionFamilyOverride: source.ProductionFamily,
+                squareCategoryOverride: source.SquareCategoryName);
+        }
+        catch (Exception ex)
+        {
+            await CreateFailedBatchVariantAsync(
+                batch,
+                template,
+                artwork.ArtworkKey,
+                artwork.ArtworkName,
+                BuildProductName(input.NewProductName.Trim(), option.OptionName),
+                option,
+                ex.Message,
+                cancellationToken);
+        }
 
+        await ReserveBatchSkusAsync(batch.Id, cancellationToken);
         return await FinalizeBatchAsync(batch.Id, input.SyncToSquare, cancellationToken);
     }
 
@@ -382,121 +613,420 @@ public sealed class ProductRegistryService(
         if (batch is null)
             throw new InvalidOperationException("Nebula batch was not found.");
 
+        await ReserveBatchSkusAsync(batchId, cancellationToken);
+
         var variants = await db.NebulaCreationBatchVariants
             .Include(x => x.SellableProduct)
             .Where(x => x.BatchId == batchId)
             .ToListAsync(cancellationToken);
 
         foreach (var variant in variants.Where(x => x.RetryAllowed && x.SellableProductId is not null && x.Status is "SQUARE_FAILED" or "DRAFT_READY"))
-        {
             await TrySyncVariantAsync(variant, cancellationToken);
-        }
 
         return await FinalizeBatchAsync(batchId, syncToSquare: true, cancellationToken);
     }
 
-    public async Task<SquareSkuReconciliationReport> ReconcileSquareCatalogAsync(CancellationToken cancellationToken = default)
+    public async Task<NebulaCatalogHealthReport> ReconcileCatalogAsync(CancellationToken cancellationToken = default)
     {
-        var products = await db.SellableProducts
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
-        var registryRows = await db.SkuRegistryEntries
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
+        var products = await db.SellableProducts.AsNoTracking().ToListAsync(cancellationToken);
+        var batches = await db.NebulaCreationBatchVariants.AsNoTracking().Where(x => x.Status == "SQUARE_FAILED").ToListAsync(cancellationToken);
         var squareItems = await squareApiService.GetCatalogItemsAsync(cancellationToken: cancellationToken);
         var squareRows = ExpandSquareRows(squareItems);
 
-        var duplicateGroups = new List<SkuConflictRow>();
-        var conflictRows = new List<SkuConflictRow>();
-        var missingSquareSkus = squareRows
-            .Where(x => string.IsNullOrWhiteSpace(x.Sku))
-            .ToList();
+        IReadOnlyList<WooCommerceCatalogEntry> wooRows;
+        string? wooError = null;
+        try
+        {
+            wooRows = await wooCommerceApiService.GetPublishedCatalogAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            wooRows = [];
+            wooError = ex.Message;
+        }
 
-        var productsBySquareId = products
-            .Where(x => !string.IsNullOrWhiteSpace(x.SquareCatalogItemId) || !string.IsNullOrWhiteSpace(x.SquareCatalogVariationId))
-            .ToDictionary(
-                x => $"{x.SquareCatalogItemId}|{x.SquareCatalogVariationId}",
-                x => x,
-                StringComparer.OrdinalIgnoreCase);
-
-        var unmappedSquareRows = squareRows
-            .Where(x => !productsBySquareId.ContainsKey($"{x.ItemId}|{x.VariationId}"))
-            .ToList();
-
+        var issues = new List<NebulaCatalogIssueRow>();
         var safeMatches = new List<SquareSafeMatchRow>();
-        foreach (var squareRow in unmappedSquareRows.Where(x => !string.IsNullOrWhiteSpace(x.Sku)))
-        {
-            var skuMatch = products
-                .Where(x => string.Equals(x.SquareSku, squareRow.Sku, StringComparison.OrdinalIgnoreCase))
-                .ToList();
 
-            if (skuMatch.Count == 1 &&
-                string.IsNullOrWhiteSpace(skuMatch[0].SquareCatalogItemId) &&
-                string.IsNullOrWhiteSpace(skuMatch[0].SquareCatalogVariationId))
-            {
-                safeMatches.Add(new SquareSafeMatchRow(
-                    skuMatch[0].Id,
-                    skuMatch[0].Name,
-                    skuMatch[0].PermanentSku ?? "",
-                    squareRow.ItemId,
-                    squareRow.VariationId,
-                    squareRow.DisplayName));
-            }
-            else if (skuMatch.Count > 1)
-            {
-                conflictRows.Add(new SkuConflictRow(
-                    squareRow.Sku ?? "",
-                    "Multiple Control App products share the same sellable SKU.",
-                    skuMatch.Select(x => x.Name).Append(squareRow.DisplayName).ToList()));
-            }
+        if (!string.IsNullOrWhiteSpace(wooError))
+        {
+            issues.Add(new NebulaCatalogIssueRow(
+                "WOO",
+                "WARN",
+                "WOO_UNAVAILABLE",
+                null,
+                "Woo catalog could not be loaded",
+                wooError,
+                "Verify Woo read-only credentials in Settings before relying on reconciliation.",
+                null,
+                null));
         }
 
-        var duplicateCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var group in products.Where(x => !string.IsNullOrWhiteSpace(x.SquareSku)).GroupBy(x => x.SquareSku!, StringComparer.OrdinalIgnoreCase))
-            if (group.Select(x => x.Id).Distinct().Count() > 1)
-                duplicateCandidates.Add(group.Key);
-        foreach (var group in registryRows.Where(x => !string.IsNullOrWhiteSpace(x.Sku)).GroupBy(x => x.Sku, StringComparer.OrdinalIgnoreCase))
-            if (group.Select(x => x.SellableProductId ?? x.Id).Distinct().Count() > 1)
-                duplicateCandidates.Add(group.Key);
-        foreach (var group in squareRows.Where(x => !string.IsNullOrWhiteSpace(x.Sku)).GroupBy(x => x.Sku!, StringComparer.OrdinalIgnoreCase))
-            if (group.Select(x => $"{x.ItemId}|{x.VariationId}").Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
-                duplicateCandidates.Add(group.Key);
-
-        foreach (var sku in duplicateCandidates.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).Take(25))
         {
-            var details = new List<string>();
-            details.AddRange(products.Where(x => string.Equals(x.SquareSku, sku, StringComparison.OrdinalIgnoreCase)).Select(x => $"Control App: {x.Name}"));
-            details.AddRange(registryRows.Where(x => string.Equals(x.Sku, sku, StringComparison.OrdinalIgnoreCase)).Select(x => $"Registry: {x.ProductName ?? x.Sku}"));
-            details.AddRange(squareRows.Where(x => string.Equals(x.Sku, sku, StringComparison.OrdinalIgnoreCase)).Select(x => $"Square: {x.DisplayName}"));
-            duplicateGroups.Add(new SkuConflictRow(sku, "SKU appears in multiple records and needs review.", details.Distinct(StringComparer.OrdinalIgnoreCase).ToList()));
+            if (group.Count() <= 1)
+                continue;
+
+            foreach (var product in group)
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "INTERNAL",
+                    "ERROR",
+                    "DUPLICATE_INTERNAL_SKU",
+                    product.Id,
+                    $"Duplicate internal Square SKU {group.Key}",
+                    "Multiple Control App products share the same sellable Square SKU.",
+                    "Resolve the duplicate before any further downstream sync.",
+                    null,
+                    group.Key));
+            }
         }
 
+        foreach (var group in products.Where(x => !string.IsNullOrWhiteSpace(x.SquareCatalogVariationId)).GroupBy(x => x.SquareCatalogVariationId!, StringComparer.OrdinalIgnoreCase))
+        {
+            if (group.Count() <= 1)
+                continue;
+
+            foreach (var product in group)
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "INTERNAL",
+                    "ERROR",
+                    "DUPLICATE_SQUARE_MAPPING",
+                    product.Id,
+                    "Duplicate Square variation mapping",
+                    "Multiple Control App products point at the same Square variation ID.",
+                    "Split the mapping so every sellable variant owns exactly one downstream identity.",
+                    group.Key,
+                    product.SquareSku));
+            }
+        }
+
+        foreach (var group in products.Where(x => !string.IsNullOrWhiteSpace(x.WooVariationId) || !string.IsNullOrWhiteSpace(x.WooProductId))
+                     .GroupBy(x => $"{x.WooProductId}|{x.WooVariationId}", StringComparer.OrdinalIgnoreCase))
+        {
+            if (group.Count() <= 1)
+                continue;
+
+            foreach (var product in group)
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "INTERNAL",
+                    "WARN",
+                    "DUPLICATE_WOO_MAPPING",
+                    product.Id,
+                    "Duplicate Woo mapping",
+                    "Multiple Control App products point at the same Woo identity.",
+                    "Review the duplicate mapping before enabling or retrying Woo automation.",
+                    group.Key,
+                    product.SquareSku));
+            }
+        }
+
+        var squareByCompositeId = squareRows.ToDictionary(x => $"{x.ItemId}|{x.VariationId}", StringComparer.OrdinalIgnoreCase);
         foreach (var product in products)
         {
-            if (!string.IsNullOrWhiteSpace(product.SquareCatalogVariationId) &&
-                squareRows.All(x => !string.Equals(x.VariationId, product.SquareCatalogVariationId, StringComparison.OrdinalIgnoreCase)))
+            if (!string.IsNullOrWhiteSpace(product.SquareCatalogItemId) || !string.IsNullOrWhiteSpace(product.SquareCatalogVariationId))
             {
-                conflictRows.Add(new SkuConflictRow(
-                    product.SquareSku ?? "(pending)",
-                    "Control App product points at a Square variation that is no longer present.",
-                    [$"{product.Name} -> {product.SquareCatalogVariationId}"]));
+                var key = $"{product.SquareCatalogItemId}|{product.SquareCatalogVariationId}";
+                if (!squareByCompositeId.TryGetValue(key, out var mappedSquare))
+                {
+                    issues.Add(new NebulaCatalogIssueRow(
+                        "SQUARE",
+                        "WARN",
+                        "STALE_SQUARE_MAPPING",
+                        product.Id,
+                        product.Name,
+                        "This Control App product points at a Square item/variation that is not present in the live catalog snapshot.",
+                        "Refresh or relink the Square identity before retrying sync.",
+                        key,
+                        product.SquareSku));
+                }
+                else if (!string.Equals(mappedSquare.DisplayName, product.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    issues.Add(new NebulaCatalogIssueRow(
+                        "SQUARE",
+                        "INFO",
+                        "SQUARE_NAME_MISMATCH",
+                        product.Id,
+                        product.Name,
+                        $"Square currently shows \"{mappedSquare.DisplayName}\" for this mapped product.",
+                        "Review whether the naming difference is intentional before syncing names again.",
+                        key,
+                        product.SquareSku));
+                }
+            }
+            else if (!string.Equals(product.LifecycleStatus, "DISCONTINUED", StringComparison.OrdinalIgnoreCase))
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "SQUARE",
+                    "WARN",
+                    "MISSING_SQUARE_IDENTITY",
+                    product.Id,
+                    product.Name,
+                    "This sellable variant has no Square item/variation identity yet.",
+                    "Create or relink the Square record before in-person sales rely on it.",
+                    null,
+                    product.SquareSku));
+            }
+
+            var expectWoo = product.SellOnline && !string.Equals(product.LifecycleStatus, "DISCONTINUED", StringComparison.OrdinalIgnoreCase);
+            if (expectWoo && string.IsNullOrWhiteSpace(product.WooProductId))
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "WOO",
+                    "INFO",
+                    "MISSING_WOO_IDENTITY",
+                    product.Id,
+                    product.Name,
+                    "This online-enabled variant does not have a Woo identity yet.",
+                    "Create or map the Woo product/variation before expecting website availability.",
+                    null,
+                    product.SquareSku));
             }
         }
 
-        return new SquareSkuReconciliationReport(
-            products.Count(x => !string.IsNullOrWhiteSpace(x.SquareSku)),
-            duplicateGroups.Count,
-            missingSquareSkus.Count,
-            unmappedSquareRows.Count,
-            safeMatches.Count,
-            conflictRows.Count,
-            duplicateGroups,
-            missingSquareSkus.Take(25).ToList(),
-            unmappedSquareRows.Take(25).ToList(),
-            safeMatches.Take(25).ToList(),
-            conflictRows.Take(25).ToList());
+        var productsBySquareSku = products
+            .Where(x => !string.IsNullOrWhiteSpace(x.SquareSku))
+            .GroupBy(x => x.SquareSku!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in squareRows)
+        {
+            if (string.IsNullOrWhiteSpace(row.Sku))
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "SQUARE",
+                    "WARN",
+                    "SQUARE_VARIATION_MISSING_SKU",
+                    null,
+                    row.DisplayName,
+                    "Square variation has no SKU.",
+                    "Assign or reconcile the SKU before using it as a stable sellable identity.",
+                    $"{row.ItemId}|{row.VariationId}",
+                    null));
+                continue;
+            }
+
+            var mappedInternally = products.Any(x =>
+                string.Equals(x.SquareCatalogItemId, row.ItemId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.SquareCatalogVariationId, row.VariationId, StringComparison.OrdinalIgnoreCase));
+
+            if (!mappedInternally)
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "SQUARE",
+                    "INFO",
+                    "UNMAPPED_SQUARE_VARIANT",
+                    null,
+                    row.DisplayName,
+                    "Square variation is not mapped to a Control App sellable variant.",
+                    "Review whether this is intentional legacy catalog data or a missing link.",
+                    $"{row.ItemId}|{row.VariationId}",
+                    row.Sku));
+            }
+
+            if (productsBySquareSku.TryGetValue(row.Sku, out var skuMatches) &&
+                skuMatches.Count == 1 &&
+                string.IsNullOrWhiteSpace(skuMatches[0].SquareCatalogItemId) &&
+                string.IsNullOrWhiteSpace(skuMatches[0].SquareCatalogVariationId))
+            {
+                safeMatches.Add(new SquareSafeMatchRow(
+                    skuMatches[0].Id,
+                    skuMatches[0].Name,
+                    skuMatches[0].PermanentSku ?? string.Empty,
+                    row.ItemId,
+                    row.VariationId,
+                    row.DisplayName));
+            }
+        }
+
+        var wooByCompositeId = wooRows.ToDictionary(x => $"{x.ProductId}|{x.VariationId}", StringComparer.OrdinalIgnoreCase);
+        foreach (var product in products.Where(x => !string.IsNullOrWhiteSpace(x.WooProductId)))
+        {
+            var key = $"{product.WooProductId}|{product.WooVariationId}";
+            if (!wooByCompositeId.ContainsKey(key))
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "WOO",
+                    "WARN",
+                    "STALE_WOO_MAPPING",
+                    product.Id,
+                    product.Name,
+                    "This product points at a Woo identity that is not present in the published catalog snapshot.",
+                    "Verify whether the website record was removed, unpublished, or needs remapping.",
+                    key,
+                    product.SquareSku));
+            }
+        }
+
+        foreach (var product in products.Where(x => string.Equals(x.LifecycleStatus, "DISCONTINUED", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!string.IsNullOrWhiteSpace(product.SquareCatalogVariationId))
+            {
+                var key = $"{product.SquareCatalogItemId}|{product.SquareCatalogVariationId}";
+                if (squareByCompositeId.ContainsKey(key))
+                {
+                    issues.Add(new NebulaCatalogIssueRow(
+                        "SQUARE",
+                        "INFO",
+                        "DISCONTINUED_STILL_PRESENT_DOWNSTREAM",
+                        product.Id,
+                        product.Name,
+                        "Discontinued product still has an active Square mapping on record.",
+                        "Confirm whether the downstream listing should remain sellable or be paused manually.",
+                        key,
+                        product.SquareSku));
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(product.WooProductId))
+            {
+                issues.Add(new NebulaCatalogIssueRow(
+                    "WOO",
+                    "INFO",
+                    "DISCONTINUED_WOO_REVIEW",
+                    product.Id,
+                    product.Name,
+                    "Discontinued product still has Woo identity fields recorded.",
+                    "Confirm whether the website listing should be unpublished or intentionally preserved.",
+                    $"{product.WooProductId}|{product.WooVariationId}",
+                    product.SquareSku));
+            }
+        }
+
+        foreach (var failedVariant in batches)
+        {
+            issues.Add(new NebulaCatalogIssueRow(
+                "INTERNAL",
+                "WARN",
+                "RECENT_SYNC_FAILURE",
+                failedVariant.SellableProductId,
+                failedVariant.ProductName,
+                failedVariant.LastError ?? "A recent Square sync attempt failed.",
+                "Use the batch retry once the underlying issue is corrected; the reserved SKU remains attached.",
+                failedVariant.SquareCatalogVariationId,
+                failedVariant.ReservedSquareSku));
+        }
+
+        return new NebulaCatalogHealthReport(
+            issues.Count,
+            issues.Count(x => x.Scope == "SQUARE"),
+            issues.Count(x => x.Scope == "WOO"),
+            issues.Count(x => x.Scope == "INTERNAL"),
+            issues.OrderByDescending(IssueSeverityRank).ThenBy(x => x.Scope).ThenBy(x => x.Title).ToList(),
+            safeMatches);
+    }
+
+    public async Task<NebulaProductDetail> GetProductDetailAsync(Guid productId, CancellationToken cancellationToken = default)
+    {
+        var product = await db.SellableProducts
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == productId, cancellationToken);
+
+        if (product is null)
+            throw new InvalidOperationException("Product not found.");
+
+        var artworkKey = product.ArtworkKey;
+        var productFamily = product.ProductFamily;
+        var productTypeCode = product.ProductTypeCode;
+        var relatedVariants = await db.SellableProducts
+            .AsNoTracking()
+            .Where(x =>
+                x.Id == productId ||
+                (!string.IsNullOrWhiteSpace(artworkKey) &&
+                 x.ArtworkKey == artworkKey &&
+                 x.ProductFamily == productFamily &&
+                 x.ProductTypeCode == productTypeCode))
+            .OrderBy(x => x.LeatherCode)
+            .ThenBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        var health = await ReconcileCatalogAsync(cancellationToken);
+        var row = ProductRegistryRow.FromEntity(product);
+        return new NebulaProductDetail(
+            row,
+            relatedVariants.Select(ProductRegistryRow.FromEntity).ToList(),
+            health.Issues.Where(x => x.ProductId == productId).ToList(),
+            BuildProductionReadiness(product),
+            row.SquareSyncState,
+            row.WooSyncState,
+            ResolveBarcodeStatus(product, relatedVariants));
+    }
+
+    public async Task UpdateLifecycleAsync(NebulaLifecycleUpdateInput input, CancellationToken cancellationToken = default)
+    {
+        var status = CleanCode(input.LifecycleStatus);
+        if (status is not ("DRAFT" or "ACTIVE" or "PAUSED" or "DISCONTINUED"))
+            throw new InvalidOperationException("Lifecycle status must be Draft, Active, Paused, or Discontinued.");
+
+        var product = await db.SellableProducts.SingleOrDefaultAsync(x => x.Id == input.ProductId, cancellationToken);
+        if (product is null)
+            throw new InvalidOperationException("Product not found.");
+
+        product.LifecycleStatus = status;
+        product.IsActive = status != "DISCONTINUED";
+        product.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        await RefreshRegistryEntriesAsync(product, cancellationToken);
+    }
+
+    public async Task SaveProductRelationshipAsync(NebulaProductRelationshipInput input, CancellationToken cancellationToken = default)
+    {
+        if (input.ProductId == input.RelatedProductId)
+            throw new InvalidOperationException("A product cannot point at itself.");
+
+        var source = await db.SellableProducts.SingleOrDefaultAsync(x => x.Id == input.ProductId, cancellationToken);
+        var related = await db.SellableProducts.SingleOrDefaultAsync(x => x.Id == input.RelatedProductId, cancellationToken);
+        if (source is null || related is null)
+            throw new InvalidOperationException("One of the selected products was not found.");
+
+        var relationshipType = CleanCode(input.RelationshipType);
+        switch (relationshipType)
+        {
+            case "MERGE":
+                source.MergedIntoProductId = related.Id;
+                break;
+            case "REPLACEMENT":
+                source.ReplacedByProductId = related.Id;
+                break;
+            default:
+                throw new InvalidOperationException("Relationship type must be MERGE or REPLACEMENT.");
+        }
+
+        source.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task LinkSquareIdentityAsync(NebulaSquareLinkInput input, CancellationToken cancellationToken = default)
+    {
+        var product = await db.SellableProducts.SingleOrDefaultAsync(x => x.Id == input.ProductId, cancellationToken);
+        if (product is null)
+            throw new InvalidOperationException("Product not found.");
+
+        var squareRows = ExpandSquareRows(await squareApiService.GetCatalogItemsAsync(cancellationToken: cancellationToken));
+        var target = squareRows.SingleOrDefault(x =>
+            string.Equals(x.ItemId, input.SquareItemId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.VariationId, input.SquareVariationId, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+            throw new InvalidOperationException("The selected Square item/variation was not found in the live catalog snapshot.");
+
+        var existingMapping = await db.SellableProducts
+            .AsNoTracking()
+            .Where(x => x.Id != input.ProductId)
+            .FirstOrDefaultAsync(x =>
+                x.SquareCatalogItemId == input.SquareItemId &&
+                x.SquareCatalogVariationId == input.SquareVariationId,
+                cancellationToken);
+        if (existingMapping is not null)
+            throw new InvalidOperationException($"Square identity already belongs to {existingMapping.Name}.");
+
+        product.SquareCatalogItemId = input.SquareItemId;
+        product.SquareCatalogVariationId = input.SquareVariationId;
+        product.SquareSyncedAt = DateTimeOffset.UtcNow;
+        product.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        await RefreshRegistryEntriesAsync(product, cancellationToken);
     }
 
     private async Task<List<NebulaFamilyTemplateSummary>> LoadFamilyTemplatesAsync(CancellationToken cancellationToken)
@@ -520,10 +1050,11 @@ public sealed class ProductRegistryService(
                 template.ProductionFamily,
                 template.SquareCategoryName,
                 template.DefaultPriceCents / 100m,
-                storedOptions.Where(x => x.ProductFamilyTemplateId == template.Id)
-                    .Select(MapVariantOption)
-                    .ToList(),
-                true))
+                storedOptions.Where(x => x.ProductFamilyTemplateId == template.Id).Select(MapVariantOption).ToList(),
+                true,
+                template.SellInPerson,
+                template.SellOnline,
+                template.TrackInventory))
             .ToList();
 
         var existingProducts = await db.SellableProducts
@@ -536,9 +1067,7 @@ public sealed class ProductRegistryService(
             .GroupBy(x => BuildFamilyKey(x.ProductFamily ?? x.Name, x.ProductTypeCode), StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
-                var sample = group
-                    .OrderByDescending(x => x.CreatedAt)
-                    .First();
+                var sample = group.OrderByDescending(x => x.CreatedAt).First();
                 var options = group
                     .Where(x => !string.IsNullOrWhiteSpace(x.LeatherCode))
                     .Select(x => x.LeatherCode!)
@@ -555,7 +1084,10 @@ public sealed class ProductRegistryService(
                     sample.SquareCategoryName,
                     sample.PriceCents / 100m,
                     options,
-                    false);
+                    false,
+                    sample.SellInPerson,
+                    sample.SellOnline,
+                    sample.TrackInventory);
             })
             .Where(summary => result.All(x => !string.Equals(x.FamilyKey, summary.FamilyKey, StringComparison.OrdinalIgnoreCase)))
             .OrderBy(x => x.FamilyName, StringComparer.OrdinalIgnoreCase)
@@ -622,6 +1154,15 @@ public sealed class ProductRegistryService(
             .ToList();
     }
 
+    private async Task<List<ProductRegistryRow>> LoadCatalogProductsAsync(CancellationToken cancellationToken)
+        => (await db.SellableProducts
+                .AsNoTracking()
+                .OrderByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .ToListAsync(cancellationToken))
+            .Select(ProductRegistryRow.FromEntity)
+            .ToList();
+
     private async Task<ProductArtworkEntity> UpsertArtworkAsync(
         string artworkName,
         string? designAssetPath,
@@ -636,8 +1177,7 @@ public sealed class ProductRegistryService(
                       ?.Key
                   ?? Normalize(normalizedName);
 
-        var artwork = await db.ProductArtworks
-            .SingleOrDefaultAsync(x => x.ArtworkKey == key, cancellationToken);
+        var artwork = await db.ProductArtworks.SingleOrDefaultAsync(x => x.ArtworkKey == key, cancellationToken);
 
         artwork ??= new ProductArtworkEntity
         {
@@ -701,17 +1241,17 @@ public sealed class ProductRegistryService(
         var productTypeCode = CleanCode(productTypeOverride ?? template.ProductTypeCode) ?? NormalizeFamilyCode(template.FamilyName);
         var leatherCode = string.IsNullOrWhiteSpace(option.OptionCode) ? null : CleanCode(option.OptionCode);
 
-        if (artworkKey is not null)
+        if (!string.IsNullOrWhiteSpace(artworkKey))
         {
             var existingVariant = await db.SellableProducts
                 .AsNoTracking()
                 .FirstOrDefaultAsync(
-                    x => x.ProductTypeCode == productTypeCode
-                         && x.ArtworkKey == artworkKey
-                         && x.LeatherCode == leatherCode,
+                    x => x.ProductTypeCode == productTypeCode &&
+                         x.ArtworkKey == artworkKey &&
+                         x.LeatherCode == leatherCode,
                     cancellationToken);
             if (existingVariant is not null)
-                throw new InvalidOperationException($"A variant already exists for {template.FamilyName} / {artwork.ArtworkName} / {option.OptionName}.");
+                throw new InvalidOperationException($"A variant already exists for {template.FamilyName} / {artwork!.ArtworkName} / {option.OptionName}.");
         }
 
         var product = new SellableProductEntity
@@ -729,7 +1269,10 @@ public sealed class ProductRegistryService(
             SquareCategoryName = squareCategoryOverride ?? template.SquareCategoryName ?? template.FamilyName,
             Notes = Clean(notes),
             LifecycleStatus = "DRAFT",
-            CreatedSource = "NEBULA_ROUND2",
+            CreatedSource = "NEBULA_ROUND3",
+            SellInPerson = template.SellInPerson,
+            SellOnline = template.SellOnline,
+            TrackInventory = template.TrackInventory,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
@@ -738,11 +1281,8 @@ public sealed class ProductRegistryService(
         db.SellableProducts.Add(product);
         await db.SaveChangesAsync(cancellationToken);
 
-        var permanentSku = await permanentSkuService.GetOrAssignAsync(product.Id, cancellationToken);
-        var squareSku = await sellableSkuService.GetOrAssignAsync(product.Id, cancellationToken);
-
         var designPath = artwork?.DesignAssetPath ?? artworkVisualService.FindImageUrl(artwork?.ArtworkName);
-        var imageElement = new SellableProductElementEntity
+        db.SellableProductElements.Add(new SellableProductElementEntity
         {
             SellableProductId = product.Id,
             ElementType = "ARTWORK",
@@ -750,40 +1290,108 @@ public sealed class ProductRegistryService(
             ElementName = artwork?.ArtworkName ?? product.Name,
             CategoryName = product.SquareCategoryName,
             DesignFileName = designPath,
-            HasImage = true,
+            HasImage = !string.IsNullOrWhiteSpace(designPath),
             SortOrder = 0,
             CreatedAt = DateTimeOffset.UtcNow
-        };
-        db.SellableProductElements.Add(imageElement);
+        });
 
-        var batchVariant = new NebulaCreationBatchVariantEntity
+        db.NebulaCreationBatchVariants.Add(new NebulaCreationBatchVariantEntity
         {
             BatchId = batch.Id,
             ProductName = product.Name,
+            ArtworkKey = artwork?.ArtworkKey,
+            ArtworkName = artwork?.ArtworkName,
             ProductFamilyTemplateId = template.TemplateId,
             SellableProductId = product.Id,
             ProductTypeCode = product.ProductTypeCode,
             LeatherCode = product.LeatherCode,
-            Status = "DRAFT_READY",
-            ReservedSquareSku = squareSku,
+            Status = "PENDING_RESERVATION",
             RetryAllowed = syncToSquare,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
-        };
-        db.NebulaCreationBatchVariants.Add(batchVariant);
-        await db.SaveChangesAsync(cancellationToken);
+        });
 
-        logger.LogInformation(
-            "Created Nebula draft variant {ProductName} with permanent SKU {PermanentSku} and Square SKU {SquareSku}.",
-            product.Name,
-            permanentSku,
-            squareSku);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task CreateFailedBatchVariantAsync(
+        NebulaCreationBatchEntity batch,
+        NebulaFamilyTemplateSummary? template,
+        string? artworkKey,
+        string? artworkName,
+        string productName,
+        NebulaVariantOption option,
+        string error,
+        CancellationToken cancellationToken)
+    {
+        db.NebulaCreationBatchVariants.Add(new NebulaCreationBatchVariantEntity
+        {
+            BatchId = batch.Id,
+            ProductName = productName,
+            ArtworkKey = artworkKey,
+            ArtworkName = artworkName,
+            ProductFamilyTemplateId = template?.TemplateId,
+            ProductTypeCode = template?.ProductTypeCode,
+            LeatherCode = string.IsNullOrWhiteSpace(option.OptionCode) ? null : CleanCode(option.OptionCode),
+            Status = "DRAFT_FAILED",
+            LastError = error,
+            RetryAllowed = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task ReserveBatchSkusAsync(Guid batchId, CancellationToken cancellationToken)
+    {
+        var variants = await db.NebulaCreationBatchVariants
+            .Include(x => x.SellableProduct)
+            .Where(x => x.BatchId == batchId && x.SellableProductId != null)
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var pendingProducts = variants
+            .Where(x => x.SellableProduct is not null && string.IsNullOrWhiteSpace(x.ReservedSquareSku))
+            .Select(x => x.SellableProductId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (pendingProducts.Count == 0)
+            return;
+
+        var permanentSkus = await permanentSkuService.GetOrAssignManyAsync(pendingProducts, cancellationToken);
+        var squareSkus = await sellableSkuService.GetOrAssignManyAsync(pendingProducts, cancellationToken);
+
+        foreach (var variant in variants.Where(x => x.SellableProductId is not null))
+        {
+            if (squareSkus.TryGetValue(variant.SellableProductId!.Value, out var squareSku))
+                variant.ReservedSquareSku = squareSku;
+
+            if (variant.Status == "PENDING_RESERVATION")
+            {
+                variant.Status = "DRAFT_READY";
+                variant.LastError = null;
+            }
+
+            variant.UpdatedAt = DateTimeOffset.UtcNow;
+
+            if (variant.SellableProduct is not null)
+            {
+                var permanentSku = permanentSkus[variant.SellableProductId!.Value];
+                logger.LogInformation(
+                    "Reserved SKUs for {ProductName}: permanent {PermanentSku}, square {SquareSku}.",
+                    variant.SellableProduct.Name,
+                    permanentSku,
+                    squareSku);
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<NebulaBatchResult> FinalizeBatchAsync(Guid batchId, bool syncToSquare, CancellationToken cancellationToken)
     {
-        var batch = await db.NebulaCreationBatches
-            .SingleAsync(x => x.Id == batchId, cancellationToken);
+        var batch = await db.NebulaCreationBatches.SingleAsync(x => x.Id == batchId, cancellationToken);
         var variants = await db.NebulaCreationBatchVariants
             .Include(x => x.SellableProduct)
             .Where(x => x.BatchId == batchId)
@@ -793,9 +1401,7 @@ public sealed class ProductRegistryService(
         if (syncToSquare)
         {
             foreach (var variant in variants.Where(x => x.Status == "DRAFT_READY" && x.SellableProductId is not null))
-            {
                 await TrySyncVariantAsync(variant, cancellationToken);
-            }
         }
 
         var refreshedVariants = await db.NebulaCreationBatchVariants
@@ -804,28 +1410,29 @@ public sealed class ProductRegistryService(
             .OrderBy(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        var failureCount = refreshedVariants.Count(x => x.Status == "SQUARE_FAILED");
+        var failureCount = refreshedVariants.Count(x => x.Status is "SQUARE_FAILED" or "DRAFT_FAILED");
         var successCount = refreshedVariants.Count(x => x.Status == "SQUARE_SYNCED");
-        var pendingCount = refreshedVariants.Count - failureCount - successCount;
+        var draftReadyCount = refreshedVariants.Count(x => x.Status == "DRAFT_READY");
+        var totalCount = refreshedVariants.Count;
 
         batch.Status = failureCount > 0
-            ? (successCount > 0 ? "PARTIAL_FAILURE" : "FAILED")
+            ? (successCount + draftReadyCount > 0 ? "PARTIAL_FAILURE" : "FAILED")
             : syncToSquare
                 ? "COMPLETE"
                 : "DRAFT_READY";
         batch.LastError = failureCount > 0
-            ? $"{failureCount} variant(s) failed Square sync."
+            ? $"{failureCount} variant(s) need attention."
             : null;
-        batch.CompletedAt = batch.Status is "COMPLETE" or "DRAFT_READY" ? DateTimeOffset.UtcNow : null;
+        batch.CompletedAt = batch.Status is "COMPLETE" or "DRAFT_READY" or "PARTIAL_FAILURE" ? DateTimeOffset.UtcNow : null;
         batch.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
 
         var message = batch.Status switch
         {
-            "COMPLETE" => $"Created {refreshedVariants.Count} variant(s). Square synced {successCount}.",
-            "DRAFT_READY" => $"Created {refreshedVariants.Count} draft variant(s). Square sync was skipped.",
-            "PARTIAL_FAILURE" => $"Created {refreshedVariants.Count} variant(s). Square synced {successCount}; {failureCount} failed and can be retried.",
-            _ => $"Created {refreshedVariants.Count} variant(s). {pendingCount} still need follow-up."
+            "COMPLETE" => $"Created {totalCount} variant(s). Square synced {successCount}.",
+            "DRAFT_READY" => $"Prepared {totalCount} draft variant(s). Square sync was skipped.",
+            "PARTIAL_FAILURE" => $"Prepared {totalCount} variant(s). {successCount} synced, {draftReadyCount} are draft-ready, and {failureCount} need follow-up.",
+            _ => $"Prepared {totalCount} variant(s). Review the batch errors before retrying."
         };
 
         return new NebulaBatchResult(
@@ -866,11 +1473,50 @@ public sealed class ProductRegistryService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    private async Task RefreshRegistryEntriesAsync(SellableProductEntity product, CancellationToken cancellationToken)
+    {
+        foreach (var sku in new[] { product.PermanentSku, product.SquareSku }.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var entry = await db.SkuRegistryEntries
+                .SingleOrDefaultAsync(x => x.SellableProductId == product.Id && x.Sku == sku, cancellationToken);
+
+            entry ??= new SkuRegistryEntryEntity
+            {
+                Sku = sku!,
+                SellableProductId = product.Id,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+
+            entry.Sku = sku!;
+            entry.SellableProductId = product.Id;
+            entry.ProductName = product.Name;
+            entry.VariationName = BuildVariationName(product);
+            entry.SquareCatalogItemId = product.SquareCatalogItemId;
+            entry.SquareCatalogVariationId = product.SquareCatalogVariationId;
+            entry.WooProductId = product.WooProductId;
+            entry.WooVariationId = product.WooVariationId;
+            entry.BarcodeValue = product.BarcodeValue;
+            entry.Source = string.IsNullOrWhiteSpace(product.CreatedSource) ? "CONTROL_APP" : product.CreatedSource;
+            entry.Status = ResolveRegistryStatus(product);
+            entry.LastReconciledAt = DateTimeOffset.UtcNow;
+            entry.UpdatedAt = DateTimeOffset.UtcNow;
+            entry.ReservedAt = entry.Status == "RESERVED" ? entry.ReservedAt ?? DateTimeOffset.UtcNow : entry.ReservedAt;
+            entry.AssignedAt = entry.Status == "ASSIGNED" ? entry.AssignedAt ?? DateTimeOffset.UtcNow : entry.AssignedAt;
+            entry.RetiredAt = entry.Status == "RETIRED" ? entry.RetiredAt ?? DateTimeOffset.UtcNow : entry.RetiredAt;
+
+            if (db.Entry(entry).State == EntityState.Detached)
+                db.SkuRegistryEntries.Add(entry);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private static NebulaBatchVariantSummary MapBatchVariant(NebulaCreationBatchVariantEntity entity)
         => new(
             entity.Id,
             entity.SellableProductId,
             entity.ProductName,
+            entity.ArtworkName,
             entity.ProductTypeCode,
             entity.LeatherCode,
             entity.Status,
@@ -899,9 +1545,7 @@ public sealed class ProductRegistryService(
             {
                 var parts = entry.Split(':', 2, StringSplitOptions.TrimEntries);
                 var code = CleanCode(parts[0]) ?? string.Empty;
-                var name = parts.Length > 1 && !string.IsNullOrWhiteSpace(parts[1])
-                    ? parts[1].Trim()
-                    : FriendlyOptionName(code);
+                var name = parts.Length > 1 && !string.IsNullOrWhiteSpace(parts[1]) ? parts[1].Trim() : FriendlyOptionName(code);
                 return new NebulaVariantOption("LEATHER", code, name, true, index);
             })
             .Where(x => !string.IsNullOrWhiteSpace(x.OptionCode))
@@ -929,6 +1573,71 @@ public sealed class ProductRegistryService(
         }
 
         return rows;
+    }
+
+    private static List<NebulaVariantOption> ResolveDefaultOptions(NebulaFamilyTemplateSummary template)
+        => template.VariantOptions.Count == 0
+            ? [new NebulaVariantOption("LEATHER", "", "Regular", true, 0)]
+            : template.VariantOptions.Where(x => x.IsDefaultSelected).OrderBy(x => x.SortOrder).ToList();
+
+    private static List<string> ParseArtworkNames(string text)
+        => text
+            .Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private string ResolveArtworkKey(string artworkName)
+        => artworkVisualService.GetAll()
+               .FirstOrDefault(x => string.Equals(Normalize(x.Name), Normalize(artworkName), StringComparison.OrdinalIgnoreCase))
+               ?.Key
+           ?? Normalize(artworkName);
+
+    private static int IssueSeverityRank(NebulaCatalogIssueRow row)
+        => row.Severity switch
+        {
+            "ERROR" => 0,
+            "WARN" => 1,
+            _ => 2
+        };
+
+    private static string BuildProductionReadiness(SellableProductEntity product)
+    {
+        var gaps = new List<string>();
+        if (string.IsNullOrWhiteSpace(product.ProductionFamily))
+            gaps.Add("production family");
+        if (string.IsNullOrWhiteSpace(product.PermanentSku))
+            gaps.Add("permanent SKU");
+        if (string.IsNullOrWhiteSpace(product.ArtworkKey))
+            gaps.Add("artwork link");
+        return gaps.Count == 0 ? "Ready for Stash/Dynamo linkage." : $"Needs {string.Join(", ", gaps)} before downstream production is fully ready.";
+    }
+
+    private static string ResolveBarcodeStatus(SellableProductEntity product, IReadOnlyList<SellableProductEntity> relatedVariants)
+    {
+        if (string.IsNullOrWhiteSpace(product.BarcodeValue))
+            return "No barcode assigned yet.";
+
+        var duplicates = relatedVariants.Count(x => string.Equals(x.BarcodeValue, product.BarcodeValue, StringComparison.OrdinalIgnoreCase));
+        return duplicates > 1 ? "Barcode duplicates another related variant and needs review." : "Barcode is unique within this design family.";
+    }
+
+    private static string ResolveRegistryStatus(SellableProductEntity product)
+    {
+        if (string.Equals(product.LifecycleStatus, "DISCONTINUED", StringComparison.OrdinalIgnoreCase))
+            return "RETIRED";
+        if (string.Equals(product.LifecycleStatus, "DRAFT", StringComparison.OrdinalIgnoreCase))
+            return "RESERVED";
+        return "ASSIGNED";
+    }
+
+    private static string? BuildVariationName(SellableProductEntity product)
+    {
+        var parts = new[] { product.ProductTypeCode, product.LeatherCode }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        return parts.Length == 0 ? null : string.Join(" / ", parts);
     }
 
     private static string BuildArtworkProductName(string artworkName, string familyName, string? optionName)
@@ -1021,7 +1730,16 @@ public sealed record ProductRegistryRow(
     string? SquareCatalogVariationId,
     string? WooProductId,
     string? WooVariationId,
-    DateTimeOffset CreatedAt)
+    string? BarcodeValue,
+    bool SellInPerson,
+    bool SellOnline,
+    bool TrackInventory,
+    Guid? MergedIntoProductId,
+    Guid? ReplacedByProductId,
+    string SquareSyncState,
+    string WooSyncState,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt)
 {
     public static ProductRegistryRow FromEntity(SellableProductEntity entity)
         => new(
@@ -1040,7 +1758,32 @@ public sealed record ProductRegistryRow(
             entity.SquareCatalogVariationId,
             entity.WooProductId,
             entity.WooVariationId,
-            entity.CreatedAt);
+            entity.BarcodeValue,
+            entity.SellInPerson,
+            entity.SellOnline,
+            entity.TrackInventory,
+            entity.MergedIntoProductId,
+            entity.ReplacedByProductId,
+            ResolveSquareSyncState(entity),
+            ResolveWooSyncState(entity),
+            entity.CreatedAt,
+            entity.UpdatedAt);
+
+    private static string ResolveSquareSyncState(SellableProductEntity entity)
+    {
+        if (string.Equals(entity.LifecycleStatus, "DISCONTINUED", StringComparison.OrdinalIgnoreCase))
+            return "DISCONTINUED";
+        return string.IsNullOrWhiteSpace(entity.SquareCatalogVariationId) ? "PENDING" : "MAPPED";
+    }
+
+    private static string ResolveWooSyncState(SellableProductEntity entity)
+    {
+        if (!entity.SellOnline)
+            return "N/A";
+        if (string.Equals(entity.LifecycleStatus, "DISCONTINUED", StringComparison.OrdinalIgnoreCase))
+            return "DISCONTINUED";
+        return string.IsNullOrWhiteSpace(entity.WooProductId) ? "MISSING" : "MAPPED";
+    }
 }
 
 public sealed record NewProductIntakeInput(
@@ -1057,24 +1800,6 @@ public sealed record CreateDraftProductResult(
     string PermanentSku,
     string Status,
     string ProductName);
-
-public sealed record SquareSkuReconciliationReport(
-    int AssignedSkuCount,
-    int DuplicateSkuCount,
-    int MissingSquareSkuCount,
-    int UnmappedSquareCount,
-    int SafeMatchCount,
-    int ConflictCount,
-    IReadOnlyList<SkuConflictRow> DuplicateSkus,
-    IReadOnlyList<SquareCatalogSkuRow> MissingSquareSkus,
-    IReadOnlyList<SquareCatalogSkuRow> UnmappedSquareRows,
-    IReadOnlyList<SquareSafeMatchRow> SafeMatches,
-    IReadOnlyList<SkuConflictRow> Conflicts);
-
-public sealed record SkuConflictRow(
-    string Sku,
-    string Message,
-    IReadOnlyList<string> Details);
 
 public sealed record SquareCatalogSkuRow(
     string ItemId,

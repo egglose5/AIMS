@@ -6,7 +6,16 @@ public sealed record NebulaWorkspace(
     ProductRegistryDashboard Dashboard,
     IReadOnlyList<NebulaFamilyTemplateSummary> FamilyTemplates,
     IReadOnlyList<NebulaArtworkSummary> ArtworkOptions,
-    IReadOnlyList<NebulaBatchSummary> RecentBatches);
+    IReadOnlyList<NebulaBatchSummary> RecentBatches,
+    NebulaCatalogSummary Catalog);
+
+public sealed record NebulaCatalogSummary(
+    IReadOnlyList<ProductRegistryRow> Products,
+    IReadOnlyList<string> ProductFamilies,
+    IReadOnlyList<string> ProductionFamilies,
+    IReadOnlyList<string> LifecycleStatuses,
+    IReadOnlyList<string> ProductTypes,
+    IReadOnlyList<string> VariantCodes);
 
 public sealed record NebulaFamilyTemplateSummary(
     Guid? TemplateId,
@@ -17,7 +26,10 @@ public sealed record NebulaFamilyTemplateSummary(
     string? SquareCategoryName,
     decimal DefaultPrice,
     IReadOnlyList<NebulaVariantOption> VariantOptions,
-    bool IsStoredTemplate);
+    bool IsStoredTemplate,
+    bool SellInPerson,
+    bool SellOnline,
+    bool TrackInventory);
 
 public sealed record NebulaVariantOption(
     string DimensionKey,
@@ -47,6 +59,7 @@ public sealed record NebulaBatchVariantSummary(
     Guid VariantId,
     Guid? SellableProductId,
     string ProductName,
+    string? ArtworkName,
     string? ProductTypeCode,
     string? LeatherCode,
     string Status,
@@ -55,6 +68,54 @@ public sealed record NebulaBatchVariantSummary(
     string? SquareCatalogVariationId,
     string? LastError,
     bool RetryAllowed);
+
+public sealed record BulkArtworkPreviewResult(
+    string Message,
+    IReadOnlyList<BulkArtworkPreviewRow> Rows);
+
+public sealed record BulkArtworkPreviewRow(
+    string ClientRowId,
+    string ArtworkName,
+    string FamilyKey,
+    string FamilyName,
+    string? ProductTypeCode,
+    string? ProductionFamily,
+    string VariantCode,
+    string VariantName,
+    string ProductName,
+    decimal Price,
+    string ProposedSquareSku,
+    bool Create,
+    string? ConflictMessage,
+    string? ExistingProductName);
+
+public sealed record NebulaProductDetail(
+    ProductRegistryRow Product,
+    IReadOnlyList<ProductRegistryRow> RelatedVariants,
+    IReadOnlyList<NebulaCatalogIssueRow> Issues,
+    string ProductionReadiness,
+    string SquareSyncState,
+    string WooSyncState,
+    string BarcodeStatus);
+
+public sealed record NebulaCatalogHealthReport(
+    int IssueCount,
+    int SquareIssueCount,
+    int WooIssueCount,
+    int InternalIssueCount,
+    IReadOnlyList<NebulaCatalogIssueRow> Issues,
+    IReadOnlyList<SquareSafeMatchRow> SafeSquareMatches);
+
+public sealed record NebulaCatalogIssueRow(
+    string Scope,
+    string Severity,
+    string IssueType,
+    Guid? ProductId,
+    string Title,
+    string Message,
+    string SuggestedAction,
+    string? ExternalId,
+    string? Sku);
 
 public sealed class SaveFamilyTemplateInput
 {
@@ -114,6 +175,48 @@ public sealed class NebulaArtworkWorkflowInput
     public bool SyncToSquare { get; set; } = true;
 }
 
+public sealed class NebulaBulkArtworkPreviewInput
+{
+    public List<string> FamilyKeys { get; set; } = [];
+
+    public string ArtworkNamesText { get; set; } = string.Empty;
+
+    public string? Notes { get; set; }
+}
+
+public sealed class NebulaBulkArtworkCommitInput
+{
+    public List<NebulaBulkArtworkCommitRowInput> Rows { get; set; } = [];
+
+    public string? Notes { get; set; }
+
+    public bool SyncToSquare { get; set; }
+}
+
+public sealed class NebulaBulkArtworkCommitRowInput
+{
+    [Required]
+    public string ClientRowId { get; set; } = Guid.NewGuid().ToString("N");
+
+    [Required]
+    public string ArtworkName { get; set; } = string.Empty;
+
+    [Required]
+    public string FamilyKey { get; set; } = string.Empty;
+
+    public string VariantCode { get; set; } = string.Empty;
+
+    public string VariantName { get; set; } = "Regular";
+
+    public decimal Price { get; set; }
+
+    public bool Create { get; set; } = true;
+
+    public string? DesignAssetPath { get; set; }
+
+    public string? ProductImagePath { get; set; }
+}
+
 public sealed class NebulaProductWorkflowInput
 {
     [Required]
@@ -150,6 +253,38 @@ public sealed class NebulaDuplicateWorkflowInput
     public string? Notes { get; set; }
 
     public bool SyncToSquare { get; set; } = false;
+}
+
+public sealed class NebulaProductRelationshipInput
+{
+    [Required]
+    public Guid ProductId { get; set; }
+
+    [Required]
+    public Guid RelatedProductId { get; set; }
+
+    [Required]
+    public string RelationshipType { get; set; } = string.Empty;
+}
+
+public sealed class NebulaLifecycleUpdateInput
+{
+    [Required]
+    public Guid ProductId { get; set; }
+
+    [Required]
+    public string LifecycleStatus { get; set; } = string.Empty;
+}
+
+public sealed class NebulaSquareLinkInput
+{
+    [Required]
+    public Guid ProductId { get; set; }
+
+    [Required]
+    public string SquareItemId { get; set; } = string.Empty;
+
+    public string? SquareVariationId { get; set; }
 }
 
 public sealed record SaveFamilyTemplateResult(Guid TemplateId, string FamilyKey, string FamilyName);

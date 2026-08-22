@@ -6,6 +6,8 @@ namespace MustaineAI.Services;
 public interface ISellableSkuService
 {
     Task<string> GetOrAssignAsync(Guid sellableProductId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, string>> GetOrAssignManyAsync(IReadOnlyList<Guid> sellableProductIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<string>> PreviewNextSkusAsync(int count, CancellationToken cancellationToken = default);
 }
 
 public sealed class SellableSkuService(
@@ -14,7 +16,15 @@ public sealed class SellableSkuService(
     ILogger<SellableSkuService> logger) : ISellableSkuService
 {
     public async Task<string> GetOrAssignAsync(Guid sellableProductId, CancellationToken cancellationToken = default)
+        => (await GetOrAssignManyAsync([sellableProductId], cancellationToken))[sellableProductId];
+
+    public async Task<IReadOnlyDictionary<Guid, string>> GetOrAssignManyAsync(
+        IReadOnlyList<Guid> sellableProductIds,
+        CancellationToken cancellationToken = default)
     {
+        if (sellableProductIds.Count == 0)
+            return new Dictionary<Guid, string>();
+
         var liveSquareSkus = await GetLiveSquareSkuValuesAsync(cancellationToken);
         var strategy = db.Database.CreateExecutionStrategy();
 
@@ -24,16 +34,13 @@ public sealed class SellableSkuService(
                 System.Data.IsolationLevel.Serializable,
                 cancellationToken);
 
-            var product = await db.SellableProducts
-                .SingleAsync(x => x.Id == sellableProductId, cancellationToken);
+            var products = await db.SellableProducts
+                .Where(x => sellableProductIds.Contains(x.Id))
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(cancellationToken);
 
-            if (!string.IsNullOrWhiteSpace(product.SquareSku))
-            {
-                await UpsertRegistryEntryAsync(product, product.SquareSku, cancellationToken);
-                await db.SaveChangesAsync(cancellationToken);
-                await tx.CommitAsync(cancellationToken);
-                return product.SquareSku;
-            }
+            if (products.Count != sellableProductIds.Distinct().Count())
+                throw new InvalidOperationException("One or more sellable products were not found for SKU allocation.");
 
             var reservedNumbers = await GetReservedSkuNumbersAsync(cancellationToken);
             foreach (var liveSquareSku in liveSquareSkus)
@@ -41,25 +48,63 @@ public sealed class SellableSkuService(
                 reservedNumbers.Add(liveSquareSku);
             }
 
-            var next = reservedNumbers.Count == 0 ? 1 : reservedNumbers.Max();
-            do
+            var next = reservedNumbers.Count == 0 ? 0 : reservedNumbers.Max();
+            var assigned = new Dictionary<Guid, string>();
+            foreach (var product in products)
             {
-                next++;
-                if (next > 9999)
-                    throw new InvalidOperationException("Existing 4-digit Square SKU range is exhausted.");
+                if (!string.IsNullOrWhiteSpace(product.SquareSku))
+                {
+                    await UpsertRegistryEntryAsync(product, product.SquareSku, cancellationToken);
+                    assigned[product.Id] = product.SquareSku;
+                    continue;
+                }
+
+                do
+                {
+                    next++;
+                    if (next > 9999)
+                        throw new InvalidOperationException("Existing 4-digit Square SKU range is exhausted.");
+                }
+                while (reservedNumbers.Contains(next));
+
+                var assignedSku = next.ToString("D4");
+                reservedNumbers.Add(next);
+                product.SquareSku = assignedSku;
+                product.UpdatedAt = DateTimeOffset.UtcNow;
+
+                await UpsertRegistryEntryAsync(product, assignedSku, cancellationToken);
+                assigned[product.Id] = assignedSku;
             }
-            while (reservedNumbers.Contains(next));
-
-            var assignedSku = next.ToString("D4");
-            product.SquareSku = assignedSku;
-            product.UpdatedAt = DateTimeOffset.UtcNow;
-
-            await UpsertRegistryEntryAsync(product, assignedSku, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await tx.CommitAsync(cancellationToken);
-
-            return assignedSku;
+            return assigned;
         });
+    }
+
+    public async Task<IReadOnlyList<string>> PreviewNextSkusAsync(int count, CancellationToken cancellationToken = default)
+    {
+        if (count <= 0)
+            return [];
+
+        var reservedNumbers = await GetReservedSkuNumbersAsync(cancellationToken);
+        foreach (var liveSquareSku in await GetLiveSquareSkuValuesAsync(cancellationToken))
+            reservedNumbers.Add(liveSquareSku);
+
+        var next = reservedNumbers.Count == 0 ? 0 : reservedNumbers.Max();
+        var result = new List<string>(count);
+        while (result.Count < count)
+        {
+            next++;
+            if (next > 9999)
+                throw new InvalidOperationException("Existing 4-digit Square SKU range is exhausted.");
+            if (reservedNumbers.Contains(next))
+                continue;
+
+            reservedNumbers.Add(next);
+            result.Add(next.ToString("D4"));
+        }
+
+        return result;
     }
 
     private async Task<HashSet<int>> GetReservedSkuNumbersAsync(CancellationToken cancellationToken)
@@ -127,9 +172,7 @@ public sealed class SellableSkuService(
     {
         var now = DateTimeOffset.UtcNow;
         var entry = await db.SkuRegistryEntries
-            .SingleOrDefaultAsync(
-                x => x.SellableProductId == product.Id || x.Sku == sku,
-                cancellationToken);
+            .SingleOrDefaultAsync(x => x.Sku == sku, cancellationToken);
 
         if (entry is not null &&
             entry.SellableProductId != product.Id)

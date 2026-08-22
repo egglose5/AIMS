@@ -271,6 +271,16 @@ public sealed class SellableProductEntity
     [MaxLength(160)]
     public string? BarcodeValue { get; set; }
 
+    public bool SellInPerson { get; set; } = true;
+
+    public bool SellOnline { get; set; } = true;
+
+    public bool TrackInventory { get; set; } = true;
+
+    public Guid? MergedIntoProductId { get; set; }
+
+    public Guid? ReplacedByProductId { get; set; }
+
     public DateTimeOffset? SquareSyncedAt { get; set; }
 
     public bool IsActive { get; set; } = true;
@@ -508,6 +518,12 @@ public sealed class NebulaCreationBatchVariantEntity
 
     [MaxLength(220)]
     public string ProductName { get; set; } = string.Empty;
+
+    [MaxLength(260)]
+    public string? ArtworkKey { get; set; }
+
+    [MaxLength(220)]
+    public string? ArtworkName { get; set; }
 
     [MaxLength(40)]
     public string? ProductTypeCode { get; set; }
