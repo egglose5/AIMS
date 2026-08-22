@@ -1,0 +1,14 @@
+Mustaine-AI v9.9 — Barcode Intake + Visual Inventory
+
+Built from the known-good v9.8 visual selector baseline.
+
+Changes:
+- Preserves the working large visual artwork cards and deduplicated selector.
+- Adds barcode initialization progress: X of Y artworks initialized.
+- Adds Not Initialized / Initialized / All visual filters.
+- Initialized artwork cards stay visual and show Black, Brown, and total starting shelf counts.
+- Initialized cards are clearly marked with a green check.
+- Adds safe Reprint 1 Black / Reprint 1 Brown actions using the existing permanent SKU.
+- Reprinting never changes inventory and never creates a new SKU.
+- Removes the old text-heavy initialized table in favor of the same visual card language.
+- No process files are moved, renamed, merged, or deleted.

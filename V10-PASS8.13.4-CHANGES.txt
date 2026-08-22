@@ -1,0 +1,9 @@
+v10 Pass 8.13.4
+DYMO LABEL-ONLY PATCH
+
+- Keeps exact 2.00 x 0.75 inch label page.
+- Keeps landscape printing.
+- Keeps the permanent SKU and Code 128 barcode value unchanged.
+- Reduces barcode height from the prior pass.
+- Enlarges the BLK/BR + artwork-name text line and gives it more vertical room.
+- Does not change inventory, counts, Square categories, artwork subcategories, or SKU assignment.

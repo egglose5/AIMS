@@ -1,0 +1,327 @@
+@page "/settings"
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Options
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Data
+@using MustaineAI.Services
+@attribute [StreamRendering]
+@inject ApplicationDbContext DbContext
+@inject ISquareApiService SquareApiService
+@inject IWooCommerceApiService WooCommerceApiService
+@inject IOptions<SquareConnectionSettings> SquareDefaults
+
+<PageTitle>Settings</PageTitle>
+
+<div class="settings-hero">
+    <p class="settings-eyebrow">Integrations</p>
+    <h1 class="settings-title">Settings</h1>
+    <p class="settings-subtitle">
+        Configure integration credentials for this app, then test Square against the live API before we wire it into the rest of the workflow.
+    </p>
+</div>
+
+<div class="settings-grid">
+    <section class="settings-card">
+        <h2>Square Connection</h2>
+
+        <EditForm Model="_settings" OnValidSubmit="TestConnectionAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="mb-3">
+                <label class="form-label" for="square-environment">Environment</label>
+                <InputSelect id="square-environment" class="form-select" @bind-Value="_settings.Environment">
+                    <option value="@SquareEnvironments.Sandbox">Sandbox</option>
+                    <option value="@SquareEnvironments.Production">Production</option>
+                </InputSelect>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="square-access-token">Access Token</label>
+                <InputText id="square-access-token" class="form-control" type="password" @bind-Value="_settings.AccessToken" />
+                <div class="form-text">Use a sandbox token while developing and a production token when you are ready to go live.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="square-application-id">Application ID</label>
+                <InputText id="square-application-id" class="form-control" @bind-Value="_settings.ApplicationId" />
+                <div class="form-text">Optional for current server API calls, but useful for matching these credentials to a Square app.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="square-api-version">Square Version</label>
+                <InputText id="square-api-version" class="form-control" @bind-Value="_settings.ApiVersion" />
+                <div class="form-text">Optional. Leave blank to use Square's default versioning behavior.</div>
+            </div>
+
+            <div class="settings-actions">
+                <button class="btn btn-primary" type="submit" disabled="@IsBusy">
+                    @(_isTesting ? "Testing..." : "Test Connection")
+                </button>
+                <button class="btn btn-outline-primary" type="button" @onclick="SaveSettingsAsync" disabled="@IsBusy">
+                    @(_isSaving ? "Saving..." : "Save Settings")
+                </button>
+                <button class="btn btn-outline-secondary" type="button" @onclick="ResetToDefaults" disabled="@IsBusy">
+                    Reset
+                </button>
+            </div>
+        </EditForm>
+    </section>
+
+    <section class="settings-card">
+        <h2>WooCommerce Connection</h2>
+        <p class="text-body-secondary small">Read-only catalog access for Website Coverage Audit. Create WooCommerce REST API credentials with <strong>Read</strong> permission only.</p>
+        <EditForm Model="_wooCommerceSettings" OnValidSubmit="TestWooCommerceAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="mb-3">
+                <label class="form-label" for="woocommerce-store-url">Store URL</label>
+                <InputText id="woocommerce-store-url" class="form-control" placeholder="https://www.ancient-innovations.com" @bind-Value="_wooCommerceSettings.StoreUrl" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="woocommerce-consumer-key">Consumer Key</label>
+                <InputText id="woocommerce-consumer-key" class="form-control" type="password" @bind-Value="_wooCommerceSettings.ConsumerKey" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="woocommerce-consumer-secret">Consumer Secret</label>
+                <InputText id="woocommerce-consumer-secret" class="form-control" type="password" @bind-Value="_wooCommerceSettings.ConsumerSecret" />
+            </div>
+            <div class="settings-actions">
+                <button class="btn btn-primary" type="submit" disabled="@_isSavingWooCommerce">Test Connection</button>
+                <button class="btn btn-outline-primary" type="button" @onclick="SaveWooCommerceSettingsAsync" disabled="@_isSavingWooCommerce">Save Settings</button>
+            </div>
+        </EditForm>
+        @if (!string.IsNullOrWhiteSpace(_wooCommerceMessage))
+        {
+            <div class="settings-status mt-3 @( _wooCommerceSaveSucceeded ? "settings-status-success" : "settings-status-error" )">@_wooCommerceMessage</div>
+        }
+    </section>
+
+    <section class="settings-card">
+        <h2>Connection Status</h2>
+
+        @if (_result is null)
+        {
+            <div class="settings-status">
+                Enter the Square credentials on the left and run a test to confirm the API is reachable.
+            </div>
+        }
+        else
+        {
+            <div class="settings-status @( _result.IsConnected ? "settings-status-success" : "settings-status-error" )">
+                <strong>@(_result.IsConnected ? "Connected" : "Connection failed")</strong>
+                <div>@_result.Message</div>
+            </div>
+        }
+
+        @if (_result?.Locations is { Count: > 0 } locations)
+        {
+            <div class="mt-3">
+                <h3 class="h6">Locations</h3>
+                <ul class="settings-locations">
+                    @foreach (var location in locations)
+                    {
+                        <li>
+                            <strong>@(location.Name ?? "Unnamed location")</strong>
+                            @if (!string.IsNullOrWhiteSpace(location.BusinessName))
+                            {
+                                <span class="text-body-secondary">(@location.BusinessName)</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_settingsMessage))
+        {
+            <div class="settings-status mt-3 @( _settingsSaveSucceeded ? "settings-status-success" : "settings-status-error" )">
+                @_settingsMessage
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private SquareConnectionSettings _settings = new();
+    private WooCommerceSettingsInput _wooCommerceSettings = new();
+    private SquareConnectionResult? _result;
+    private bool _isTesting;
+    private bool _isSaving;
+    private bool _isSavingWooCommerce;
+    private string? _settingsMessage;
+    private string? _wooCommerceMessage;
+    private bool _settingsSaveSucceeded;
+    private bool _wooCommerceSaveSucceeded;
+
+    private bool IsBusy => _isTesting || _isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _settings = await SquareApiService.GetConnectionSettingsAsync();
+        }
+        catch
+        {
+            ResetSettingsToDefaults();
+            _settingsMessage = "Saved Square settings could not be loaded. The form is using configured defaults.";
+            _settingsSaveSucceeded = false;
+        }
+
+        try
+        {
+            await LoadWooCommerceSettingsAsync();
+        }
+        catch
+        {
+            _wooCommerceMessage = "Saved WooCommerce settings could not be loaded.";
+            _wooCommerceSaveSucceeded = false;
+        }
+    }
+
+    private async Task LoadWooCommerceSettingsAsync()
+    {
+        var savedSettings = await DbContext.WooCommerceConnectionSettings
+            .AsNoTracking()
+            .SingleOrDefaultAsync(setting => setting.Id == WooCommerceConnectionSettingsEntity.DefaultId);
+
+        _wooCommerceSettings = new WooCommerceSettingsInput
+        {
+            StoreUrl = savedSettings?.StoreUrl,
+            ConsumerKey = savedSettings?.ConsumerKey,
+            ConsumerSecret = savedSettings?.ConsumerSecret,
+        };
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        _isTesting = true;
+        _result = null;
+        _settingsMessage = null;
+
+        try
+        {
+            _result = await SquareApiService.TestConnectionAsync(_settings);
+        }
+        catch (Exception exception)
+        {
+            _settingsSaveSucceeded = false;
+            _settingsMessage = $"Square connection could not be tested. {exception.Message}";
+        }
+        finally
+        {
+            _isTesting = false;
+        }
+    }
+
+    private void ResetToDefaults()
+    {
+        ResetSettingsToDefaults();
+        _result = null;
+        _settingsMessage = null;
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        _isSaving = true;
+        _settingsMessage = null;
+
+        try
+        {
+            await SquareApiService.SaveConnectionSettingsAsync(_settings);
+            _settingsSaveSucceeded = true;
+            _settingsMessage = "Square settings saved.";
+        }
+        catch (Exception exception)
+        {
+            _settingsSaveSucceeded = false;
+            _settingsMessage = $"Square settings could not be saved. {exception.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SaveWooCommerceSettingsAsync()
+    {
+        _isSavingWooCommerce = true;
+        _wooCommerceMessage = null;
+
+        try
+        {
+            var savedSettings = await DbContext.WooCommerceConnectionSettings
+                .SingleOrDefaultAsync(setting => setting.Id == WooCommerceConnectionSettingsEntity.DefaultId);
+
+            if (savedSettings is null)
+            {
+                savedSettings = new WooCommerceConnectionSettingsEntity
+                {
+                    Id = WooCommerceConnectionSettingsEntity.DefaultId,
+                };
+                DbContext.WooCommerceConnectionSettings.Add(savedSettings);
+            }
+
+            savedSettings.StoreUrl = NormalizeInput(_wooCommerceSettings.StoreUrl);
+            savedSettings.ConsumerKey = NormalizeInput(_wooCommerceSettings.ConsumerKey);
+            savedSettings.ConsumerSecret = NormalizeInput(_wooCommerceSettings.ConsumerSecret);
+            savedSettings.UpdatedAt = DateTimeOffset.UtcNow;
+
+            await DbContext.SaveChangesAsync();
+
+            _wooCommerceSaveSucceeded = true;
+            _wooCommerceMessage = "WooCommerce read-only catalog settings saved.";
+        }
+        catch (Exception exception)
+        {
+            _wooCommerceSaveSucceeded = false;
+            _wooCommerceMessage = $"WooCommerce API key could not be saved. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingWooCommerce = false;
+        }
+    }
+
+    private async Task TestWooCommerceAsync()
+    {
+        _isSavingWooCommerce = true;
+        try
+        {
+            var result = await WooCommerceApiService.TestConnectionAsync(new WooCommerceConnectionInput(_wooCommerceSettings.StoreUrl, _wooCommerceSettings.ConsumerKey, _wooCommerceSettings.ConsumerSecret));
+            _wooCommerceSaveSucceeded = result.IsConnected;
+            _wooCommerceMessage = result.Message;
+        }
+        finally { _isSavingWooCommerce = false; }
+    }
+
+    private void ResetSettingsToDefaults()
+    {
+        var defaults = SquareDefaults.Value;
+        _settings = new SquareConnectionSettings
+        {
+            Environment = defaults.Environment,
+            ApplicationId = defaults.ApplicationId,
+            AccessToken = defaults.AccessToken,
+            ApiVersion = defaults.ApiVersion,
+        };
+    }
+
+    private static string? NormalizeInput(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private sealed class WooCommerceSettingsInput
+    {
+        public string? StoreUrl { get; set; }
+        public string? ConsumerKey { get; set; }
+        public string? ConsumerSecret { get; set; }
+    }
+}

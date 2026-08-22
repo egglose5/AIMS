@@ -1,0 +1,178 @@
+@page "/catalog-audit"
+@rendermode InteractiveServer
+@using MustaineAI.Services
+@attribute [StreamRendering]
+@inject ISquareApiService SquareApiService
+@inject IWooCommerceApiService WooCommerceApiService
+
+<PageTitle>Website Coverage Audit</PageTitle>
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
+        <div>
+            <p class="text-uppercase small text-secondary fw-semibold mb-1">Read-only reconciliation</p>
+            <h1 class="mb-2">Website Coverage Audit</h1>
+            <p class="text-body-secondary mb-0">Verifies that every published WooCommerce product or variation has a Square counterpart. Square-only items are intentionally left alone.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="LoadAsync" disabled="@_loading">@(_loading ? "Comparing…" : "Refresh Website + Square")</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error)) { <div class="alert alert-danger">@_error</div> }
+    else if (_loaded)
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Website entries</div><div class="fs-2 fw-bold">@_rows.Count</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Covered exact</div><div class="fs-2 fw-bold">@Count("MATCHED")</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Covered Black + Brown</div><div class="fs-2 fw-bold">@Count("COVERED_PAIR")</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Likely naming mismatch</div><div class="fs-2 fw-bold">@Count("LIKELY")</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Missing</div><div class="fs-2 fw-bold">@Count("MISSING")</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Needs review</div><div class="fs-2 fw-bold">@Count("REVIEW")</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Duplicate website</div><div class="fs-2 fw-bold">@Count("DUPLICATE_WEBSITE")</div></div></div></div>
+        </div>
+        <section class="card">
+            <div class="card-header d-flex justify-content-between gap-2 flex-wrap">
+                <strong>Published website products → Square</strong>
+                <div class="d-flex gap-2">
+                    <select class="form-select form-select-sm" @bind="_statusFilter">
+                        <option value="">All statuses</option><option value="MATCHED">Covered exact</option><option value="COVERED_PAIR">Covered Black + Brown</option><option value="LIKELY">Likely naming mismatch</option><option value="MISSING">Missing</option><option value="REVIEW">Needs review</option><option value="DUPLICATE_WEBSITE">Duplicate website</option>
+                    </select>
+                    <input class="form-control form-control-sm" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
+                </div>
+            </div>
+            <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+                <thead><tr><th>Website product / variation</th><th>Website SKU</th><th>Status</th><th>Square candidate(s)</th></tr></thead>
+                <tbody>@foreach (var row in FilteredRows) { <tr><td><strong>@row.Web.DisplayName</strong><div class="small text-body-secondary">Woo #@row.Web.ProductId@(row.Web.VariationId is long v ? $" / variation #{v}" : "")</div></td><td>@(string.IsNullOrWhiteSpace(row.Web.Sku) ? "—" : row.Web.Sku)</td><td><span class="badge @Badge(row.Status)">@Label(row.Status)</span></td><td>@(row.Candidates.Count == 0 ? "—" : string.Join(" · ", row.Candidates.Select(x => x.Name)))</td></tr> }</tbody>
+            </table></div>
+        </section>
+        <div class="alert alert-secondary mt-3 mb-0"><strong>Square-only products are not errors and are not changed.</strong> This audit is intentionally one-way: website → Square. No catalog records are written by this page.</div>
+    }
+    else { <div class="alert alert-info">Configure read-only WooCommerce credentials in <strong>Settings</strong>, then refresh this audit. Nothing here writes to WooCommerce or Square.</div> }
+</div>
+
+@code {
+    private bool _loading, _loaded; private string? _error; private string _filter="", _statusFilter=""; private List<AuditRow> _rows=[];
+    protected override async Task OnInitializedAsync() { }
+    private async Task LoadAsync()
+    {
+        _loading=true; _error=null;
+        try
+        {
+            var web = await WooCommerceApiService.GetPublishedCatalogAsync();
+            var square = await SquareApiService.GetCatalogItemsAsync();
+            if (square.Count == 0) throw new InvalidOperationException("Square returned no catalog items. Confirm the Square connection in Settings.");
+            // Same artwork/name can legitimately exist as different product families (for example,
+            // Dragon Parking Only is both a notebook artwork and a leather wall hanging).
+            // Only flag duplicate website products when both the normalized name AND website family match.
+            var duplicateKeys = web
+                .GroupBy(w => $"{Normalize(w.DisplayName)}|{WebsiteFamily(w)}")
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToHashSet();
+            _rows = web.Select(w => duplicateKeys.Contains($"{Normalize(w.DisplayName)}|{WebsiteFamily(w)}")
+                ? new AuditRow(w,"DUPLICATE_WEBSITE",FindBestCandidates(w,square))
+                : Match(w,square)).ToList();
+            _loaded=true;
+        }
+        catch(Exception ex) { _error=$"Website Coverage Audit could not be loaded: {ex.Message}"; }
+        finally { _loading=false; }
+    }
+
+    private static AuditRow Match(WooCommerceCatalogEntry web, IReadOnlyList<SquareCatalogItem> square)
+    {
+        var target=Normalize(web.DisplayName);
+        var webBase=CanonicalArtworkBase(web.ProductName);
+
+        // Leather wall hangings can intentionally share the same Woo display name as notebook artwork.
+        // Prefer the Square wall-scroll naming convention for that website family before considering
+        // notebook Black/Brown pairs with the same artwork name.
+        if (WebsiteFamily(web)=="wall")
+        {
+            var wall=square.Where(s=>WallScrollBase(s.Name)==webBase).ToList();
+            if(wall.Count==1) return new(web,"MATCHED",wall);
+            if(wall.Count>1) return new(web,"REVIEW",wall.Take(8).ToList());
+        }
+
+        var exact=square.Where(s=>Normalize(s.Name)==target).ToList();
+        if(exact.Count==1) return new(web,"MATCHED",exact);
+        if(exact.Count>1) return new(web,"REVIEW",exact);
+
+        // Website artwork products should be covered by the normal Notebook Black + Brown pair.
+        // Modular Book Black/Brown records are a separate sellable family and must not satisfy
+        // notebook coverage by themselves.
+        var standardBlack=square.Where(s=>!IsModularBook(s.Name) && LeatherBase(s.Name,"black")==webBase).ToList();
+        var standardBrown=square.Where(s=>!IsModularBook(s.Name) && LeatherBase(s.Name,"brown")==webBase).ToList();
+        if(standardBlack.Count==1 && standardBrown.Count==1) return new(web,"COVERED_PAIR",[standardBlack[0],standardBrown[0]]);
+        if(standardBlack.Count>1 || standardBrown.Count>1) return new(web,"REVIEW",standardBlack.Concat(standardBrown).DistinctBy(x=>x.Id).Take(8).ToList());
+
+        var bases=square.Select(s=>new { Item=s, Base=SquareBase(s.Name) }).ToList();
+        var sameBase=bases.Where(x=>x.Base==webBase).Select(x=>x.Item).DistinctBy(x=>x.Id).ToList();
+        if(sameBase.Count==1) return new(web,"LIKELY",sameBase);
+        if(sameBase.Count>1)
+        {
+            var pair=FindLeatherPair(sameBase,webBase);
+            if(pair.Count==2) return new(web,"COVERED_PAIR",pair);
+            return new(web,"REVIEW",sameBase.Take(8).ToList());
+        }
+
+        var likely=FindBestCandidates(web,square);
+        return likely.Count switch { 0=>new(web,"MISSING",[]), 1=>new(web,"LIKELY",likely), _=>new(web,"REVIEW",likely) };
+    }
+
+    private static List<SquareCatalogItem> FindBestCandidates(WooCommerceCatalogEntry web, IReadOnlyList<SquareCatalogItem> square)
+    {
+        var webBase=CanonicalArtworkBase(web.ProductName);
+        var candidates=square.Select(s=>new { Item=s, Base=SquareBase(s.Name) })
+            .Where(x=>x.Base.Contains(webBase) || webBase.Contains(x.Base))
+            .OrderBy(x=>Math.Abs(x.Base.Length-webBase.Length)).ThenBy(x=>x.Item.Name)
+            .Select(x=>x.Item).DistinctBy(x=>x.Id).Take(8).ToList();
+        return candidates;
+    }
+
+    private static List<SquareCatalogItem> FindLeatherPair(IEnumerable<SquareCatalogItem> items,string webBase)
+    {
+        // Only normal notebook Black/Brown pairs count here. Modular Books are their own product family.
+        var black=items.Where(s=>!IsModularBook(s.Name) && LeatherBase(s.Name,"black")==webBase).Take(2).ToList();
+        var brown=items.Where(s=>!IsModularBook(s.Name) && LeatherBase(s.Name,"brown")==webBase).Take(2).ToList();
+        return black.Count==1 && brown.Count==1 ? [black[0],brown[0]] : [];
+    }
+    private static string LeatherBase(string name,string leather)
+    {
+        var normalized=Normalize(name); var suffix=Normalize(leather);
+        if(!normalized.EndsWith(suffix,StringComparison.Ordinal)) return "";
+        return CanonicalArtworkBase(normalized[..^suffix.Length]);
+    }
+    private static string SquareBase(string name)
+    {
+        var n=Normalize(name);
+        foreach(var suffix in new[]{"black","brown"})
+            if(n.EndsWith(suffix,StringComparison.Ordinal)) n=n[..^suffix.Length];
+        if(n.EndsWith("wallscroll",StringComparison.Ordinal)) n=n[..^"wallscroll".Length];
+        return CanonicalArtworkBase(n);
+    }
+    private static string WallScrollBase(string name)
+    {
+        var n=Normalize(name);
+        if(n.EndsWith("wallscroll",StringComparison.Ordinal)) n=n[..^"wallscroll".Length];
+        else if(n.EndsWith("wallhanging",StringComparison.Ordinal)) n=n[..^"wallhanging".Length];
+        else return "";
+        return CanonicalArtworkBase(n);
+    }
+    private static bool IsModularBook(string name)=>Normalize(name).Contains("modularbook",StringComparison.Ordinal);
+    private static string CanonicalArtworkBase(string value)
+    {
+        var n=Normalize(value);
+        // Treat optional leading "The" as naming noise for artwork titles (Secret Garden / The Secret Garden).
+        if(n.StartsWith("the",StringComparison.Ordinal) && n.Length>3) n=n[3..];
+        return n;
+    }
+    private static string WebsiteFamily(WooCommerceCatalogEntry web)
+    {
+        if(web.Categories.Any(c=>Normalize(c)==Normalize("Leather Wall Hangings"))) return "wall";
+        return "default";
+    }
+    private int Count(string status)=>_rows.Count(x=>x.Status==status);
+    private IEnumerable<AuditRow> FilteredRows => _rows.Where(x => (string.IsNullOrWhiteSpace(_statusFilter)||x.Status==_statusFilter) && (string.IsNullOrWhiteSpace(_filter)||x.Web.DisplayName.Contains(_filter,StringComparison.OrdinalIgnoreCase)||x.Candidates.Any(c=>c.Name.Contains(_filter,StringComparison.OrdinalIgnoreCase))));
+    private static string Normalize(string value)=>new(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+    private static string Badge(string status)=>status switch { "MATCHED"=>"text-bg-success", "COVERED_PAIR"=>"text-bg-success", "LIKELY"=>"text-bg-warning", "MISSING"=>"text-bg-danger", "DUPLICATE_WEBSITE"=>"text-bg-info", _=>"text-bg-secondary" };
+    private static string Label(string status)=>status switch { "MATCHED"=>"COVERED EXACT", "COVERED_PAIR"=>"COVERED · BLACK + BROWN", "LIKELY"=>"LIKELY NAMING MISMATCH", "MISSING"=>"MISSING", "DUPLICATE_WEBSITE"=>"DUPLICATE WEBSITE", _=>"NEEDS REVIEW" };
+    private sealed record AuditRow(WooCommerceCatalogEntry Web,string Status,List<SquareCatalogItem> Candidates);
+}

@@ -1,0 +1,25 @@
+Mustaine-AI v9.5 — Visual Artwork Identification
+
+BARCODE-DAY USABILITY
+- Replaces the Initial Inventory artwork dropdown with large visual artwork cards.
+- Artwork images are the primary identifier; names are secondary.
+- Shows every available front-face artwork with lazy-loaded previews.
+- Search remains available when the artwork name is known.
+- Selected artwork is shown at 220px before quantities are recorded.
+- Click Large preview to inspect an artwork at near-screen size.
+- Already Initialized rows now show artwork images next to names.
+
+PRODUCTION VISUALS
+- Needs Made now shows a large 120px artwork preview when artwork is known.
+- Low Stock now shows the same visual artwork preview.
+- Products without artwork remain text-only.
+
+SHARED ARTWORK SERVICE
+- Adds one reusable artwork visual service backed by the existing
+  wwwroot/process-files/front-faces image library.
+- No duplicate image upload or second artwork library is required.
+
+NO WORKFLOW CHANGES
+- Initial count/barcode behavior is unchanged.
+- Production barcode behavior is unchanged: one finished scan adds +1 inventory.
+- Existing permanent database/settings remain in ~/.mustaine-ai.

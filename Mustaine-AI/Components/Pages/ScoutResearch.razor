@@ -1,0 +1,33 @@
+@page "/scout-research"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext Db
+@inject IScoutResearchService Research
+<PageTitle>Scout — Research S2.3</PageTitle>
+<div class="container-fluid py-3">
+<h1>Scout — Research & Scoring</h1>
+<p><strong>PHASE 2 · S2.3</strong> Research wider when evidence is weak. Nothing here creates or changes a canonical Show Arm record.</p>
+@if(!string.IsNullOrWhiteSpace(_message)){<div class="alert alert-info">@_message</div>}
+<div class="row g-3 mb-3">
+<div class="col-md-3"><div class="card p-3"><strong>QUEUE @_queue.Count</strong><small>Research Next leads</small></div></div>
+<div class="col-md-3"><div class="card p-3"><strong>RESEARCHED @_results.Count</strong><small>Persisted results</small></div></div>
+<div class="col-md-3"><div class="card p-3"><strong>APPLY @_results.Count(x=>x.Recommendation=="Apply")</strong><small>Evidence gate passed</small></div></div>
+<div class="col-md-3"><div class="card p-3"><strong>RESEARCH MORE @_results.Count(x=>x.Recommendation=="Research More")</strong><small>Needs evidence</small></div></div>
+</div>
+<div class="card p-3 mb-3"><h3>S2.3 research contract</h3><p>Scout starts with the Discovery source, follows relevant official vendor/application/rules pages, then performs targeted gap searches for fees, attendance, vendor sentiment, deadlines, handmade rules and load-in evidence. Later research passes prefer <strong>new URLs and new domains</strong> instead of simply refetching the same pages.</p><p><strong>Apply</strong> requires ≥8, confidence ≥70%, an official source, an independent source, and at least two non-search domains. <strong>Research More</strong> requires ≥6 + confidence ≥50%. Otherwise <strong>Pass for Now</strong>.</p></div>
+<h2>Research queue</h2>
+@if(_queue.Count==0){<p>No leads are marked Research Next. Move candidates from Phase 1 first.</p>}
+@foreach(var lead in _queue){var prior=_results.FirstOrDefault(x=>x.LeadId==lead.Id);<div class="card p-3 mb-3"><div class="d-flex justify-content-between gap-3"><div><h4>@lead.Title</h4><small>@lead.TargetYear · @(lead.TargetMonth?.ToString()??"Any month")</small></div><button class="btn btn-success" disabled="@_busy" @onclick="()=>ResearchOne(lead.Id)">@(BusyLabel(lead.Id,prior))</button></div><p class="mt-2">@lead.Snippet</p><a href="@lead.Url" target="_blank">Open discovery source</a>
+@if(prior is not null){<hr/><div><strong>@prior.Recommendation</strong> · Overall @prior.Score.Overall/10 · Confidence @prior.Confidence% · @prior.ResearchStatus · Pass @prior.ResearchPass</div><div class="mt-2">@prior.EvidenceSummary</div><div class="row g-2 mt-1"><div class="col-md-6"><div class="border rounded p-2 h-100"><strong>Evidence found</strong><div>@prior.VerifiedFacts</div></div></div><div class="col-md-6"><div class="border rounded p-2 h-100"><strong>Still missing / conflicts</strong><div>@prior.MissingEvidence</div></div></div></div><details class="mt-2"><summary>Evidence sources (@prior.Sources.Count)</summary>@foreach(var s in prior.Sources){<div class="mt-1"><strong>@(s.Fetched?"FETCHED":"FAILED")</strong> · @s.Kind · <a href="@s.Url" target="_blank">@s.Url</a><br/><small>@s.Note</small></div>}</details><details class="mt-2"><summary>Score details</summary><div>Vendor @prior.Score.VendorSentiment · Tourism @prior.Score.Tourism · Buyer @prior.Score.BuyerMatch · Notebook @prior.Score.NotebookScore · Module @prior.Score.ModuleScore · Handmade @prior.Score.HandmadeFit · AI @prior.Score.AiCompatibility · Acceptance @prior.Score.AcceptanceOdds · Revenue @prior.Score.RevenuePotential</div></details>}
+</div>}
+<h2>Research history</h2>@foreach(var x in _results){<div class="card p-3 mb-2"><strong>@x.Title — @x.Recommendation</strong><span>Pass @x.ResearchPass · Overall @x.Score.Overall/10 · Confidence @x.Confidence% · @x.ResearchStatus · @x.Sources.Count cumulative source(s)</span><small>@x.ResearchedAt.LocalDateTime</small></div>}
+</div>
+@code{
+private List<ShowDiscoveryLeadEntity> _queue=new();private List<ScoutResearchResult> _results=new();private bool _busy;private long? _busyLeadId;private string _message="";
+protected override async Task OnInitializedAsync()=>await Reload();
+private async Task Reload(){await Research.EnsureStorageAsync();_queue=await Db.ShowDiscoveryLeads.AsNoTracking().Where(x=>x.Status=="SCOUT_ACCEPTED"&&x.SearchQuery!=null&&x.SearchQuery.StartsWith(OperationalBoundaryRules.ScoutLeadPrefix)).OrderByDescending(x=>x.DiscoveredAt).Take(300).ToListAsync();_results=await Research.GetResultsAsync();}
+private string BusyLabel(long id,ScoutResearchResult? prior)=>_busy&&_busyLeadId==id?"Researching wider…":prior is null?"Research now":prior.Recommendation=="Research More"?"Research wider":"Research again";
+private async Task ResearchOne(long id){if(_busy)return;_busy=true;_busyLeadId=id;var prior=_results.FirstOrDefault(x=>x.LeadId==id);_message=prior is null?"Research started. Gathering evidence…":$"Research pass {(prior.ResearchPass+1)} started. Looking for new evidence and new domains…";try{var r=await Research.ResearchAsync(id);_message=$"Research pass {r.ResearchPass} complete for {r.Title}: {r.Recommendation}, {r.Score.Overall}/10, confidence {r.Confidence}%, {r.Sources.Count} cumulative evidence source(s).";await Reload();}catch(Exception ex){_message=$"Research failed: {ex.GetBaseException().Message}";}finally{_busy=false;_busyLeadId=null;}}
+}

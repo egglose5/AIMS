@@ -1,0 +1,385 @@
+@page "/purchase-orders"
+@rendermode InteractiveServer
+@using System.Globalization
+@using System.Text
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@using Microsoft.AspNetCore.Components.Forms
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Services
+@using UglyToad.PdfPig
+@inject IWebHostEnvironment Environment
+
+<PageTitle>Purchase Orders</PageTitle>
+
+<div class="sales-hero">
+    <p class="sales-eyebrow">Purchasing</p>
+    <h1 class="sales-title">Purchase Orders</h1>
+    <p class="sales-subtitle">
+        Track vendor orders, expected arrivals, and receiving status as purchasing data is connected.
+    </p>
+</div>
+
+<div class="sales-summary">
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Open POs</span>
+        <strong class="sales-metric-value">@_purchaseOrders.Count(order => order.Status != "Closed")</strong>
+        <span class="sales-metric-note">Awaiting receipt or review</span>
+    </section>
+
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Outstanding Spend</span>
+        <strong class="sales-metric-value">@OutstandingSpend.ToString("C0")</strong>
+        <span class="sales-metric-note">Open purchase order total</span>
+    </section>
+
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Next Arrival</span>
+        <strong class="sales-metric-value">@NextArrivalLabel</strong>
+        <span class="sales-metric-note">Earliest expected delivery</span>
+    </section>
+</div>
+
+<section class="sales-card mb-4">
+    <div class="sales-sheet-header">
+        <div>
+            <h2>Upload Purchase Order PDF</h2>
+            <p class="text-body-secondary mb-0">Parse received stock quantities and cost per unit before storing the PDF.</p>
+        </div>
+        <div class="settings-actions">
+            <label class="sales-select-control">
+                <span>PDF file</span>
+                <InputFile id="purchase-order-pdf" OnChange="HandlePurchaseOrderPdfAsync" class="form-control" accept="application/pdf" disabled="@_isUploadingPurchaseOrder" />
+            </label>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_uploadMessage))
+    {
+        <div class="settings-status mt-3 @( _uploadSucceeded ? "settings-status-success" : "settings-status-error" )">
+            @_uploadMessage
+        </div>
+    }
+
+    @if (_lastUploadedPurchaseOrder is not null)
+    {
+        <div class="table-responsive mt-3">
+            <table class="table align-middle sales-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Parsed Item</th>
+                        <th scope="col" class="text-end">Quantity Received</th>
+                        <th scope="col" class="text-end">Cost Per Unit</th>
+                        <th scope="col">Source Line</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _lastUploadedPurchaseOrder.Lines)
+                    {
+                        <tr>
+                            <td>
+                                <div class="sales-name">@line.Description</div>
+                                <div class="sales-role">@_lastUploadedPurchaseOrder.OriginalFileName</div>
+                            </td>
+                            <td class="text-end">@line.QuantityReceived.ToString("0.##")</td>
+                            <td class="text-end">@line.CostPerUnit.ToString("C")</td>
+                            <td>@line.SourceLine</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="settings-status mt-3">
+            Stored PDF: @_lastUploadedPurchaseOrder.StoredPdfFileName<br />
+            Parsed data: @_lastUploadedPurchaseOrder.ParsedDataFileName
+        </div>
+    }
+</section>
+
+<section class="sales-card">
+    <div class="sales-sheet-header">
+        <div>
+            <h2>Purchase Order Queue</h2>
+            <p class="text-body-secondary mb-0">Review open vendor orders and receiving progress.</p>
+        </div>
+        <div class="settings-actions">
+            <label class="sales-select-control">
+                <span>Status</span>
+                <InputSelect class="form-select" @bind-Value="_selectedStatus">
+                    @foreach (var status in StatusOptions)
+                    {
+                        <option value="@status">@status</option>
+                    }
+                </InputSelect>
+            </label>
+        </div>
+    </div>
+
+    @if (FilteredPurchaseOrders.Count == 0)
+    {
+        <div class="settings-status">
+            No purchase orders are available yet.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle sales-table">
+                <thead>
+                    <tr>
+                        <th scope="col">PO</th>
+                        <th scope="col">Vendor</th>
+                        <th scope="col">Expected</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" class="text-end">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var order in FilteredPurchaseOrders)
+                    {
+                        <tr>
+                            <td>
+                                <div class="sales-name">@order.Number</div>
+                                <div class="sales-role">@order.CreatedAt.ToLocalTime().ToString("g")</div>
+                            </td>
+                            <td>@order.Vendor</td>
+                            <td>@order.ExpectedAt.ToLocalTime().ToString("d")</td>
+                            <td>@order.Status</td>
+                            <td class="text-end">@order.Total.ToString("C0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private string _selectedStatus = "All statuses";
+    private bool _isUploadingPurchaseOrder;
+    private bool _uploadSucceeded;
+    private string? _uploadMessage;
+    private UploadedPurchaseOrder? _lastUploadedPurchaseOrder;
+    private IReadOnlyList<PurchaseOrderRow> _purchaseOrders = [];
+    private const long MaxPdfUploadSize = 25 * 1024 * 1024;
+    private static readonly Regex QuantityPattern = new(@"(?:qty|quantity)(?:\s+(?:received|recvd))?\D+(?<quantity>\d+(?:\.\d+)?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex UnitCostPattern = new(@"(?:unit\s+cost|cost\s+per\s+unit)\D+\$?(?<unitCost>\d[\d,]*(?:\.\d{2})?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex TableLinePattern = new(@"^(?<description>.+?)\s+(?<quantity>\d+(?:\.\d+)?)\s+\$?(?<unitCost>\d[\d,]*(?:\.\d{2})?)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+    };
+
+    private static readonly IReadOnlyList<string> StatusOptions =
+    [
+        "All statuses",
+        "Draft",
+        "Ordered",
+        "Partially Received",
+        "Closed",
+    ];
+
+    private IReadOnlyList<PurchaseOrderRow> FilteredPurchaseOrders => _purchaseOrders
+        .Where(order => _selectedStatus == "All statuses" || order.Status == _selectedStatus)
+        .OrderBy(order => order.ExpectedAt)
+        .ToList();
+
+    private decimal OutstandingSpend => _purchaseOrders
+        .Where(order => order.Status != "Closed")
+        .Sum(order => order.TotalCents) / 100m;
+
+    private string NextArrivalLabel => _purchaseOrders
+        .Where(order => order.Status != "Closed")
+        .OrderBy(order => order.ExpectedAt)
+        .FirstOrDefault()
+        ?.ExpectedAt
+        .ToLocalTime()
+        .ToString("MMM d") ?? "No open POs";
+
+    private async Task HandlePurchaseOrderPdfAsync(InputFileChangeEventArgs args)
+    {
+        _isUploadingPurchaseOrder = true;
+        _uploadMessage = null;
+        _uploadSucceeded = false;
+        _lastUploadedPurchaseOrder = null;
+
+        try
+        {
+            var file = args.File;
+            if (!file.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                _uploadMessage = "Upload a PDF purchase order.";
+                return;
+            }
+
+            await using var readStream = file.OpenReadStream(MaxPdfUploadSize);
+            using var memoryStream = new MemoryStream();
+            await readStream.CopyToAsync(memoryStream);
+            var pdfBytes = memoryStream.ToArray();
+
+            var parsedLines = ParsePurchaseOrderPdf(pdfBytes);
+            if (parsedLines.Count == 0)
+            {
+                _uploadMessage = "The PDF was read, but no stock quantity received or cost-per-unit lines were found. The file was not stored.";
+                return;
+            }
+
+            var uploadedAt = DateTimeOffset.UtcNow;
+            var storageDirectory = Path.Combine(Environment.ContentRootPath, "App_Data", "PurchaseOrders");
+            Directory.CreateDirectory(storageDirectory);
+
+            var storedBaseName = $"{uploadedAt:yyyyMMddHHmmss}-{Path.GetFileNameWithoutExtension(SanitizeFileName(file.Name))}";
+            var pdfFileName = $"{storedBaseName}.pdf";
+            var parsedDataFileName = $"{storedBaseName}.json";
+            var pdfPath = Path.Combine(storageDirectory, pdfFileName);
+            var parsedDataPath = Path.Combine(storageDirectory, parsedDataFileName);
+
+            var uploadedPurchaseOrder = new UploadedPurchaseOrder(
+                file.Name,
+                pdfFileName,
+                parsedDataFileName,
+                uploadedAt,
+                parsedLines);
+
+            await File.WriteAllBytesAsync(pdfPath, pdfBytes);
+            await File.WriteAllTextAsync(parsedDataPath, JsonSerializer.Serialize(uploadedPurchaseOrder, JsonOptions));
+
+            _lastUploadedPurchaseOrder = uploadedPurchaseOrder;
+            _uploadSucceeded = true;
+            _uploadMessage = $"Purchase order PDF parsed and stored with {parsedLines.Count} line(s).";
+        }
+        catch (IOException exception)
+        {
+            _uploadMessage = $"The purchase order PDF could not be stored. {exception.Message}";
+        }
+        catch (Exception exception)
+        {
+            _uploadMessage = $"The purchase order PDF could not be parsed. {exception.Message}";
+        }
+        finally
+        {
+            _isUploadingPurchaseOrder = false;
+        }
+    }
+
+    private static IReadOnlyList<ParsedPurchaseOrderLine> ParsePurchaseOrderPdf(byte[] pdfBytes)
+    {
+        using var document = PdfDocument.Open(pdfBytes);
+        var textBuilder = new StringBuilder();
+
+        foreach (var page in document.GetPages())
+        {
+            textBuilder.AppendLine(page.Text);
+        }
+
+        var lines = textBuilder
+            .ToString()
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeLine)
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return lines
+            .Select(TryParsePurchaseOrderLine)
+            .Where(line => line is not null)
+            .Cast<ParsedPurchaseOrderLine>()
+            .ToList();
+    }
+
+    private static ParsedPurchaseOrderLine? TryParsePurchaseOrderLine(string line)
+    {
+        var quantityMatch = QuantityPattern.Match(line);
+        var unitCostMatch = UnitCostPattern.Match(line);
+
+        if (quantityMatch.Success &&
+            unitCostMatch.Success &&
+            TryParseDecimal(quantityMatch.Groups["quantity"].Value, out var labeledQuantity) &&
+            TryParseDecimal(unitCostMatch.Groups["unitCost"].Value, out var labeledUnitCost))
+        {
+            return new ParsedPurchaseOrderLine(
+                GetDescriptionBeforeFirstLabel(line),
+                labeledQuantity,
+                labeledUnitCost,
+                line);
+        }
+
+        var tableMatch = TableLinePattern.Match(line);
+        if (tableMatch.Success &&
+            line.Contains('$') &&
+            TryParseDecimal(tableMatch.Groups["quantity"].Value, out var rowQuantity) &&
+            TryParseDecimal(tableMatch.Groups["unitCost"].Value, out var rowUnitCost))
+        {
+            return new ParsedPurchaseOrderLine(
+                tableMatch.Groups["description"].Value.Trim(),
+                rowQuantity,
+                rowUnitCost,
+                line);
+        }
+
+        return null;
+    }
+
+    private static string GetDescriptionBeforeFirstLabel(string line)
+    {
+        var labelIndex = line.IndexOf("qty", StringComparison.OrdinalIgnoreCase);
+        if (labelIndex < 0)
+        {
+            labelIndex = line.IndexOf("quantity", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return labelIndex > 0 ? line[..labelIndex].Trim(' ', '-', ':') : "Purchase order line";
+    }
+
+    private static bool TryParseDecimal(string value, out decimal parsed)
+    {
+        return decimal.TryParse(
+            value.Replace("$", string.Empty, StringComparison.Ordinal).Replace(",", string.Empty, StringComparison.Ordinal),
+            NumberStyles.Number,
+            CultureInfo.InvariantCulture,
+            out parsed);
+    }
+
+    private static string NormalizeLine(string line)
+    {
+        return Regex.Replace(line, @"\s+", " ").Trim();
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        var safeName = Path.GetFileName(fileName);
+        foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+        {
+            safeName = safeName.Replace(invalidCharacter, '-');
+        }
+
+        return safeName;
+    }
+
+    private sealed record UploadedPurchaseOrder(
+        string OriginalFileName,
+        string StoredPdfFileName,
+        string ParsedDataFileName,
+        DateTimeOffset UploadedAt,
+        IReadOnlyList<ParsedPurchaseOrderLine> Lines);
+
+    private sealed record ParsedPurchaseOrderLine(
+        string Description,
+        decimal QuantityReceived,
+        decimal CostPerUnit,
+        string SourceLine);
+
+    private sealed record PurchaseOrderRow(
+        string Number,
+        string Vendor,
+        string Status,
+        DateTimeOffset CreatedAt,
+        DateTimeOffset ExpectedAt,
+        long TotalCents)
+    {
+        public decimal Total => TotalCents / 100m;
+    }
+}

@@ -1,0 +1,96 @@
+@page "/show-inbox"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@inject ShowArmDbContext Db
+<PageTitle>Show Inbox</PageTitle>
+
+<div class="shows-hero">
+    <p class="shows-eyebrow">Show Arm</p>
+    <h1>Show Inbox</h1>
+    <p>Show-related mail routed here by the central Email Hub. Gmail remains the source record.</p>
+</div>
+
+<div class="alert alert-info mt-3">
+    <strong>No separate forwarding workflow.</strong> Use <strong>Email Hub</strong> to check the AI Brain address or your business inboxes. Show-related messages appear here automatically.
+</div>
+
+<div class="shows-tabs mt-3">
+    <button class="@Tab("review")" @onclick='()=>_tab="review"'>Needs Review (@_items.Count(x=>x.Status=="NEEDS_REVIEW"))</button>
+    <button class="@Tab("action")" @onclick='()=>_tab="action"'>Needs You (@_items.Count(x=>x.Status=="NEEDS_YOU"))</button>
+    <button class="@Tab("handled")" @onclick='()=>_tab="handled"'>Matched / Handled</button>
+    <button class="@Tab("all")" @onclick='()=>_tab="all"'>All Show Mail</button>
+</div>
+
+<section class="shows-card mt-3">
+    <div class="shows-card-head"><div><h2>@Title</h2><p>The original message remains evidence even after the Brain extracts useful information.</p></div></div>
+    @if(Visible.Count==0)
+    {
+        <div class="showarm-empty"><strong>No show messages in this view.</strong><span>Check email from the central Email Hub.</span></div>
+    }
+    @foreach(var x in Visible)
+    {
+        <div class="showarm-evidence-item mb-3">
+            <div class="d-flex justify-content-between gap-3"><strong>@(x.Subject??"(no subject)")</strong><span class="badge text-bg-light">@x.Status</span></div>
+            <span>@MatchedLabel(x)</span>
+            <small>From @x.FromAddress · @(x.MessageDate?.LocalDateTime.ToString("g")??x.ReceivedAt.LocalDateTime.ToString("g"))</small>
+            @if(!string.IsNullOrWhiteSpace(x.BrainSummary)){<span>@x.BrainSummary</span>}
+            @if(!string.IsNullOrWhiteSpace(x.ActionSummary)){<div class="alert alert-warning py-1 mt-2 mb-1">@x.ActionSummary</div>}
+            @if(!string.IsNullOrWhiteSpace(x.AttachmentSummary)){<small><strong>Attachments:</strong> @x.AttachmentSummary</small>}
+            @if(x.Status=="NEEDS_REVIEW")
+            {
+                <div class="d-flex gap-2 mt-2">
+                    <select class="form-select form-select-sm" @bind="_reviewEdition[x.Id]"><option value="0">Choose show/year…</option>@foreach(var edition in _editions){<option value="@edition.Id">@edition.ShowEvent.Name · @edition.Year</option>}</select>
+                    <button class="btn btn-sm btn-primary" @onclick="()=>MatchAsync(x.Id)">Match</button>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    List<ShowEditionEntity> _editions=[];
+    List<ShowEmailIntakeEntity> _items=[];
+    Dictionary<long,long> _reviewEdition=new();
+    string _tab="review";
+
+    List<ShowEmailIntakeEntity> Visible => _tab switch
+    {
+        "review" => _items.Where(x=>x.Status=="NEEDS_REVIEW").ToList(),
+        "action" => _items.Where(x=>x.Status=="NEEDS_YOU").ToList(),
+        "handled" => _items.Where(x=>x.Status=="BRAIN_HANDLED"||x.Status=="MATCHED").ToList(),
+        _ => _items
+    };
+
+    string Title => _tab switch { "review"=>"Needs review", "action"=>"Needs you", "handled"=>"Matched / handled", _=>"All show mail" };
+
+    protected override async Task OnInitializedAsync()=>await LoadAsync();
+
+    async Task LoadAsync()
+    {
+        _editions=await Db.ShowEditions.AsNoTracking().Include(x=>x.ShowEvent).OrderByDescending(x=>x.Year).ThenBy(x=>x.ShowEvent.Name).ToListAsync();
+        _items=await Db.ShowEmailIntakes.AsNoTracking().Where(x=>x.Route=="SHOW").OrderByDescending(x=>x.MessageDate??x.ReceivedAt).Take(1000).ToListAsync();
+        foreach(var item in _items)_reviewEdition.TryAdd(item.Id,0);
+    }
+
+    async Task MatchAsync(long id)
+    {
+        if(!_reviewEdition.TryGetValue(id,out var editionId)||editionId==0)return;
+        var item=await Db.ShowEmailIntakes.FindAsync(id); if(item is null)return;
+        item.ShowEditionId=editionId;
+        item.Status=string.IsNullOrWhiteSpace(item.ActionSummary)?"BRAIN_HANDLED":"NEEDS_YOU";
+        var edition=await Db.ShowEditions.Include(z=>z.ShowEvent).FirstAsync(z=>z.Id==editionId);
+        item.MatchNotes=$"Reviewed match: {edition.ShowEvent.Name} · {edition.Year}";
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    string MatchedLabel(ShowEmailIntakeEntity x)
+    {
+        if(x.ShowEditionId is null)return x.MatchNotes??"Unmatched";
+        var edition=_editions.FirstOrDefault(item=>item.Id==x.ShowEditionId);
+        return edition is null?"Matched show":$"{edition.ShowEvent.Name} · {edition.Year}";
+    }
+
+    string Tab(string x)=>"shows-tab "+(_tab==x?"active":"");
+}

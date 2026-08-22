@@ -1,0 +1,366 @@
+@page "/production/labels"
+@rendermode InteractiveServer
+@layout BlankLayout
+@using System.Text.Json
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Production Labels</PageTitle>
+
+<style>
+@@media print {
+    @@page { size: 2in .75in; margin: 0; }
+    html, body { margin: 0 !important; padding: 0 !important; }
+    .production-label-page, .production-label-grid { margin: 0 !important; padding: 0 !important; display: block !important; }
+    .production-label-card { width: 2in !important; height: .75in !important; min-height: .75in !important; margin: 0 !important; padding: .04in .06in !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; break-after: page; page-break-after: always; }
+    .production-label-card:last-child { break-after: auto; page-break-after: auto; }
+    .production-label-name { font-size: 8pt !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .production-label-barcode { padding: 0 !important; }
+    .production-label-barcode svg { width: 100% !important; height: .38in !important; }
+    .production-label-sku, .production-label-price { font-size: 7pt !important; line-height: 1 !important; }
+}
+</style>
+
+<div class="production-label-page">
+    @if (!_isLoading && QueueItems.Any())
+    {
+        <div class="production-label-grid">
+            @foreach (var item in QueueItems)
+            {
+                <article class="production-label-card" style="width:@($"{LabelWidthInInches}in"); min-height:@($"{LabelHeightInInches}in"); padding:@($"{LabelMarginTopInInches}in {LabelMarginRightInInches}in {LabelMarginBottomInInches}in {LabelMarginLeftInInches}in")">
+                    <div class="production-label-name">@GetLabelDisplayName(item)</div>
+                    <div class="production-label-barcode">
+                        @((MarkupString)GenerateCode128Svg(GetLabelSku(item)))
+                    </div>
+                    <div class="production-label-sku">SKU: @GetLabelSku(item)</div>
+                    @if (!string.IsNullOrWhiteSpace(GetLabelPriceText(item)))
+                    {
+                        <div class="production-label-price">@GetLabelPriceText(item)</div>
+                    }
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "date")]
+    public string? DateQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "width")]
+    public string? WidthQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "height")]
+    public string? HeightQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "marginTop")]
+    public string? MarginTopQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "marginRight")]
+    public string? MarginRightQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "marginBottom")]
+    public string? MarginBottomQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "marginLeft")]
+    public string? MarginLeftQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "includePrice")]
+    public bool IncludePrice { get; set; }
+
+    [SupplyParameterFromQuery(Name = "price")]
+    public string? PriceText { get; set; }
+
+    [SupplyParameterFromQuery(Name = "autoprint")]
+    public bool AutoPrint { get; set; } = true;
+
+    private bool _isLoading = true;
+    private bool _printTriggered;
+    private DateOnly TargetDate = DateOnly.FromDateTime(DateTime.Now);
+    private decimal LabelWidthInInches = 2.00m;
+    private decimal LabelHeightInInches = 0.75m;
+    private decimal LabelMarginTopInInches = 0.04m;
+    private decimal LabelMarginRightInInches = 0.06m;
+    private decimal LabelMarginBottomInInches = 0.04m;
+    private decimal LabelMarginLeftInInches = 0.06m;
+    private IReadOnlyList<ProductionLabelRow> QueueItems = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApplyQueryParameters();
+        await LoadQueueAsync();
+        _isLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _printTriggered || !AutoPrint || _isLoading || !QueueItems.Any())
+        {
+            return;
+        }
+
+        _printTriggered = true;
+        await JSRuntime.InvokeVoidAsync("print");
+    }
+
+    private void ApplyQueryParameters()
+    {
+        if (DateOnly.TryParse(DateQuery, out var parsedDate))
+        {
+            TargetDate = parsedDate;
+        }
+
+        if (decimal.TryParse(MarginTopQuery, out var parsedMarginTop) && parsedMarginTop >= 0)
+        {
+            LabelMarginTopInInches = parsedMarginTop;
+        }
+
+        if (decimal.TryParse(MarginRightQuery, out var parsedMarginRight) && parsedMarginRight >= 0)
+        {
+            LabelMarginRightInInches = parsedMarginRight;
+        }
+
+        if (decimal.TryParse(MarginBottomQuery, out var parsedMarginBottom) && parsedMarginBottom >= 0)
+        {
+            LabelMarginBottomInInches = parsedMarginBottom;
+        }
+
+        if (decimal.TryParse(MarginLeftQuery, out var parsedMarginLeft) && parsedMarginLeft >= 0)
+        {
+            LabelMarginLeftInInches = parsedMarginLeft;
+        }
+
+        if (decimal.TryParse(WidthQuery, out var parsedWidth) && parsedWidth > 0)
+        {
+            LabelWidthInInches = parsedWidth;
+        }
+
+        if (decimal.TryParse(HeightQuery, out var parsedHeight) && parsedHeight > 0)
+        {
+            LabelHeightInInches = parsedHeight;
+        }
+    }
+
+    private async Task LoadQueueAsync()
+    {
+        var queueItems = await DbContext.ProductionQueueItems
+            .AsNoTracking()
+            .Where(item => item.ProductionDate == TargetDate)
+            .OrderBy(item => item.Stage)
+            .ThenBy(item => item.ElementName, StringComparer.OrdinalIgnoreCase)
+            .Select(item => new ProductionLabelRow(
+                item.Id,
+                item.ElementType,
+                item.ElementKey,
+                item.Sku,
+                item.ElementName,
+                item.SourceGroup,
+                item.Stage,
+                item.Quantity,
+                item.Notes))
+            .ToListAsync();
+
+        QueueItems = queueItems;
+    }
+
+    private string GetLabelSku(ProductionLabelRow item) =>
+        string.IsNullOrWhiteSpace(item.Sku) ? item.ElementKey : item.Sku;
+
+    private string GetLabelDisplayName(ProductionLabelRow item)
+    {
+        var configuredName = GetConfiguration(item).ProductName;
+        return string.IsNullOrWhiteSpace(configuredName) ? item.ElementName : configuredName;
+    }
+
+    private string? GetLabelPriceText(ProductionLabelRow item)
+    {
+        if (!IncludePrice)
+        {
+            return null;
+        }
+
+        if (TryGetCurrencyLabel(GetConfiguration(item).SellPrice, out var configuredPriceLabel))
+        {
+            return configuredPriceLabel;
+        }
+
+        return NormalizeInput(PriceText);
+    }
+
+    private static LabelConfiguration GetConfiguration(ProductionLabelRow item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Notes))
+        {
+            return new LabelConfiguration();
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<StitchConfigurationPayload>(item.Notes);
+            if (payload is null || !IsSupportedConfigurationSchema(payload.Schema))
+            {
+                return new LabelConfiguration();
+            }
+
+            return new LabelConfiguration
+            {
+                ProductName = NormalizeInput(payload.ProductName) ?? NormalizeInput(payload.Variant),
+                SellPrice = NormalizeNumericInput(payload.SellPrice),
+            };
+        }
+        catch
+        {
+            return new LabelConfiguration();
+        }
+    }
+
+    private static bool IsSupportedConfigurationSchema(string? schema) =>
+        string.Equals(schema, StitchConfigurationPayload.SchemaVersion, StringComparison.Ordinal)
+        || string.Equals(schema, StitchConfigurationPayload.LegacySchemaVersion, StringComparison.Ordinal);
+
+    private static string? NormalizeInput(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? NormalizeNumericInput(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return decimal.TryParse(trimmed, out var parsed)
+            ? parsed.ToString("0.##")
+            : null;
+    }
+
+    private static bool TryGetCurrencyLabel(string? value, out string currency)
+    {
+        currency = string.Empty;
+
+        var normalized = NormalizeNumericInput(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        if (!decimal.TryParse(normalized, out var parsed))
+        {
+            return false;
+        }
+
+        currency = parsed.ToString("C");
+        return true;
+    }
+
+    private static string GenerateCode128Svg(string value)
+    {
+        var payload = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        var codes = new List<int> { 104 };
+
+        foreach (var character in payload)
+        {
+            var normalized = character is < ' ' or > '~' ? '?' : character;
+            codes.Add(normalized - 32);
+        }
+
+        var checksum = codes[0];
+        for (var index = 1; index < codes.Count; index++)
+        {
+            checksum += codes[index] * index;
+        }
+
+        checksum %= 103;
+        codes.Add(checksum);
+        codes.Add(106);
+
+        const int moduleWidth = 2;
+        const int quietZone = 10;
+        const int barHeight = 48;
+
+        var x = quietZone;
+        var bars = new List<string>();
+
+        foreach (var code in codes)
+        {
+            var pattern = Code128Patterns[code];
+            var drawBar = true;
+
+            foreach (var digit in pattern)
+            {
+                var width = (digit - '0') * moduleWidth;
+                if (drawBar)
+                {
+                    bars.Add($"<rect x=\"{x}\" y=\"0\" width=\"{width}\" height=\"{barHeight}\" fill=\"#000\" />");
+                }
+
+                x += width;
+                drawBar = !drawBar;
+            }
+        }
+
+        var totalWidth = x + quietZone;
+        var text = System.Net.WebUtility.HtmlEncode(payload);
+
+        return $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{totalWidth}\" height=\"{barHeight}\" viewBox=\"0 0 {totalWidth} {barHeight}\" shape-rendering=\"crispEdges\" role=\"img\" aria-label=\"Code 128 barcode for {text}\"><rect width=\"100%\" height=\"100%\" fill=\"#fff\" />{string.Join(string.Empty, bars)}</svg>";
+    }
+
+    private static readonly string[] Code128Patterns =
+    [
+        "212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213",
+        "221312", "231212", "112232", "122132", "122231", "113222", "123122", "123221", "223211", "221132",
+        "221231", "213212", "223112", "312131", "311222", "321122", "321221", "312212", "322112", "322211",
+        "212123", "212321", "232121", "111323", "131123", "131321", "112313", "132113", "132311", "211313",
+        "231113", "231311", "112133", "112331", "132131", "113123", "113321", "133121", "313121", "211331",
+        "231131", "213113", "213311", "213131", "311123", "311321", "331121", "312113", "312311", "332111",
+        "314111", "221411", "431111", "111224", "111422", "121124", "121421", "141122", "141221", "112214",
+        "112412", "122114", "122411", "142112", "142211", "241211", "221114", "413111", "241112", "134111",
+        "111242", "121142", "121241", "114212", "124112", "124211", "411212", "421112", "421211", "212141",
+        "214121", "412121", "111143", "111341", "131141", "114113", "114311", "411113", "411311", "113141",
+        "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
+    ];
+
+    private sealed record ProductionLabelRow(
+        Guid Id,
+        string ElementType,
+        string ElementKey,
+        string? Sku,
+        string ElementName,
+        string SourceGroup,
+        string Stage,
+        int Quantity,
+        string? Notes)
+    {
+        public string AddedLabel => string.Empty;
+    }
+
+    private sealed class LabelConfiguration
+    {
+        public string? ProductName { get; set; }
+
+        public string? SellPrice { get; set; }
+    }
+
+    private sealed record StitchConfigurationPayload(
+        string Schema,
+        string? ProductCategory,
+        string? ProductName,
+        string? ProductCogs,
+        string? SellPrice,
+        string? AdditionalNotes)
+    {
+        public string? ProductTarget { get; init; }
+
+        public string? Variant { get; init; }
+
+        public const string LegacySchemaVersion = "stitch-orders:v1";
+
+        public const string SchemaVersion = "stitch-orders:v2";
+    }
+}

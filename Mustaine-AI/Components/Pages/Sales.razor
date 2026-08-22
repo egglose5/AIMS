@@ -1,0 +1,583 @@
+﻿@page "/sales"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+@inject ISquareApiService SquareApiService
+
+<PageTitle>Square Sales</PageTitle>
+
+<div class="sales-hero">
+    <p class="sales-eyebrow">Revenue</p>
+    <h1 class="sales-title">Square Sales</h1>
+    <p class="sales-subtitle">
+        Real Square sales pulled from the database, grouped by employee, with the newest orders shown first.
+    </p>
+</div>
+
+<section class="sales-card mb-4">
+    <div class="sales-sheet-header">
+        <div>
+            <h2>Update Square Sales</h2>
+            <p class="text-body-secondary mb-0">This page refreshes the previous 24 hours automatically when opened. Use the controls to refresh a custom range.</p>
+        </div>
+        <div class="settings-actions">
+            <label class="sales-select-control">
+                <span>Sync range</span>
+                <InputSelect class="form-select" @bind-Value="_syncLookbackHours" disabled="@_isSyncing">
+                    @foreach (var option in SyncLookbackOptions)
+                    {
+                        <option value="@option.Hours">@option.Label</option>
+                    }
+                </InputSelect>
+            </label>
+            <label class="sales-select-control">
+                <span>Visible orders</span>
+                <InputSelect class="form-select" TValue="int" Value="_displayedSalesPerEmployee" ValueChanged="@(value => ChangeDisplayedSalesPerEmployeeAsync(value))" ValueExpression="() => _displayedSalesPerEmployee" disabled="@_isLoading">
+                    @foreach (var option in DisplayedSalesOptions)
+                    {
+                        <option value="@option.Count">@option.Label</option>
+                    }
+                </InputSelect>
+            </label>
+            <button class="btn btn-success" type="button" @onclick="SyncSquareDataAsync" disabled="@_isSyncing">
+                @(_isSyncing ? "Updating..." : "Update Sales")
+            </button>
+        </div>
+    </div>
+
+    @if (_syncResult is not null)
+    {
+        <div class="settings-status mt-3 @( _syncResult.IsSuccessful ? "settings-status-success" : "settings-status-error" )">
+            <strong>@(_syncResult.IsSuccessful ? "Sales updated" : "Sales update failed")</strong>
+            <div>@_syncResult.Message</div>
+            @if (_syncResult.IsSuccessful)
+            {
+                <div class="mt-2">
+                    Team members: @_syncResult.TeamMembersImported, sales: @_syncResult.SalesImported, line items: @_syncResult.LineItemsImported, locations: @_syncResult.LocationsImported
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@if (_isLoading)
+{
+    <div class="sales-card">
+        Loading sales...
+    </div>
+}
+else if (EmployeeSales.Count == 0)
+{
+    <div class="sales-card">
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <strong>Sales data unavailable.</strong>
+            <div>@_loadError</div>
+        }
+        else
+        {
+            <span>No synced Square sales are available yet. Use Settings to sync sales and team members first.</span>
+        }
+    </div>
+}
+else
+{
+    <div class="sales-summary">
+        <section class="sales-card sales-metric">
+            <span class="sales-metric-label">Net Collected</span>
+            <strong class="sales-metric-value">@NetTotal.ToString("C0")</strong>
+            <span class="sales-metric-note">What Square shows we actually took</span>
+        </section>
+
+        <section class="sales-card sales-metric">
+            <span class="sales-metric-label">Gross Collected</span>
+            <strong class="sales-metric-value">@GrossTotal.ToString("C0")</strong>
+            <span class="sales-metric-note">Includes sales tax, discounts, service charges, and order adjustments</span>
+        </section>
+
+        <section class="sales-card sales-metric">
+            <span class="sales-metric-label">Top Seller</span>
+            <strong class="sales-metric-value">@TopSeller.Name</strong>
+            <span class="sales-metric-note">@TopSeller.NetTotal.ToString("C0") net collected</span>
+        </section>
+    </div>
+
+    <div class="sales-employee-grid">
+        @foreach (var employee in EmployeeSales)
+        {
+            <section class="sales-card employee-sales-card">
+                <div class="sales-sheet-header">
+                    <div>
+                        <h2>@employee.Name</h2>
+                        <div class="employee-sales-meta">
+                            <span>
+                                @(string.IsNullOrWhiteSpace(employee.Status) ? "Employee" : employee.Status)
+                                @if (!string.IsNullOrWhiteSpace(employee.TeamMemberId))
+                                {
+                                    <span> - @employee.TeamMemberId</span>
+                                }
+                            </span>
+                            <span>@employee.DateRangeLabel</span>
+                        </div>
+                    </div>
+                    <div class="employee-sales-total">
+                        <span>Net</span>
+                        <strong>@employee.NetTotal.ToString("C0")</strong>
+                        <span>Gross collected @employee.GrossTotal.ToString("C0")</span>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table align-middle sales-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Most Recent Orders</th>
+                                <th scope="col">Reporting Category</th>
+                                <th scope="col" class="text-end">Gross Before Tax</th>
+                                <th scope="col" class="text-end">Tip</th>
+                                <th scope="col" class="text-end">Net Collected</th>
+                                <th scope="col">Net Graph</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var sale in employee.Sales)
+                            {
+                                <tr class="sales-order-row" tabindex="0">
+                                    <td>
+                                        <div class="sales-name">@sale.OrderLabel</div>
+                                        <div class="sales-role">@sale.SoldAt.ToLocalTime().ToString("g")</div>
+                                        @if (!string.IsNullOrWhiteSpace(sale.ItemSummary))
+                                        {
+                                            <div class="sales-role">@sale.ItemSummary</div>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="sales-name">@sale.ReportingCategorySummary</div>
+                                    </td>
+                                    <td class="text-end">@sale.GrossBeforeTax.ToString("C0")</td>
+                                    <td class="text-end">
+                                        @if (sale.TipCents > 0)
+                                        {
+                                            <span class="sales-tip">@sale.Tip.ToString("C0")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="sales-role">$0</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">@sale.NetCollected.ToString("C0")</td>
+                                    <td>
+                                        <div class="sales-graph">
+                                            <div class="sales-graph-track">
+                                                <div class="sales-graph-fill" style="width: @(employee.MaxSaleCents == 0 ? 0 : sale.NetCollectedCents / (decimal)employee.MaxSaleCents * 100m)%"></div>
+                                            </div>
+                                            <div class="sales-graph-label">@sale.NetCollected.ToString("C0")</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr class="sales-order-detail-row">
+                                    <td colspan="6">
+                                        <div class="sales-order-detail">
+                                            <div class="sales-order-breakdown">
+                                                <span>
+                                                    <strong>Gross before tax</strong>
+                                                    @sale.GrossBeforeTax.ToString("C")
+                                                </span>
+                                                <span>
+                                                    <strong>Sales tax</strong>
+                                                    @sale.SalesTax.ToString("C")
+                                                </span>
+                                                <span>
+                                                    <strong>Discounts</strong>
+                                                    @sale.Discount.ToString("C")
+                                                </span>
+                                                <span>
+                                                    <strong>Service charges</strong>
+                                                    @sale.ServiceCharge.ToString("C")
+                                                </span>
+                                                <span>
+                                                    <strong>After tax/adjustments</strong>
+                                                    @sale.AfterTaxAdjustments.ToString("C")
+                                                </span>
+                                                <span>
+                                                    <strong>Tip</strong>
+                                                    @sale.Tip.ToString("C")
+                                                </span>
+                                                <span>
+                                                    <strong>Net collected</strong>
+                                                    @sale.NetCollected.ToString("C")
+                                                </span>
+                                            </div>
+
+                                            @if (sale.LineItems.Count == 0)
+                                            {
+                                                <div class="sales-detail-empty">Line item detail was not available for this order.</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="sales-line-items">
+                                                    @foreach (var lineItem in sale.LineItems)
+                                                    {
+                                                        <div class="sales-line-item">
+                                                            <div>
+                                                                <div class="sales-name">@lineItem.Name</div>
+                                                                <div class="sales-role">
+                                                                    @lineItem.Category
+                                                                    @if (!string.IsNullOrWhiteSpace(lineItem.VariationName))
+                                                                    {
+                                                                        <span> - @lineItem.VariationName</span>
+                                                                    }
+                                                                    @if (lineItem.Quantity > 0)
+                                                                    {
+                                                                        <span> - Qty @lineItem.Quantity.ToString("0.##")</span>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                            <strong>@lineItem.GrossBeforeTax.ToString("C")</strong>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private bool _isSyncing;
+    private string? _loadError;
+    private SquareSyncResult? _syncResult;
+    private int _syncLookbackHours = 24;
+    private int _displayedSalesPerEmployee = 15;
+    private IReadOnlyList<EmployeeSalesGroup> EmployeeSales = [];
+
+    private static readonly IReadOnlyList<SyncLookbackOption> SyncLookbackOptions =
+    [
+        new(24, "Previous 24 hours"),
+        new(72, "Previous 3 days"),
+        new(168, "Previous 7 days"),
+        new(720, "Previous 30 days"),
+        new(2160, "Previous 90 days"),
+        new(0, "All time (since Jan 1)"),
+    ];
+
+    private static readonly IReadOnlyList<DisplayedSalesOption> DisplayedSalesOptions =
+    [
+        new(5, "5 orders"),
+        new(10, "10 orders"),
+        new(15, "15 orders"),
+        new(25, "25 orders"),
+        new(50, "50 orders"),
+        new(100, "100 orders"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshSquareDataAsync(DateTimeOffset.UtcNow.AddHours(-24), reloadAfterSync: false);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+
+        try
+        {
+            var teamMembers = await DbContext.SquareTeamMembers.AsNoTracking().ToListAsync();
+            var sales = await DbContext.SquareSales.AsNoTracking().ToListAsync();
+            var lineItems = await DbContext.SquareSaleLineItems.AsNoTracking().ToListAsync();
+
+            var lineItemLookup = lineItems
+                .GroupBy(lineItem => lineItem.SquareOrderId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.OrderBy(lineItem => lineItem.SortOrder).ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var groupedSales = sales
+                .OrderByDescending(sale => sale.CreatedAt)
+                .GroupBy(sale => sale.TeamMemberId ?? sale.TeamMemberName ?? "Unassigned", StringComparer.OrdinalIgnoreCase)
+                .Select(group =>
+                {
+                    var firstSale = group.First();
+                    var teamMember = teamMembers.FirstOrDefault(member =>
+                        !string.IsNullOrWhiteSpace(firstSale.TeamMemberId) &&
+                        string.Equals(member.SquareTeamMemberId, firstSale.TeamMemberId, StringComparison.OrdinalIgnoreCase));
+
+                    var allOrders = group
+                        .Select(sale => BuildOrderForSale(sale, lineItemLookup))
+                        .OrderByDescending(entry => entry.SoldAt)
+                        .ThenBy(entry => entry.OrderLabel)
+                        .ToList();
+                    var orders = allOrders
+                        .Take(_displayedSalesPerEmployee)
+                        .ToList();
+                    var maxSaleCents = orders.Count == 0 ? 0 : orders.Max(entry => entry.NetCollectedCents);
+                    var netCents = group.Sum(sale => sale.AmountCents + sale.TipCents);
+                    var grossCents = allOrders.Count == 0 ? netCents : allOrders.Sum(entry => entry.AfterTaxAdjustmentsCents);
+                    var oldestSaleAt = allOrders.Count == 0 ? firstSale.CreatedAt : allOrders.Min(entry => entry.SoldAt);
+                    var newestSaleAt = allOrders.Count == 0 ? firstSale.CreatedAt : allOrders.Max(entry => entry.SoldAt);
+
+                    return new EmployeeSalesGroup(
+                        teamMember?.DisplayName ?? firstSale.TeamMemberName ?? "Unassigned",
+                        teamMember?.PhoneNumber,
+                        teamMember?.Status,
+                        firstSale.TeamMemberId,
+                        teamMember?.GivenName,
+                        teamMember?.FamilyName,
+                        teamMember?.LocationAssignmentType,
+                        netCents,
+                        grossCents,
+                        maxSaleCents,
+                        oldestSaleAt,
+                        newestSaleAt,
+                        orders);
+                })
+                .OrderByDescending(group => group.NetCents)
+                .ToList();
+
+            EmployeeSales = groupedSales;
+            _loadError = null;
+        }
+        catch
+        {
+            EmployeeSales = [];
+            _loadError = "Live Square sales could not be loaded right now. The app is still running, but PostgreSQL did not respond in time.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SyncSquareDataAsync()
+    {
+        var beginTime = _syncLookbackHours <= 0
+            ? GetCurrentYearStart()
+            : DateTimeOffset.UtcNow.AddHours(-_syncLookbackHours);
+
+        await RefreshSquareDataAsync(beginTime, reloadAfterSync: true);
+    }
+
+    private async Task RefreshSquareDataAsync(DateTimeOffset beginTime, bool reloadAfterSync)
+    {
+        _isSyncing = true;
+        _syncResult = null;
+
+        try
+        {
+            _syncResult = await SquareApiService.SyncSalesAndTeamMembersAsync(beginTime: beginTime);
+
+            if (reloadAfterSync && _syncResult.IsSuccessful)
+            {
+                await LoadAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            _syncResult = new SquareSyncResult(
+                false,
+                $"Square sales could not be refreshed. {exception.Message}",
+                0,
+                0,
+                0,
+                0);
+        }
+        finally
+        {
+            _isSyncing = false;
+        }
+    }
+
+    private async Task ChangeDisplayedSalesPerEmployeeAsync(int displayedSalesPerEmployee)
+    {
+        _displayedSalesPerEmployee = displayedSalesPerEmployee;
+        await LoadAsync();
+    }
+
+    private static EmployeeSaleOrder BuildOrderForSale(
+        SquareSaleEntity sale,
+        IReadOnlyDictionary<string, List<SquareSaleLineItemEntity>> lineItemLookup)
+    {
+        if (!string.IsNullOrWhiteSpace(sale.OrderId) && lineItemLookup.TryGetValue(sale.OrderId, out var lineItems) && lineItems.Count > 0)
+        {
+            var itemSummary = string.Join(", ", lineItems
+                .Select(lineItem => lineItem.LineItemName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+            var reportingCategorySummary = string.Join(", ", lineItems
+                .Select(lineItem => lineItem.ReportingCategoryName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+            var lineItemDetails = lineItems
+                .Select(lineItem => new EmployeeSaleLineItem(
+                    lineItem.LineItemName ?? "Unnamed line item",
+                    lineItem.VariationName,
+                    lineItem.ReportingCategoryName ?? "Uncategorized",
+                    lineItem.Quantity,
+                    lineItem.GrossAmountCents))
+                .ToList();
+            var grossBeforeTaxCents = sale.OrderGrossBeforeTaxCents > 0
+                ? sale.OrderGrossBeforeTaxCents
+                : lineItems.Sum(lineItem => lineItem.GrossAmountCents);
+            var afterTaxAdjustmentsCents = sale.OrderTotalCents > 0 ? sale.OrderTotalCents : sale.AmountCents;
+            var adjustmentCents = sale.OrderAdjustmentCents != 0
+                ? sale.OrderAdjustmentCents
+                : afterTaxAdjustmentsCents - grossBeforeTaxCents;
+
+            return new EmployeeSaleOrder(
+                GetOrderLabel(sale),
+                string.IsNullOrWhiteSpace(itemSummary) ? "Line items unavailable" : itemSummary,
+                string.IsNullOrWhiteSpace(reportingCategorySummary) ? "Uncategorized" : reportingCategorySummary,
+                sale.CreatedAt,
+                grossBeforeTaxCents,
+                sale.OrderTaxCents,
+                sale.OrderDiscountCents,
+                sale.OrderServiceChargeCents,
+                adjustmentCents,
+                afterTaxAdjustmentsCents,
+                sale.TipCents,
+                afterTaxAdjustmentsCents + sale.TipCents,
+                lineItemDetails);
+        }
+
+        var fallbackAfterTaxAdjustmentsCents = sale.OrderTotalCents > 0 ? sale.OrderTotalCents : sale.AmountCents;
+
+        return new EmployeeSaleOrder(
+            GetOrderLabel(sale),
+            null,
+            "Uncategorized",
+            sale.CreatedAt,
+            sale.OrderGrossBeforeTaxCents > 0 ? sale.OrderGrossBeforeTaxCents : fallbackAfterTaxAdjustmentsCents,
+            sale.OrderTaxCents,
+            sale.OrderDiscountCents,
+            sale.OrderServiceChargeCents,
+            sale.OrderAdjustmentCents,
+            fallbackAfterTaxAdjustmentsCents,
+            sale.TipCents,
+            fallbackAfterTaxAdjustmentsCents + sale.TipCents,
+            []);
+    }
+
+    private static string GetOrderLabel(SquareSaleEntity sale)
+    {
+        if (!string.IsNullOrWhiteSpace(sale.ReceiptNumber))
+        {
+            return $"Receipt {sale.ReceiptNumber}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(sale.OrderId))
+        {
+            return $"Order {sale.OrderId}";
+        }
+
+        return "Payment";
+    }
+
+    private static DateTimeOffset GetCurrentYearStart()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new DateTimeOffset(now.Year, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    }
+
+    private decimal NetTotal => EmployeeSales.Sum(employee => employee.NetCents) / 100m;
+    private decimal GrossTotal => EmployeeSales.Sum(employee => employee.GrossCents) / 100m;
+    private EmployeeSalesGroup TopSeller => EmployeeSales.First();
+
+    private sealed record EmployeeSalesGroup(
+        string Name,
+        string? Phone,
+        string? Status,
+        string? TeamMemberId,
+        string? GivenName,
+        string? FamilyName,
+        string? LocationAssignmentType,
+        long NetCents,
+        long GrossCents,
+        long MaxSaleCents,
+        DateTimeOffset OldestSaleAt,
+        DateTimeOffset NewestSaleAt,
+        IReadOnlyList<EmployeeSaleOrder> Sales)
+    {
+        public decimal NetTotal => NetCents / 100m;
+
+        public decimal GrossTotal => GrossCents / 100m;
+
+        public string DateRangeLabel
+        {
+            get
+            {
+                var oldestLocalDate = OldestSaleAt.ToLocalTime().Date;
+                var newestLocalDate = NewestSaleAt.ToLocalTime().Date;
+
+                if (oldestLocalDate == newestLocalDate)
+                {
+                    return oldestLocalDate.ToString("MMM d, yyyy");
+                }
+
+                return oldestLocalDate.Year == newestLocalDate.Year
+                    ? $"{oldestLocalDate:MMM d} - {newestLocalDate:MMM d, yyyy}"
+                    : $"{oldestLocalDate:MMM d, yyyy} - {newestLocalDate:MMM d, yyyy}";
+            }
+        }
+    }
+
+    private sealed record EmployeeSaleOrder(
+        string OrderLabel,
+        string? ItemSummary,
+        string ReportingCategorySummary,
+        DateTimeOffset SoldAt,
+        long GrossBeforeTaxCents,
+        long SalesTaxCents,
+        long DiscountCents,
+        long ServiceChargeCents,
+        long AdjustmentCents,
+        long AfterTaxAdjustmentsCents,
+        long TipCents,
+        long NetCollectedCents,
+        IReadOnlyList<EmployeeSaleLineItem> LineItems)
+    {
+        public decimal GrossBeforeTax => GrossBeforeTaxCents / 100m;
+
+        public decimal SalesTax => SalesTaxCents / 100m;
+
+        public decimal Discount => DiscountCents / 100m;
+
+        public decimal ServiceCharge => ServiceChargeCents / 100m;
+
+        public decimal Adjustment => AdjustmentCents / 100m;
+
+        public decimal AfterTaxAdjustments => AfterTaxAdjustmentsCents / 100m;
+
+        public decimal Tip => TipCents / 100m;
+
+        public decimal NetCollected => NetCollectedCents / 100m;
+    }
+
+    private sealed record EmployeeSaleLineItem(
+        string Name,
+        string? VariationName,
+        string Category,
+        decimal Quantity,
+        long GrossBeforeTaxCents)
+    {
+        public decimal GrossBeforeTax => GrossBeforeTaxCents / 100m;
+    }
+
+    private sealed record SyncLookbackOption(int Hours, string Label);
+
+    private sealed record DisplayedSalesOption(int Count, string Label);
+}

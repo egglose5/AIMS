@@ -1,0 +1,44 @@
+@page "/brain-communications"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@inject ApplicationDbContext Db
+
+<PageTitle>Brain Communications</PageTitle>
+
+<div class="shows-hero">
+    <p class="shows-eyebrow">Ancient Innovations Brain Core</p>
+    <h1>Brain Communications</h1>
+    <p>Email is a Brain-level intake channel, not a Show-Arm-owned silo. The Brain reads, classifies and routes evidence; each receiving Arm remains the source of truth for its own operational records.</p>
+</div>
+
+<div class="shows-metrics">
+    <div class="shows-card"><span>Architecture</span><strong>BRAIN-LEVEL</strong></div>
+    <div class="shows-card"><span>Existing show email records</span><strong>@_showEmails</strong></div>
+    <div class="shows-card"><span>Automatic unsubscribe</span><strong>OFF</strong></div>
+    <div class="shows-card"><span>Human review</span><strong>REQUIRED</strong></div>
+</div>
+
+<section class="shows-card mt-3">
+    <div class="shows-card-head"><div><h2>Email intelligence</h2><p>The email work already built is preserved. B6 changes its architectural home: communication intelligence belongs to Brain Core and routes useful facts to the appropriate Arm.</p></div></div>
+    <div class="showarm-evidence-list">
+        <div class="showarm-evidence-item"><strong>Intake</strong><span>Read and classify business email without making Gmail itself the business source of truth.</span></div>
+        <div class="showarm-evidence-item"><strong>Routing</strong><span>Show evidence → Show Arm; financial evidence → Financial Records; fulfillment/customer evidence → the appropriate operational Arm.</span></div>
+        <div class="showarm-evidence-item"><strong>Cleanup</strong><span>Low-value recurring senders and unsubscribe opportunities stay in a review-first workflow. No blanket auto-unsubscribe.</span></div>
+        <div class="showarm-evidence-item"><strong>Authority</strong><span>Reading/classifying an email does not grant permission to spend money, submit applications, change vendor assignments, or mutate canonical Arm data.</span></div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap mt-3">
+        <a class="btn btn-primary" href="/email-hub">Open Brain Email Intake</a>
+        <a class="btn btn-outline-secondary" href="/show-inbox">Open Show Routing Inbox</a>
+    </div>
+</section>
+
+<section class="shows-card mt-3">
+    <div class="shows-card-head"><div><h2>B6 two-part ownership rule</h2></div></div>
+    <p class="mb-0"><strong>Brain owns communication intelligence.</strong> <strong>Arms own operational truth.</strong> Information should be recorded once, routed through governed boundaries, and reused without creating separate competing email systems inside every Arm.</p>
+</section>
+
+@code {
+    private int _showEmails;
+    protected override async Task OnInitializedAsync() => _showEmails = await Db.ShowEmailIntakes.CountAsync();
+}

@@ -1,0 +1,10 @@
+ALTER TABLE "ShowEditions" ADD COLUMN IF NOT EXISTS "LeadSource" text NOT NULL DEFAULT 'MANUAL';
+ALTER TABLE "ShowEditions" ADD COLUMN IF NOT EXISTS "ResearchStatus" text NOT NULL DEFAULT 'NEEDS_RESEARCH';
+ALTER TABLE "ShowEditions" ADD COLUMN IF NOT EXISTS "Recommendation" text NOT NULL DEFAULT 'UNDECIDED';
+ALTER TABLE "ShowEditions" ADD COLUMN IF NOT EXISTS "ResearchPriority" text NOT NULL DEFAULT 'NORMAL';
+ALTER TABLE "ShowEditions" ADD COLUMN IF NOT EXISTS "LeadUrl" text;
+ALTER TABLE "ShowEditions" ADD COLUMN IF NOT EXISTS "LeadNote" text;
+ALTER TABLE "ShowEditions" ADD COLUMN IF NOT EXISTS "ResearchStartedAt" timestamp with time zone;
+ALTER TABLE "ShowEditions" ADD COLUMN IF NOT EXISTS "ResearchCompletedAt" timestamp with time zone;
+CREATE INDEX IF NOT EXISTS "IX_ShowEditions_ResearchStatus" ON "ShowEditions"("Year", "ResearchStatus");
+CREATE INDEX IF NOT EXISTS "IX_ShowEditions_Recommendation" ON "ShowEditions"("Year", "Recommendation");

@@ -1,0 +1,13 @@
+Ancient Innovations Control App v10 - Show Order Capture (Pass 1)
+
+- Preserves Square order customer_id on Square sales.
+- Preserves Square line-item note.
+- Preserves all Square line-item modifiers as JSON.
+- Adds database migration for the new fields.
+- Does not yet change Production behavior or add the Show Orders UI.
+- v9.9 remains the rollback copy.
+
+Next pass after verification:
+- Confirm the real Show Order test transaction re-syncs with its modifiers/note/customer ID.
+- Build dedicated Show Orders / fulfillment queue.
+- Keep Show Orders out of normal stock-replacement reconciliation.

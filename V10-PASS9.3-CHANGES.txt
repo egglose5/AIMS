@@ -1,0 +1,17 @@
+Ancient Innovations Brain — v10 Pass 9.3
+HISTORICAL INTELLIGENCE + AUTOMATED RESEARCH
+
+Built on Pass 9.2 without changing Production Arm behavior.
+
+- Seeds the owner-known calibration/history discussed during Show Arm design without inventing unknown calendar years.
+- Adds Historical Intelligence view grouped by show, vendor, placement, result and lesson.
+- Preserves Frankfort Fall Festival as a prospective calibration with its pre-show forecast frozen before attendance.
+- Adds public-web candidate discovery staged separately from the real show database. A search result is never treated as a recommendation until Jaime/Melissa accepts it into the research queue.
+- Adds one-click public-web evidence collection for a show across attendance, vendor quality, vendor reports, marketing, maps and promoter/application information.
+- Automated web results are explicitly stored as UNRATED source leads requiring verification; the system does not pretend search snippets are facts.
+- Hard-filters obvious conventions and Blue Ribbon Events from automated discovery.
+- Keeps maps, forecasts, evidence, vendor profiles and existing data from Pass 9.2.
+- Adds ShowCalibrationRecords and ShowDiscoveryLeads tables.
+
+Important research boundary:
+This pass automates discovery and evidence collection without requiring a paid search/API key. Nuanced conclusions and dollar forecasts remain evidence-driven and auditable. Search-engine snippets are not automatically converted into facts or dollar predictions.

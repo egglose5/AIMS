@@ -1,0 +1,14 @@
+Mustaine-AI v8 - clean website coverage
+
+Changes:
+- Website duplicate detection now distinguishes legitimate same-name product families using Woo categories.
+- Leather Wall Hanging artwork can share a name with notebook artwork without being flagged as a duplicate.
+- Secret Garden / The Secret Garden naming is normalized for notebook Black + Brown matching.
+- Modular Book Black/Brown records no longer count as coverage for Never-Ending Notebook artwork.
+- Wall Scroll naming is recognized for Leather Wall Hanging coverage.
+- PostgreSQL and ASP.NET data-protection keys now live under ~/.mustaine-ai instead of inside a versioned Downloads folder.
+- upgrade-v8.sh migrates the current database/settings once and starts v8.
+
+Catalog correction required before/with v8:
+- Add Cthulu’s Rise - Black (9254) and Brown (9255) as $80 Never-Ending Notebook products.
+- Add Dragon Parking Only Wall Scroll (9256) as a $75 Leather Wall Hanging.

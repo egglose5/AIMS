@@ -1,0 +1,5 @@
+Pass 8.10 - Square Category Membership Fix
+- Preserves Pass 8.9 grouped inventory behavior.
+- Reads Square item_data.categories membership in addition to reporting_category/category_id.
+- Uses the Square category ID to resolve live category names for Inventory filters.
+- Does not change Black/Brown grouping, barcode persistence/reprints, production, or fulfillment.

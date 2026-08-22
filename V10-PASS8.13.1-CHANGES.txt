@@ -1,0 +1,6 @@
+v10 Pass 8.13.1
+- Fixes PostgreSQL error: relation "ArtworkSubcategories" does not exist.
+- Upgrade script now creates/verifies ArtworkSubcategories and its unique ArtworkKey index.
+- Existing PostgreSQL data is preserved.
+- Restarts the web app after schema verification.
+- Keeps Pass 8.13 shared Notebook/Modular artwork subcategory behavior unchanged.

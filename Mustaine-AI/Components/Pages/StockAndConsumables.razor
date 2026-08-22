@@ -1,0 +1,289 @@
+@page "/stock-and-consumables"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Raw Materials and Consumables</PageTitle>
+
+<div class="sales-hero">
+    <p class="sales-eyebrow">Inventory</p>
+    <h1 class="sales-title">Raw Materials and Consumables</h1>
+    <p class="sales-subtitle">
+        Track the raw materials that feed elements, plus shop consumables and reorder needs, in one place.
+    </p>
+</div>
+
+<div class="sales-summary">
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Tracked Items</span>
+        <strong class="sales-metric-value">@_stockItems.Count</strong>
+        <span class="sales-metric-note">Inputs that feed elements and builds</span>
+    </section>
+
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Suppliers</span>
+        <strong class="sales-metric-value">@SupplierCount</strong>
+        <span class="sales-metric-note">Saved stock sources</span>
+    </section>
+
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Stored Cost</span>
+        <strong class="sales-metric-value">@InventoryValue.ToString("C0")</strong>
+        <span class="sales-metric-note">Cost plus optional bulking labor</span>
+    </section>
+</div>
+
+<section class="sales-card mb-4">
+    <div class="sales-sheet-header">
+        <div>
+            <h2>Add Raw Material or Consumable</h2>
+            <p class="text-body-secondary mb-0">Store supplier, cost, optional bulking labor, amount, and amount per piece for downstream element costing.</p>
+        </div>
+    </div>
+
+    <div class="employees-form employees-form-inline">
+        <div>
+            <label class="form-label" for="stock-name">Name</label>
+            <InputText id="stock-name" class="form-control" @bind-Value="_stockInput.Name" />
+        </div>
+        <div>
+            <label class="form-label" for="stock-type">Type</label>
+            <InputSelect id="stock-type" class="form-select" @bind-Value="_stockInput.Type">
+                <option value="Stock">Stock</option>
+                <option value="Consumable">Consumable</option>
+            </InputSelect>
+        </div>
+        <div>
+            <label class="form-label" for="stock-supplier">Supplier</label>
+            <InputText id="stock-supplier" class="form-control" @bind-Value="_stockInput.Supplier" />
+        </div>
+        <div>
+            <label class="form-label" for="stock-cost">Cost</label>
+            <InputNumber id="stock-cost" class="form-control" @bind-Value="_stockInput.Cost" />
+        </div>
+        <div>
+            <label class="form-label" for="stock-bulking-labor">Bulking Labor Cost</label>
+            <InputNumber id="stock-bulking-labor" class="form-control" @bind-Value="_stockInput.BulkingLaborCost" />
+        </div>
+        <div>
+            <label class="form-label" for="stock-amount">Amount</label>
+            <InputNumber id="stock-amount" class="form-control" @bind-Value="_stockInput.Amount" />
+        </div>
+        <div>
+            <label class="form-label" for="stock-amount-per-piece">Amount Per Piece</label>
+            <InputNumber id="stock-amount-per-piece" class="form-control" @bind-Value="_stockInput.AmountPerPiece" />
+        </div>
+        <button class="btn btn-primary" type="button" @onclick="AddStockItemAsync" disabled="@_isSaving">
+            @(_isSaving ? "Saving..." : "Add Item")
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="settings-status mt-3 @( _saveSucceeded ? "settings-status-success" : "settings-status-error" )">
+            @_message
+        </div>
+    }
+</section>
+
+<section class="sales-card">
+    <div class="sales-sheet-header">
+        <div>
+            <h2>Raw Material Ledger</h2>
+            <p class="text-body-secondary mb-0">Review stock levels, reorder points, and consumable availability before they flow into element build-outs.</p>
+        </div>
+        <div class="settings-actions">
+            <label class="sales-select-control">
+                <span>Type</span>
+                <InputSelect class="form-select" @bind-Value="_selectedType">
+                    @foreach (var type in TypeOptions)
+                    {
+                        <option value="@type">@type</option>
+                    }
+                </InputSelect>
+            </label>
+        </div>
+    </div>
+
+    @if (FilteredStockItems.Count == 0)
+    {
+        <div class="settings-status">
+            No stock or consumable items are available yet.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle sales-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Item</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Supplier</th>
+                        <th scope="col" class="text-end">Cost</th>
+                        <th scope="col" class="text-end">Bulking Labor</th>
+                        <th scope="col" class="text-end">Amount</th>
+                        <th scope="col" class="text-end">Amount/Piece</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in FilteredStockItems)
+                    {
+                        <tr>
+                            <td>
+                                <div class="sales-name">@item.Name</div>
+                                <div class="sales-role">@item.UpdatedAt.ToLocalTime().ToString("g")</div>
+                            </td>
+                            <td>@item.Type</td>
+                            <td>@item.Supplier</td>
+                            <td class="text-end">@item.Cost.ToString("C")</td>
+                            <td class="text-end">@(item.BulkingLaborCost?.ToString("C") ?? "-")</td>
+                            <td class="text-end">@item.Amount.ToString("0.####")</td>
+                            <td class="text-end">@item.AmountPerPiece.ToString("0.####")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private string _selectedType = "All types";
+    private bool _isSaving;
+    private bool _saveSucceeded;
+    private string? _message;
+    private StockConsumableInput _stockInput = new();
+    private IReadOnlyList<StockItemRow> _stockItems = [];
+
+    private static readonly IReadOnlyList<string> TypeOptions =
+    [
+        "All types",
+        "Stock",
+        "Consumable",
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var stockItems = await DbContext.StockConsumables
+            .AsNoTracking()
+            .OrderBy(item => item.Name)
+            .ToListAsync();
+
+        _stockItems = stockItems
+            .Select(item => new StockItemRow(
+                item.Name,
+                item.Type,
+                item.Supplier,
+                item.CostCents,
+                item.BulkingLaborCostCents,
+                item.Amount,
+                item.AmountPerPiece,
+                item.UpdatedAt))
+            .ToList();
+    }
+
+    private async Task AddStockItemAsync()
+    {
+        _message = null;
+
+        if (string.IsNullOrWhiteSpace(_stockInput.Name) || string.IsNullOrWhiteSpace(_stockInput.Supplier))
+        {
+            _saveSucceeded = false;
+            _message = "Name and supplier are required.";
+            return;
+        }
+
+        _isSaving = true;
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            DbContext.StockConsumables.Add(new StockConsumableEntity
+            {
+                Name = _stockInput.Name.Trim(),
+                Type = string.IsNullOrWhiteSpace(_stockInput.Type) ? "Stock" : _stockInput.Type,
+                Supplier = _stockInput.Supplier.Trim(),
+                CostCents = ToCents(_stockInput.Cost),
+                BulkingLaborCostCents = _stockInput.BulkingLaborCost is null ? null : ToCents(_stockInput.BulkingLaborCost.Value),
+                Amount = _stockInput.Amount,
+                AmountPerPiece = _stockInput.AmountPerPiece,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+
+            await DbContext.SaveChangesAsync();
+            _stockInput = new StockConsumableInput();
+            _saveSucceeded = true;
+            _message = "Stock or consumable item saved.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _saveSucceeded = false;
+            _message = $"Item could not be saved. {exception.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private IReadOnlyList<StockItemRow> FilteredStockItems => _stockItems
+        .Where(item => _selectedType == "All types" || item.Type == _selectedType)
+        .OrderBy(item => item.Name)
+        .ToList();
+
+    private int SupplierCount => _stockItems
+        .Select(item => item.Supplier)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Count();
+
+    private decimal InventoryValue => _stockItems.Sum(item => item.TotalCost);
+
+    private static long ToCents(decimal amount) => (long)Math.Round(amount * 100m, MidpointRounding.AwayFromZero);
+
+    private sealed record StockItemRow(
+        string Name,
+        string Type,
+        string Supplier,
+        long CostCents,
+        long? BulkingLaborCostCents,
+        decimal Amount,
+        decimal AmountPerPiece,
+        DateTimeOffset UpdatedAt)
+    {
+        public decimal Cost => CostCents / 100m;
+
+        public decimal? BulkingLaborCost => BulkingLaborCostCents / 100m;
+
+        public decimal TotalCost => (CostCents + (BulkingLaborCostCents ?? 0)) / 100m;
+    }
+
+    private sealed class StockConsumableInput
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public string Type { get; set; } = "Stock";
+
+        public string Supplier { get; set; } = string.Empty;
+
+        public decimal Cost { get; set; }
+
+        public decimal? BulkingLaborCost { get; set; }
+
+        public decimal Amount { get; set; }
+
+        public decimal AmountPerPiece { get; set; }
+    }
+}

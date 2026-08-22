@@ -1,0 +1,3 @@
+v9.1
+- Keeps v9 KISS production workflow.
+- Square sales sync now tolerates historical/deleted catalog objects instead of aborting the entire import.

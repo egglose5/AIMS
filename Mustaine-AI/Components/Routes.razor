@@ -1,0 +1,15 @@
+﻿@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Account.Shared
+@using MustaineAI.Components.Layout
+@using MustaineAI.Services
+<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

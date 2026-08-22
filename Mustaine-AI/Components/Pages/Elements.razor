@@ -1,0 +1,2393 @@
+﻿@page "/elements"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+@inject IWebHostEnvironment Environment
+@inject IJSRuntime JS
+
+<PageTitle>Elements</PageTitle>
+
+<div class="elements-hero">
+    <p class="elements-eyebrow">Products</p>
+    <h1 class="elements-title">Elements</h1>
+    <p class="elements-subtitle">
+        Turn raw materials and design files into reusable elements, then attach the inputs and output notes that finished goods will inherit.
+    </p>
+</div>
+
+<section class="elements-card">
+    <div class="elements-card-header">
+        <h2>Element Flow Controls</h2>
+        <span class="text-body-secondary">Ready for raw-material to element workflows</span>
+    </div>
+    <div class="elements-button-grid">
+        <button class="btn btn-outline-primary" type="button">Rename</button>
+        <button class="btn btn-outline-primary" type="button">Categorize</button>
+        <button class="btn btn-outline-primary" type="button">Set Price</button>
+        <button class="btn btn-outline-primary" type="button">Assign Tax</button>
+        <button class="btn btn-outline-primary" type="button">Merge</button>
+        <button class="btn btn-outline-primary" type="button">Archive</button>
+    </div>
+
+    <div class="elements-form mt-3">
+        <div>
+            <label class="form-label" for="bulk-cogs-section">Section</label>
+            <InputSelect id="bulk-cogs-section" class="form-select" @bind-Value="_bulkCogsTargetKey">
+                <option value="">Select a section</option>
+                @foreach (var target in BulkCogsTargets)
+                {
+                    <option value="@target.Key">@target.DisplayName</option>
+                }
+            </InputSelect>
+        </div>
+        <div>
+            <label class="form-label" for="bulk-cogs-value">COGS</label>
+            <InputNumber id="bulk-cogs-value" class="form-control" @bind-Value="_bulkCogsValue" />
+        </div>
+        <div class="d-flex align-items-end">
+            <button class="btn btn-primary" type="button" @onclick="ApplySectionCogsAsync" disabled="@(!CanApplyBulkCogs)">Apply to Section</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_bulkCogsTargetKey))
+    {
+        <div class="elements-status">This will update @BulkCogsTargetFolderCount folder(s).</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_bulkCogsMessage))
+    {
+        <div class="elements-status">@_bulkCogsMessage</div>
+    }
+</section>
+
+<section class="elements-card mt-3">
+    <div class="elements-card-header">
+        <div>
+            <h2>Element Type Manager</h2>
+            <span class="text-body-secondary">Create types like spine-options, then add, replace, or delete files for any element type.</span>
+        </div>
+        <span class="elements-badge">@ElementTypeDirectories.Count type(s)</span>
+    </div>
+
+    <div class="elements-form">
+        <div>
+            <label class="form-label" for="new-element-type">New Element Type</label>
+            <InputText id="new-element-type"
+                       class="form-control"
+                       @bind-Value="_newElementTypeName"
+                       placeholder="spine-options" />
+        </div>
+        <div class="d-flex align-items-end">
+            <button class="btn btn-primary" type="button" @onclick="CreateElementTypeAsync" disabled="@string.IsNullOrWhiteSpace(_newElementTypeName)">Create Type</button>
+        </div>
+        <div>
+            <label class="form-label" for="element-type-picker">Manage Type</label>
+            <InputSelect id="element-type-picker" class="form-select" @bind-Value="_selectedElementTypeKey">
+                <option value="">Choose type</option>
+                @foreach (var elementType in ElementTypeDirectories)
+                {
+                    <option value="@elementType.Key">@elementType.DisplayName (@elementType.FileCount file(s))</option>
+                }
+            </InputSelect>
+        </div>
+        <div class="d-flex align-items-end">
+            <button class="btn btn-outline-danger" type="button" @onclick="DeleteSelectedElementTypeAsync" disabled="@string.IsNullOrWhiteSpace(_selectedElementTypeKey)">Delete Type</button>
+        </div>
+    </div>
+
+    <div class="elements-form mt-3">
+        <div>
+            <label class="form-label" for="element-type-subfolder">Target Subfolder (optional)</label>
+            <InputText id="element-type-subfolder"
+                       class="form-control"
+                       @bind-Value="_selectedElementTypeSubfolder"
+                       placeholder="category-a/variation-1" />
+        </div>
+        <div>
+            <label class="form-label" for="element-type-files">Files</label>
+            <InputFile id="element-type-files" OnChange="HandleElementManagerFilesSelected" multiple class="form-control" />
+        </div>
+        <div class="d-flex align-items-end">
+            <button class="btn btn-primary" type="button" @onclick="UploadElementManagerFilesAsync" disabled="@(!CanUploadElementManagerFiles)">Upload Files</button>
+        </div>
+    </div>
+
+    <div class="elements-status">
+        Uploading a file with the same name in the same folder replaces it, which is the quickest way to update element files.
+    </div>
+
+    @if (_pendingElementManagerFiles.Any())
+    {
+        <div class="elements-status">Selected @_pendingElementManagerFiles.Count file(s) for upload.</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_elementTypeManagerMessage))
+    {
+        <div class="elements-status">@_elementTypeManagerMessage</div>
+    }
+
+    @if (string.IsNullOrWhiteSpace(_selectedElementTypeKey))
+    {
+        <div class="elements-empty">Choose an element type to manage files.</div>
+    }
+    else if (!ManagedElementFiles.Any())
+    {
+        <div class="elements-empty">No files found for this type yet.</div>
+    }
+    else
+    {
+        <div class="elements-folder-list mt-2">
+            @foreach (var fileEntry in ManagedElementFiles)
+            {
+                <article class="elements-folder-row">
+                    <div>
+                        <div class="elements-name">@fileEntry.RelativePath</div>
+                        <div class="elements-meta">@FormatFileSize(fileEntry.SizeBytes) • Updated @fileEntry.LastModifiedLocal.ToString("g")</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" type="button" @onclick='() => DeleteManagedElementFileAsync(fileEntry.RelativePath)'>Delete</button>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="elements-card mt-3">
+    <div class="elements-card-header">
+        <div>
+            <h2>Manufacturing File Intake</h2>
+            <span class="text-body-secondary">Upload a manufacturing file, define inputs/outputs, force-link in DB, and place it in the correct process-files folder.</span>
+        </div>
+        <InputFile OnChange="HandleManufacturingFileSelected" class="form-control elements-upload" />
+    </div>
+
+    <div class="elements-form">
+        <div>
+            <label class="form-label" for="manufacturing-group">Top-Level Category</label>
+            <InputSelect id="manufacturing-group" class="form-select" @bind-Value="_manufacturingSourceGroupKey">
+                <option value="">Choose category</option>
+                @foreach (var group in ManufacturingTargetGroups)
+                {
+                    <option value="@group.Key">@group.DisplayName</option>
+                }
+            </InputSelect>
+        </div>
+        <div>
+            <label class="form-label" for="manufacturing-element-name">Element Name</label>
+            <InputText id="manufacturing-element-name" class="form-control" @bind-Value="_manufacturingElementName" placeholder="front-panel-deluxe-black" />
+        </div>
+        <div>
+            <label class="form-label" for="manufacturing-inputs">Inputs Definition</label>
+            <InputText id="manufacturing-inputs" class="form-control" @bind-Value="_manufacturingInputsDefinition" placeholder="material type, thickness, machine profile" />
+        </div>
+        <div>
+            <label class="form-label" for="manufacturing-outputs">Outputs Definition</label>
+            <InputText id="manufacturing-outputs" class="form-control" @bind-Value="_manufacturingOutputsDefinition" placeholder="gcode path, cut map, final part" />
+        </div>
+        <div class="elements-actions">
+            <button class="btn btn-primary" type="button" @onclick="UploadAndForceLinkManufacturingFileAsync" disabled="@(!CanForceLinkManufacturingFile)">
+                @(_isUploadingManufacturingFile ? "Uploading..." : "Upload + Force Link")
+            </button>
+        </div>
+    </div>
+
+    @if (_pendingManufacturingFile is not null)
+    {
+        <div class="elements-status">Selected file: @_pendingManufacturingFile.Name (@FormatFileSize(_pendingManufacturingFile.Size)).</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_manufacturingFileMessage))
+    {
+        <div class="elements-status">@_manufacturingFileMessage</div>
+    }
+
+    <div class="elements-card-header mt-3">
+        <h2>Linked Manufacturing Files</h2>
+        <span class="text-body-secondary">@ManufacturingFileLinks.Count link(s)</span>
+    </div>
+
+    @if (!ManufacturingFileLinks.Any())
+    {
+        <div class="elements-empty">No manufacturing files linked yet.</div>
+    }
+    else
+    {
+        <div class="elements-folder-list">
+            @foreach (var link in ManufacturingFileLinks)
+            {
+                <article class="elements-folder-row">
+                    <div>
+                        <div class="elements-name">@link.ElementLabel</div>
+                        <div class="elements-meta">@link.SourceGroupKey / @link.StoredFileName</div>
+                        <div class="elements-meta">Inputs: @link.InputDefinition</div>
+                        <div class="elements-meta">Outputs: @link.OutputDefinition</div>
+                    </div>
+                    <span class="elements-badge">@link.RelativeFilePath</span>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="elements-card">
+    <div class="elements-card-header">
+        <div>
+            <h2>Image Process Files</h2>
+            <span class="text-body-secondary">Stored under process-files/front-faces/category with their original file names</span>
+        </div>
+        <InputFile OnChange="HandleFilesSelectedAsync" multiple class="form-control elements-upload" />
+    </div>
+
+    <div class="elements-form">
+        <div>
+            <label class="form-label" for="element-category">Category</label>
+            <InputText id="element-category" class="form-control" @bind-Value="_categoryName" placeholder="Animals, Fantasy, IP" />
+        </div>
+        <div>
+            <label class="form-label" for="image-element-cogs">COGS</label>
+            <InputNumber id="image-element-cogs" class="form-control" @bind-Value="_imageElementCogs" />
+        </div>
+        </div>
+
+    <div class="elements-status">
+        Upload one or more files such as PDFs, images, or NC files. They will all stay in the same folder.
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_uploadMessage))
+    {
+        <div class="elements-status">@_uploadMessage</div>
+    }
+</section>
+
+<div class="elements-grid">
+    <section class="elements-card">
+        <div class="elements-card-header">
+            <h2>Front-Faces Schema</h2>
+            <span class="text-body-secondary">@FrontFacesSchema.Count schema row(s)</span>
+        </div>
+
+        <div class="elements-form mt-3">
+            <div>
+                <label class="form-label" for="elements-search">Search Elements</label>
+                <InputText id="elements-search" class="form-control" @bind-Value="_elementsSearchTerm" placeholder="Search names, folders, details" />
+            </div>
+            <div class="d-flex align-items-end">
+                <button class="btn btn-outline-secondary" type="button" @onclick="ClearElementsSearch" disabled="@string.IsNullOrWhiteSpace(_elementsSearchTerm)">Clear</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_elementsSearchMessage))
+        {
+            <div class="elements-status">@_elementsSearchMessage</div>
+        }
+
+        @if (!FrontFacesSchema.Any())
+        {
+            <div class="elements-empty">
+                No front-faces assets found yet.
+            </div>
+        }
+        else if (!FilteredFrontFacesSchema.Any())
+        {
+            <div class="elements-empty">
+                No front-faces rows match your search.
+            </div>
+        }
+        else
+        {
+            <div class="elements-folder-list">
+                @foreach (var entry in FilteredFrontFacesSchema)
+                {
+                    var pinKey = GetFrontFacePinKey(entry);
+                    var manufacturingElementKey = GetFrontFaceManufacturingElementKey(entry);
+                    var hasManufacturingFile = HasManufacturingFileLink(manufacturingElementKey);
+
+                    <article class="elements-folder-row">
+                        <div>
+                            <div class="elements-name">@entry.SchemaPath</div>
+                            <div class="elements-meta">front-faces / @entry.SchemaPath</div>
+                            <div class="elements-meta">Square Reporting Category: @entry.ReportingCategory</div>
+                            <div class="elements-meta">@entry.FilesLabel</div>
+                            @if (hasManufacturingFile)
+                            {
+                                <div class="elements-meta"><span class="elements-badge">Manufacturing file linked</span></div>
+                            }
+                            else
+                            {
+                                <div class="elements-meta">Define stock/consumable inputs and output per run, then upload.</div>
+                                <div class="elements-form mt-2">
+                                    <div>
+                                        <label class="form-label">Input Stock/Consumable</label>
+                                        <select class="form-select form-select-sm" value="@GetRowSelectedStockId(manufacturingElementKey)" @onchange='eventArgs => SetRowSelectedStockId(manufacturingElementKey, eventArgs.Value?.ToString())'>
+                                            <option value="">Choose stock/consumable</option>
+                                            @foreach (var stockOption in StockConsumableOptions)
+                                            {
+                                                <option value="@stockOption.Key">@stockOption.Name (@stockOption.Type)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Input Qty Per Run</label>
+                                        <input class="form-control form-control-sm"
+                                               type="number"
+                                               min="0"
+                                               step="0.01"
+                                               value="@GetRowSelectedStockAmountText(manufacturingElementKey)"
+                                               @oninput='eventArgs => SetRowSelectedStockAmount(manufacturingElementKey, eventArgs.Value?.ToString())' />
+                                    </div>
+                                    <div class="d-flex align-items-end">
+                                        <button class="btn btn-sm btn-outline-secondary" type="button" @onclick='() => AddRowInputDefinition(manufacturingElementKey)' disabled="@(!CanAddRowInputDefinition(manufacturingElementKey))">Add Input</button>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Output Qty Per File Run</label>
+                                        <input class="form-control form-control-sm"
+                                               type="number"
+                                               min="0"
+                                               step="1"
+                                               value="@GetRowOutputPerRunText(manufacturingElementKey)"
+                                               @oninput='eventArgs => SetRowOutputPerRun(manufacturingElementKey, eventArgs.Value?.ToString())' />
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Manufacturing File</label>
+                                        <InputFile OnChange='eventArgs => HandleRowManufacturingFileSelected(manufacturingElementKey, eventArgs)'
+                                                   class="form-control form-control-sm" />
+                                    </div>
+                                    <div class="d-flex align-items-end">
+                                        <button class="btn btn-sm btn-primary" type="button" @onclick='() => UploadManufacturingFileForElementAsync("front-faces", entry.RelativePath, entry.SchemaPath, manufacturingElementKey)' disabled="@(!CanUploadRowManufacturingFile(manufacturingElementKey))">Upload + Link</button>
+                                    </div>
+                                </div>
+
+                                @if (GetRowInputDefinitions(manufacturingElementKey).Any())
+                                {
+                                    <div class="elements-folder-list mt-2">
+                                        @foreach (var inputDefinition in GetRowInputDefinitions(manufacturingElementKey))
+                                        {
+                                            <article class="elements-folder-row">
+                                                <div>
+                                                    <div class="elements-name">@inputDefinition.StockName</div>
+                                                    <div class="elements-meta">@inputDefinition.QuantityPerRun.ToString("0.##") per run</div>
+                                                </div>
+                                                <button class="btn btn-sm btn-outline-danger" type="button" @onclick='() => RemoveRowInputDefinition(manufacturingElementKey, inputDefinition.StockKey)'>Remove</button>
+                                            </article>
+                                        }
+                                    </div>
+                                }
+
+                                @if (TryGetRowPendingFileName(manufacturingElementKey, out var pendingFrontFaceFileName))
+                                {
+                                    <div class="elements-meta mt-2">Selected file: @pendingFrontFaceFileName</div>
+                                }
+                            }
+                        </div>
+                        <div class="elements-folder-badges">
+                            <button class="btn btn-sm @(IsPinned(pinKey) ? "btn-primary" : "btn-outline-secondary")" type="button" @onclick='() => TogglePinnedElementAsync(pinKey, entry.SchemaPath, "Front Faces")' disabled="@_isSavingPin">
+                                @(IsPinned(pinKey) ? "Pinned" : "Pin")
+                            </button>
+                            <span class="elements-badge">@entry.FileCount file(s)</span>
+                            <span class="elements-badge">@FormatCogsValue(entry.CogsValue)</span>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+
+        <div class="elements-card-header mt-3">
+            <h2>Back Elements</h2>
+            <span class="text-body-secondary">@FilteredStandardBackOptions.Count option(s)</span>
+        </div>
+
+        @if (!BackOptions.Any())
+        {
+            <div class="elements-empty">
+                No files found under back-options.
+            </div>
+        }
+        else if (!FilteredStandardBackOptions.Any())
+        {
+            <div class="elements-empty">
+                No back elements match your search.
+            </div>
+        }
+        else
+        {
+            <div class="elements-folder-list">
+                @foreach (var option in FilteredStandardBackOptions)
+                {
+                    var pinKey = GetBackOptionPinKey(option);
+                    var manufacturingElementKey = GetBackOptionManufacturingElementKey(option);
+                    var hasManufacturingFile = HasManufacturingFileLink(manufacturingElementKey);
+
+                    <article class="elements-folder-row">
+                        <div>
+                            <div class="elements-name">@option.Name</div>
+                            <div class="elements-meta">back-options / @option.Name</div>
+                            <div class="elements-meta">@option.FilesLabel</div>
+                            @if (hasManufacturingFile)
+                            {
+                                <div class="elements-meta"><span class="elements-badge">Manufacturing file linked</span></div>
+                            }
+                            else
+                            {
+                                <div class="elements-meta">Define stock/consumable inputs and output per run, then upload.</div>
+                                <div class="elements-form mt-2">
+                                    <div>
+                                        <label class="form-label">Input Stock/Consumable</label>
+                                        <select class="form-select form-select-sm" value="@GetRowSelectedStockId(manufacturingElementKey)" @onchange='eventArgs => SetRowSelectedStockId(manufacturingElementKey, eventArgs.Value?.ToString())'>
+                                            <option value="">Choose stock/consumable</option>
+                                            @foreach (var stockOption in StockConsumableOptions)
+                                            {
+                                                <option value="@stockOption.Key">@stockOption.Name (@stockOption.Type)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Input Qty Per Run</label>
+                                        <input class="form-control form-control-sm"
+                                               type="number"
+                                               min="0"
+                                               step="0.01"
+                                               value="@GetRowSelectedStockAmountText(manufacturingElementKey)"
+                                               @oninput='eventArgs => SetRowSelectedStockAmount(manufacturingElementKey, eventArgs.Value?.ToString())' />
+                                    </div>
+                                    <div class="d-flex align-items-end">
+                                        <button class="btn btn-sm btn-outline-secondary" type="button" @onclick='() => AddRowInputDefinition(manufacturingElementKey)' disabled="@(!CanAddRowInputDefinition(manufacturingElementKey))">Add Input</button>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Output Qty Per File Run</label>
+                                        <input class="form-control form-control-sm"
+                                               type="number"
+                                               min="0"
+                                               step="1"
+                                               value="@GetRowOutputPerRunText(manufacturingElementKey)"
+                                               @oninput='eventArgs => SetRowOutputPerRun(manufacturingElementKey, eventArgs.Value?.ToString())' />
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Manufacturing File</label>
+                                        <InputFile OnChange='eventArgs => HandleRowManufacturingFileSelected(manufacturingElementKey, eventArgs)'
+                                                   class="form-control form-control-sm" />
+                                    </div>
+                                    <div class="d-flex align-items-end">
+                                        <button class="btn btn-sm btn-primary" type="button" @onclick='() => UploadManufacturingFileForElementAsync("back-options", option.RelativePath, option.Name, manufacturingElementKey)' disabled="@(!CanUploadRowManufacturingFile(manufacturingElementKey))">Upload + Link</button>
+                                    </div>
+                                </div>
+
+                                @if (GetRowInputDefinitions(manufacturingElementKey).Any())
+                                {
+                                    <div class="elements-folder-list mt-2">
+                                        @foreach (var inputDefinition in GetRowInputDefinitions(manufacturingElementKey))
+                                        {
+                                            <article class="elements-folder-row">
+                                                <div>
+                                                    <div class="elements-name">@inputDefinition.StockName</div>
+                                                    <div class="elements-meta">@inputDefinition.QuantityPerRun.ToString("0.##") per run</div>
+                                                </div>
+                                                <button class="btn btn-sm btn-outline-danger" type="button" @onclick='() => RemoveRowInputDefinition(manufacturingElementKey, inputDefinition.StockKey)'>Remove</button>
+                                            </article>
+                                        }
+                                    </div>
+                                }
+
+                                @if (TryGetRowPendingFileName(manufacturingElementKey, out var pendingBackOptionFileName))
+                                {
+                                    <div class="elements-meta mt-2">Selected file: @pendingBackOptionFileName</div>
+                                }
+                            }
+                        </div>
+                        <div class="elements-folder-badges">
+                            <button class="btn btn-sm @(IsPinned(pinKey) ? "btn-primary" : "btn-outline-secondary")" type="button" @onclick='() => TogglePinnedElementAsync(pinKey, option.Name, "Back Options")' disabled="@_isSavingPin">
+                                @(IsPinned(pinKey) ? "Pinned" : "Pin")
+                            </button>
+                            <span class="elements-badge">@FormatCogsValue(option.CogsValue)</span>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+
+        <div class="elements-card-header mt-3">
+            <h2>Premium Back Elements</h2>
+            <span class="text-body-secondary">@FilteredPremiumBackOptions.Count option(s)</span>
+        </div>
+
+        @if (!BackOptions.Any())
+        {
+            <div class="elements-empty">
+                No files found under back-options.
+            </div>
+        }
+        else if (!FilteredPremiumBackOptions.Any())
+        {
+            <div class="elements-empty">
+                No premium back elements match your search.
+            </div>
+        }
+        else
+        {
+            <div class="elements-folder-list">
+                @foreach (var option in FilteredPremiumBackOptions)
+                {
+                    var pinKey = GetBackOptionPinKey(option);
+                    var manufacturingElementKey = GetBackOptionManufacturingElementKey(option);
+                    var hasManufacturingFile = HasManufacturingFileLink(manufacturingElementKey);
+
+                    <article class="elements-folder-row">
+                        <div>
+                            <div class="elements-name">@option.Name</div>
+                            <div class="elements-meta">back-options / @option.Name</div>
+                            <div class="elements-meta">@option.FilesLabel</div>
+                            @if (hasManufacturingFile)
+                            {
+                                <div class="elements-meta"><span class="elements-badge">Manufacturing file linked</span></div>
+                            }
+                            else
+                            {
+                                <div class="elements-meta">Define stock/consumable inputs and output per run, then upload.</div>
+                                <div class="elements-form mt-2">
+                                    <div>
+                                        <label class="form-label">Input Stock/Consumable</label>
+                                        <select class="form-select form-select-sm" value="@GetRowSelectedStockId(manufacturingElementKey)" @onchange='eventArgs => SetRowSelectedStockId(manufacturingElementKey, eventArgs.Value?.ToString())'>
+                                            <option value="">Choose stock/consumable</option>
+                                            @foreach (var stockOption in StockConsumableOptions)
+                                            {
+                                                <option value="@stockOption.Key">@stockOption.Name (@stockOption.Type)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Input Qty Per Run</label>
+                                        <input class="form-control form-control-sm"
+                                               type="number"
+                                               min="0"
+                                               step="0.01"
+                                               value="@GetRowSelectedStockAmountText(manufacturingElementKey)"
+                                               @oninput='eventArgs => SetRowSelectedStockAmount(manufacturingElementKey, eventArgs.Value?.ToString())' />
+                                    </div>
+                                    <div class="d-flex align-items-end">
+                                        <button class="btn btn-sm btn-outline-secondary" type="button" @onclick='() => AddRowInputDefinition(manufacturingElementKey)' disabled="@(!CanAddRowInputDefinition(manufacturingElementKey))">Add Input</button>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Output Qty Per File Run</label>
+                                        <input class="form-control form-control-sm"
+                                               type="number"
+                                               min="0"
+                                               step="1"
+                                               value="@GetRowOutputPerRunText(manufacturingElementKey)"
+                                               @oninput='eventArgs => SetRowOutputPerRun(manufacturingElementKey, eventArgs.Value?.ToString())' />
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Manufacturing File</label>
+                                        <InputFile OnChange='eventArgs => HandleRowManufacturingFileSelected(manufacturingElementKey, eventArgs)'
+                                                   class="form-control form-control-sm" />
+                                    </div>
+                                    <div class="d-flex align-items-end">
+                                        <button class="btn btn-sm btn-primary" type="button" @onclick='() => UploadManufacturingFileForElementAsync("back-options", option.RelativePath, option.Name, manufacturingElementKey)' disabled="@(!CanUploadRowManufacturingFile(manufacturingElementKey))">Upload + Link</button>
+                                    </div>
+                                </div>
+
+                                @if (GetRowInputDefinitions(manufacturingElementKey).Any())
+                                {
+                                    <div class="elements-folder-list mt-2">
+                                        @foreach (var inputDefinition in GetRowInputDefinitions(manufacturingElementKey))
+                                        {
+                                            <article class="elements-folder-row">
+                                                <div>
+                                                    <div class="elements-name">@inputDefinition.StockName</div>
+                                                    <div class="elements-meta">@inputDefinition.QuantityPerRun.ToString("0.##") per run</div>
+                                                </div>
+                                                <button class="btn btn-sm btn-outline-danger" type="button" @onclick='() => RemoveRowInputDefinition(manufacturingElementKey, inputDefinition.StockKey)'>Remove</button>
+                                            </article>
+                                        }
+                                    </div>
+                                }
+
+                                @if (TryGetRowPendingFileName(manufacturingElementKey, out var pendingBackOptionFileName))
+                                {
+                                    <div class="elements-meta mt-2">Selected file: @pendingBackOptionFileName</div>
+                                }
+                            }
+                        </div>
+                        <div class="elements-folder-badges">
+                            <button class="btn btn-sm @(IsPinned(pinKey) ? "btn-primary" : "btn-outline-secondary")" type="button" @onclick='() => TogglePinnedElementAsync(pinKey, option.Name, "Back Options")' disabled="@_isSavingPin">
+                                @(IsPinned(pinKey) ? "Pinned" : "Pin")
+                            </button>
+                            <span class="elements-badge">@FormatCogsValue(option.CogsValue)</span>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+<section class="elements-card mt-3">
+    <div class="elements-card-header">
+        <div>
+            <h2>Non-Image Elements</h2>
+            <span class="text-body-secondary">Leather, back, and back with middle design files</span>
+        </div>
+        <InputFile OnChange="HandleNonImageDesignSelected" class="form-control elements-upload" />
+    </div>
+
+    <div class="elements-form">
+        <div>
+            <label class="form-label" for="non-image-type">Element Type</label>
+            <InputText id="non-image-type" class="form-control" @bind-Value="_nonImageElementType" placeholder="Leather, Back, Back with Middle" />
+        </div>
+        @if (string.Equals(_nonImageElementType, "Leather", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_nonImageElementType, "Leather Base", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_nonImageElementType, "Leather Premium", StringComparison.OrdinalIgnoreCase))
+        {
+            <div>
+                <label class="form-label" for="non-image-leather-tier">Leather Tier</label>
+                <InputSelect id="non-image-leather-tier" class="form-select" @bind-Value="_leatherTier">
+                    <option value="Base">Base</option>
+                    <option value="Premium">Premium</option>
+                </InputSelect>
+            </div>
+        }
+        <div>
+            <label class="form-label" for="non-image-name">Name</label>
+            <InputText id="non-image-name" class="form-control" @bind-Value="_nonImageName" placeholder="premium-grain" />
+        </div>
+        <div>
+            <label class="form-label" for="non-image-cogs">COGS</label>
+            <InputNumber id="non-image-cogs" class="form-control" @bind-Value="_nonImageCogs" />
+        </div>
+        <div>
+            <label class="form-label" for="non-image-colors">Color Options</label>
+            <InputText id="non-image-colors" class="form-control" @bind-Value="_nonImageColors" placeholder="black, brown, oxblood" disabled="@(!UsesColorOptions)" />
+        </div>
+    </div>
+
+    <div class="elements-actions">
+        <button class="btn btn-primary" type="button" @onclick="SaveNonImageElementAsync" disabled="@(!CanSaveNonImageElement)">Save Element</button>
+        <button class="btn btn-outline-danger" type="button" @onclick="ClearNonImageElement" disabled="@(NonImageDesignFile is null && string.IsNullOrWhiteSpace(_nonImageName) && string.IsNullOrWhiteSpace(_nonImageColors) && _nonImageCogs is null)">Clear</button>
+    </div>
+
+    @if (NonImageDesignFile is not null)
+    {
+        <div class="elements-status">
+            Selected @NonImageDesignFile.Name (@FormatFileSize(NonImageDesignFile.Size)).
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_nonImageMessage))
+    {
+        <div class="elements-status">@_nonImageMessage</div>
+    }
+</section>
+
+<section class="elements-card mt-3">
+    <div class="elements-card-header">
+        <h2>Stored Non-Image Elements</h2>
+        <span class="text-body-secondary">@StoredNonImageElements.Count folder(s)</span>
+    </div>
+
+    @if (!StoredNonImageElements.Any())
+    {
+        <div class="elements-empty">
+            No non-image design files stored yet.
+        </div>
+    }
+    else if (!FilteredStoredNonImageElements.Any())
+    {
+        <div class="elements-empty">
+            No non-image elements match your search.
+        </div>
+    }
+    else
+    {
+        <div class="elements-folder-list">
+            @foreach (var element in FilteredStoredNonImageElements)
+            {
+                var pinKey = GetStoredElementPinKey(element);
+                var manufacturingElementKey = GetStoredElementManufacturingElementKey(element);
+                var hasManufacturingFile = HasManufacturingFileLink(manufacturingElementKey);
+
+                <article class="elements-folder-row">
+                    <div>
+                        <div class="elements-name">@element.Name</div>
+                        <div class="elements-meta">@element.ElementType / @element.DesignFileName</div>
+                        <div class="elements-meta">@element.Details</div>
+                        @if (hasManufacturingFile)
+                        {
+                            <div class="elements-meta"><span class="elements-badge">Manufacturing file linked</span></div>
+                        }
+                        else
+                        {
+                            <div class="elements-meta">Define stock/consumable inputs and output per run, then upload.</div>
+                            <div class="elements-form mt-2">
+                                <div>
+                                    <label class="form-label">Input Stock/Consumable</label>
+                                    <select class="form-select form-select-sm" value="@GetRowSelectedStockId(manufacturingElementKey)" @onchange='eventArgs => SetRowSelectedStockId(manufacturingElementKey, eventArgs.Value?.ToString())'>
+                                        <option value="">Choose stock/consumable</option>
+                                        @foreach (var stockOption in StockConsumableOptions)
+                                        {
+                                            <option value="@stockOption.Key">@stockOption.Name (@stockOption.Type)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="form-label">Input Qty Per Run</label>
+                                    <input class="form-control form-control-sm"
+                                           type="number"
+                                           min="0"
+                                           step="0.01"
+                                           value="@GetRowSelectedStockAmountText(manufacturingElementKey)"
+                                           @oninput='eventArgs => SetRowSelectedStockAmount(manufacturingElementKey, eventArgs.Value?.ToString())' />
+                                </div>
+                                <div class="d-flex align-items-end">
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" @onclick='() => AddRowInputDefinition(manufacturingElementKey)' disabled="@(!CanAddRowInputDefinition(manufacturingElementKey))">Add Input</button>
+                                </div>
+                                <div>
+                                    <label class="form-label">Output Qty Per File Run</label>
+                                    <input class="form-control form-control-sm"
+                                           type="number"
+                                           min="0"
+                                           step="1"
+                                           value="@GetRowOutputPerRunText(manufacturingElementKey)"
+                                           @oninput='eventArgs => SetRowOutputPerRun(manufacturingElementKey, eventArgs.Value?.ToString())' />
+                                </div>
+                                <div>
+                                    <label class="form-label">Manufacturing File</label>
+                                    <InputFile OnChange='eventArgs => HandleRowManufacturingFileSelected(manufacturingElementKey, eventArgs)'
+                                               class="form-control form-control-sm" />
+                                </div>
+                                <div class="d-flex align-items-end">
+                                    <button class="btn btn-sm btn-primary" type="button" @onclick='() => UploadManufacturingFileForElementAsync(element.ElementType, element.RelativePath, element.Name, manufacturingElementKey)' disabled="@(!CanUploadRowManufacturingFile(manufacturingElementKey))">Upload + Link</button>
+                                </div>
+                            </div>
+
+                            @if (GetRowInputDefinitions(manufacturingElementKey).Any())
+                            {
+                                <div class="elements-folder-list mt-2">
+                                    @foreach (var inputDefinition in GetRowInputDefinitions(manufacturingElementKey))
+                                    {
+                                        <article class="elements-folder-row">
+                                            <div>
+                                                <div class="elements-name">@inputDefinition.StockName</div>
+                                                <div class="elements-meta">@inputDefinition.QuantityPerRun.ToString("0.##") per run</div>
+                                            </div>
+                                            <button class="btn btn-sm btn-outline-danger" type="button" @onclick='() => RemoveRowInputDefinition(manufacturingElementKey, inputDefinition.StockKey)'>Remove</button>
+                                        </article>
+                                    }
+                                </div>
+                            }
+
+                            @if (TryGetRowPendingFileName(manufacturingElementKey, out var pendingNonImageFileName))
+                            {
+                                <div class="elements-meta mt-2">Selected file: @pendingNonImageFileName</div>
+                            }
+                        }
+                    </div>
+                    <div class="elements-folder-badges">
+                        <button class="btn btn-sm @(IsPinned(pinKey) ? "btn-primary" : "btn-outline-secondary")" type="button" @onclick="() => TogglePinnedElementAsync(pinKey, element.Name, element.ElementType)" disabled="@_isSavingPin">
+                            @(IsPinned(pinKey) ? "Pinned" : "Pin")
+                        </button>
+                        <span class="elements-badge">@FormatCogsValue(element.CogsValue)</span>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private const long MaxUploadSize = 100 * 1024 * 1024;
+    private string? _categoryName;
+    private decimal? _imageElementCogs;
+    private string? _uploadMessage;
+    private string? _bulkCogsTargetKey;
+    private decimal? _bulkCogsValue;
+    private string? _bulkCogsMessage;
+    private string? _nonImageElementType = "Leather";
+    private string _leatherTier = "Base";
+    private string? _nonImageName;
+    private string? _nonImageColors;
+    private decimal? _nonImageCogs;
+    private string? _nonImageMessage;
+    private string? _elementsSearchTerm;
+    private string? _elementsSearchMessage;
+    private string? _newElementTypeName;
+    private string? _selectedElementTypeKey;
+    private string? _selectedElementTypeSubfolder;
+    private string? _elementTypeManagerMessage;
+    private bool _isSavingPin;
+    private bool _isUploadingManufacturingFile;
+    private string? _manufacturingSourceGroupKey;
+    private string? _manufacturingElementName;
+    private string? _manufacturingInputsDefinition;
+    private string? _manufacturingOutputsDefinition;
+    private string? _manufacturingFileMessage;
+    private UploadedElementFile? NonImageDesignFile;
+    private UploadedElementFile? _pendingManufacturingFile;
+    private IReadOnlyList<UploadedElementFile> _pendingElementManagerFiles = [];
+    private IReadOnlyList<SectionCogsTarget> BulkCogsTargets = [];
+    private IReadOnlyList<FrontFacesSchemaEntry> FrontFacesSchema = [];
+    private IReadOnlyList<BackOptionAsset> BackOptions = [];
+    private IReadOnlyList<StoredNonImageElementFolder> StoredNonImageElements = [];
+    private IReadOnlyList<ElementTypeDirectory> ElementTypeDirectories = [];
+    private IReadOnlyList<ElementTypeFileEntry> ManagedElementFiles = [];
+    private IReadOnlyList<ManufacturingTargetGroup> ManufacturingTargetGroups = [];
+    private IReadOnlyList<ManufacturingFileLinkRow> ManufacturingFileLinks = [];
+    private IReadOnlyList<StockConsumableOption> StockConsumableOptions = [];
+    private HashSet<string> _pinnedElementKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string?> _rowSelectedStockIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, decimal?> _rowSelectedStockAmounts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<RowInputDefinition>> _rowInputDefinitions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, decimal?> _rowOutputPerRun = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, UploadedElementFile> _rowPendingManufacturingFiles = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool UsesColorOptions =>
+        string.Equals(_nonImageElementType, "Leather", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(_nonImageElementType, "Leather Base", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(_nonImageElementType, "Leather Premium", StringComparison.OrdinalIgnoreCase);
+
+    private int BulkCogsTargetFolderCount
+    {
+        get
+        {
+            var target = BulkCogsTargets.FirstOrDefault(item =>
+                string.Equals(item.Key, _bulkCogsTargetKey, StringComparison.Ordinal));
+
+            if (target is null || !Directory.Exists(target.DirectoryPath))
+            {
+                return 0;
+            }
+
+            return ResolveBulkCogsDirectories(target).Count;
+        }
+    }
+
+    private bool CanApplyBulkCogs =>
+        !string.IsNullOrWhiteSpace(_bulkCogsTargetKey) &&
+        _bulkCogsValue is not null &&
+        BulkCogsTargetFolderCount > 0;
+
+    private bool CanSaveNonImageElement =>
+        NonImageDesignFile is not null &&
+        !string.IsNullOrWhiteSpace(_nonImageElementType) &&
+        !string.IsNullOrWhiteSpace(_nonImageName) &&
+        _nonImageCogs is not null &&
+        (!UsesColorOptions || !string.IsNullOrWhiteSpace(_nonImageColors));
+
+    private bool CanForceLinkManufacturingFile =>
+        !_isUploadingManufacturingFile &&
+        _pendingManufacturingFile is not null &&
+        !string.IsNullOrWhiteSpace(_manufacturingSourceGroupKey) &&
+        !string.IsNullOrWhiteSpace(_manufacturingElementName);
+
+    private bool CanUploadElementManagerFiles =>
+        _pendingElementManagerFiles.Count > 0 &&
+        !string.IsNullOrWhiteSpace(_selectedElementTypeKey);
+
+    private IReadOnlyList<FrontFacesSchemaEntry> FilteredFrontFacesSchema =>
+        FrontFacesSchema
+            .Where(entry => MatchesSearch(entry.SchemaPath, entry.ReportingCategory, entry.FilesLabel, entry.CogsLabel))
+            .OrderByDescending(entry => IsPinned(GetFrontFacePinKey(entry)))
+            .ThenBy(entry => entry.SchemaPath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private IReadOnlyList<BackOptionAsset> FilteredBackOptions =>
+        BackOptions
+            .Where(option => MatchesSearch(option.Name, option.FilesLabel, option.CogsLabel))
+            .OrderByDescending(option => IsPinned(GetBackOptionPinKey(option)))
+            .ThenBy(option => option.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private IReadOnlyList<BackOptionAsset> FilteredStandardBackOptions =>
+        FilteredBackOptions
+            .Where(option => string.Equals(option.OptionFamily, "Back", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private IReadOnlyList<BackOptionAsset> FilteredPremiumBackOptions =>
+        FilteredBackOptions
+            .Where(option => string.Equals(option.OptionFamily, "Premium Back", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private IReadOnlyList<StoredNonImageElementFolder> FilteredStoredNonImageElements =>
+        StoredNonImageElements
+            .Where(element => MatchesSearch(element.ElementType, element.Name, element.DesignFileName, element.Details, element.CogsLabel))
+            .OrderByDescending(element => IsPinned(GetStoredElementPinKey(element)))
+            .ThenBy(element => element.ElementType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(element => element.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private HashSet<string> ManufacturingFileElementKeys =>
+        ManufacturingFileLinks
+            .Select(link => link.ElementKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            LoadBulkCogsTargets();
+            LoadFrontFacesSchema();
+            LoadBackOptions();
+            LoadStoredNonImageElements();
+            LoadManufacturingTargetGroups();
+            LoadElementTypeDirectories();
+            LoadManagedElementFiles();
+
+            await LoadStockConsumableOptionsAsync();
+            await LoadManufacturingFileLinksAsync();
+            await LoadPinnedElementsAsync();
+        }
+        catch (Exception exception)
+        {
+            _elementsSearchMessage = $"Elements could not be loaded right now. {exception.Message}";
+        }
+    }
+
+    private void HandleElementManagerFilesSelected(InputFileChangeEventArgs args)
+    {
+        _pendingElementManagerFiles = args.GetMultipleFiles()
+            .Select(file => new UploadedElementFile(
+                file.Name,
+                string.IsNullOrWhiteSpace(file.ContentType) ? "Unknown" : file.ContentType,
+                file.Size,
+                DateTimeOffset.UtcNow,
+                file))
+            .ToList();
+
+        _elementTypeManagerMessage = null;
+    }
+
+    private async Task CreateElementTypeAsync()
+    {
+        _elementTypeManagerMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_newElementTypeName))
+        {
+            _elementTypeManagerMessage = "Enter an element type name first.";
+            return;
+        }
+
+        var processRoot = GetProcessFilesRoot();
+        Directory.CreateDirectory(processRoot);
+
+        var typeSlug = Slugify(_newElementTypeName);
+        var typePath = Path.Combine(processRoot, typeSlug);
+
+        if (Directory.Exists(typePath))
+        {
+            _elementTypeManagerMessage = $"Element type {typeSlug} already exists.";
+            _selectedElementTypeKey = typeSlug;
+            LoadElementTypeDirectories();
+            LoadManagedElementFiles();
+            return;
+        }
+
+        Directory.CreateDirectory(typePath);
+        _selectedElementTypeKey = typeSlug;
+        _newElementTypeName = null;
+        _elementTypeManagerMessage = $"Created process-files/{typeSlug}.";
+        RefreshElementViews();
+
+        await Task.CompletedTask;
+    }
+
+    private async Task DeleteSelectedElementTypeAsync()
+    {
+        _elementTypeManagerMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_selectedElementTypeKey))
+        {
+            _elementTypeManagerMessage = "Choose an element type first.";
+            return;
+        }
+
+        var typeKey = _selectedElementTypeKey.Trim();
+        var processRoot = GetProcessFilesRoot();
+        var typePath = Path.Combine(processRoot, typeKey);
+
+        if (!Directory.Exists(typePath))
+        {
+            _elementTypeManagerMessage = "That element type folder no longer exists.";
+            RefreshElementViews();
+            return;
+        }
+
+        var shouldDelete = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Delete process-files/{typeKey} and all files inside it? This cannot be undone.");
+
+        if (!shouldDelete)
+        {
+            _elementTypeManagerMessage = "Delete canceled.";
+            return;
+        }
+
+        Directory.Delete(typePath, true);
+
+        var linkedFiles = await DbContext.FinishedGoodsManufacturingFiles
+            .Where(item => item.SourceGroupKey == typeKey
+                || EF.Functions.ILike(item.ElementKey, $"{typeKey}/%"))
+            .ToListAsync();
+
+        if (linkedFiles.Count > 0)
+        {
+            DbContext.FinishedGoodsManufacturingFiles.RemoveRange(linkedFiles);
+            await DbContext.SaveChangesAsync();
+            await LoadManufacturingFileLinksAsync();
+        }
+
+        _selectedElementTypeKey = null;
+        _selectedElementTypeSubfolder = null;
+        _pendingElementManagerFiles = [];
+        _elementTypeManagerMessage = $"Deleted process-files/{typeKey}.";
+        RefreshElementViews();
+    }
+
+    private async Task UploadElementManagerFilesAsync()
+    {
+        _elementTypeManagerMessage = null;
+
+        if (!CanUploadElementManagerFiles || string.IsNullOrWhiteSpace(_selectedElementTypeKey))
+        {
+            _elementTypeManagerMessage = "Choose a type and one or more files first.";
+            return;
+        }
+
+        var selectedTypeDirectory = GetSelectedElementTypeDirectory();
+        if (selectedTypeDirectory is null)
+        {
+            _elementTypeManagerMessage = "Selected element type is no longer available.";
+            RefreshElementViews();
+            return;
+        }
+
+        var targetDirectory = selectedTypeDirectory.DirectoryPath;
+        var normalizedSubfolder = NormalizeRelativePath(_selectedElementTypeSubfolder ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(normalizedSubfolder))
+        {
+            targetDirectory = Path.Combine(targetDirectory, normalizedSubfolder.Replace('/', Path.DirectorySeparatorChar));
+        }
+
+        Directory.CreateDirectory(targetDirectory);
+
+        foreach (var file in _pendingElementManagerFiles)
+        {
+            var safeFileName = GetSafeFileName(file.Name);
+            var targetPath = Path.Combine(targetDirectory, safeFileName);
+
+            await using var readStream = file.BrowserFile.OpenReadStream(MaxUploadSize);
+            await using var writeStream = File.Create(targetPath);
+            await readStream.CopyToAsync(writeStream);
+        }
+
+        _elementTypeManagerMessage = $"Uploaded {_pendingElementManagerFiles.Count} file(s) to process-files/{_selectedElementTypeKey}/{normalizedSubfolder}.".TrimEnd('/');
+        _pendingElementManagerFiles = [];
+        RefreshElementViews();
+    }
+
+    private async Task DeleteManagedElementFileAsync(string relativePath)
+    {
+        _elementTypeManagerMessage = null;
+
+        var selectedTypeDirectory = GetSelectedElementTypeDirectory();
+        if (selectedTypeDirectory is null)
+        {
+            _elementTypeManagerMessage = "Choose a valid element type first.";
+            return;
+        }
+
+        var normalizedRelativePath = NormalizeRelativePath(relativePath);
+        var absolutePath = Path.GetFullPath(Path.Combine(selectedTypeDirectory.DirectoryPath, normalizedRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var expectedRoot = Path.GetFullPath(selectedTypeDirectory.DirectoryPath) + Path.DirectorySeparatorChar;
+
+        if (!absolutePath.StartsWith(expectedRoot, StringComparison.OrdinalIgnoreCase) || !File.Exists(absolutePath))
+        {
+            _elementTypeManagerMessage = "That file could not be found.";
+            LoadManagedElementFiles();
+            return;
+        }
+
+        File.Delete(absolutePath);
+        RemoveEmptyParentDirectories(absolutePath, selectedTypeDirectory.DirectoryPath);
+        _elementTypeManagerMessage = $"Deleted {normalizedRelativePath}.";
+        RefreshElementViews();
+        await Task.CompletedTask;
+    }
+
+    private void LoadElementTypeDirectories()
+    {
+        var processRoot = GetProcessFilesRoot();
+        if (!Directory.Exists(processRoot))
+        {
+            ElementTypeDirectories = [];
+            ManagedElementFiles = [];
+            _selectedElementTypeKey = null;
+            return;
+        }
+
+        ElementTypeDirectories = Directory.GetDirectories(processRoot)
+            .Select(path => new ElementTypeDirectory(
+                Path.GetFileName(path),
+                ToDisplaySegment(Path.GetFileName(path)),
+                path,
+                Directory.GetFiles(path, "*", SearchOption.AllDirectories).Length))
+            .OrderBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (string.IsNullOrWhiteSpace(_selectedElementTypeKey))
+        {
+            _selectedElementTypeKey = ElementTypeDirectories.FirstOrDefault()?.Key;
+        }
+        else if (!ElementTypeDirectories.Any(item => string.Equals(item.Key, _selectedElementTypeKey, StringComparison.OrdinalIgnoreCase)))
+        {
+            _selectedElementTypeKey = ElementTypeDirectories.FirstOrDefault()?.Key;
+        }
+    }
+
+    private void LoadManagedElementFiles()
+    {
+        var selectedTypeDirectory = GetSelectedElementTypeDirectory();
+        if (selectedTypeDirectory is null || !Directory.Exists(selectedTypeDirectory.DirectoryPath))
+        {
+            ManagedElementFiles = [];
+            return;
+        }
+
+        ManagedElementFiles = Directory.GetFiles(selectedTypeDirectory.DirectoryPath, "*", SearchOption.AllDirectories)
+            .Select(path =>
+            {
+                var fileInfo = new FileInfo(path);
+                return new ElementTypeFileEntry(
+                    Path.GetRelativePath(selectedTypeDirectory.DirectoryPath, path).Replace(Path.DirectorySeparatorChar, '/'),
+                    fileInfo.Length,
+                    fileInfo.LastWriteTime);
+            })
+            .OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private ElementTypeDirectory? GetSelectedElementTypeDirectory() =>
+        ElementTypeDirectories.FirstOrDefault(item => string.Equals(item.Key, _selectedElementTypeKey, StringComparison.OrdinalIgnoreCase));
+
+    private void RefreshElementViews()
+    {
+        LoadBulkCogsTargets();
+        LoadFrontFacesSchema();
+        LoadBackOptions();
+        LoadStoredNonImageElements();
+        LoadManufacturingTargetGroups();
+        LoadElementTypeDirectories();
+        LoadManagedElementFiles();
+    }
+
+    private static void RemoveEmptyParentDirectories(string filePath, string stopAtDirectory)
+    {
+        var current = new FileInfo(filePath).Directory;
+        var stopAt = Path.GetFullPath(stopAtDirectory).TrimEnd(Path.DirectorySeparatorChar);
+
+        while (current is not null)
+        {
+            var currentPath = current.FullName.TrimEnd(Path.DirectorySeparatorChar);
+            if (string.Equals(currentPath, stopAt, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (current.EnumerateFileSystemInfos().Any())
+            {
+                return;
+            }
+
+            current.Delete();
+            current = current.Parent;
+        }
+    }
+
+    private async Task LoadStockConsumableOptionsAsync()
+    {
+        StockConsumableOptions = await DbContext.StockConsumables
+            .AsNoTracking()
+            .OrderBy(item => item.Name)
+            .Select(item => new StockConsumableOption(
+                item.Id.ToString("N"),
+                item.Name,
+                item.Type))
+            .ToListAsync();
+    }
+
+    private void HandleManufacturingFileSelected(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        _pendingManufacturingFile = new UploadedElementFile(
+            file.Name,
+            string.IsNullOrWhiteSpace(file.ContentType) ? "Unknown" : file.ContentType,
+            file.Size,
+            DateTimeOffset.UtcNow,
+            file);
+
+        _manufacturingFileMessage = null;
+    }
+
+    private async Task UploadAndForceLinkManufacturingFileAsync()
+    {
+        _manufacturingFileMessage = null;
+
+        if (!CanForceLinkManufacturingFile || _pendingManufacturingFile is null)
+        {
+            _manufacturingFileMessage = "Choose a category, element name, and manufacturing file first.";
+            return;
+        }
+
+        _isUploadingManufacturingFile = true;
+
+        try
+        {
+            var processRoot = GetProcessFilesRoot();
+            var sourceGroupKey = _manufacturingSourceGroupKey!.Trim();
+            var elementSlug = Slugify(_manufacturingElementName!);
+            var targetDirectory = Path.Combine(processRoot, sourceGroupKey, elementSlug);
+            Directory.CreateDirectory(targetDirectory);
+
+            var safeFileName = GetSafeFileName(_pendingManufacturingFile.Name);
+            var targetPath = Path.Combine(targetDirectory, safeFileName);
+
+            await using (var readStream = _pendingManufacturingFile.BrowserFile.OpenReadStream(MaxUploadSize))
+            await using (var writeStream = File.Create(targetPath))
+            {
+                await readStream.CopyToAsync(writeStream);
+            }
+
+            var elementKey = $"{sourceGroupKey}/{elementSlug}".ToLowerInvariant();
+            var existing = await DbContext.FinishedGoodsManufacturingFiles
+                .FirstOrDefaultAsync(item => item.ElementKey == elementKey);
+
+            if (existing is null)
+            {
+                existing = new FinishedGoodsManufacturingFileEntity
+                {
+                    ElementKey = elementKey,
+                    SourceGroupKey = sourceGroupKey,
+                    ElementLabel = _manufacturingElementName!.Trim(),
+                    StoredFileName = safeFileName,
+                    RelativeFilePath = Path.GetRelativePath(Environment.WebRootPath, targetPath).Replace(Path.DirectorySeparatorChar, '/'),
+                    InputDefinition = NormalizeInput(_manufacturingInputsDefinition),
+                    OutputDefinition = NormalizeInput(_manufacturingOutputsDefinition),
+                    UploadedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                };
+
+                DbContext.FinishedGoodsManufacturingFiles.Add(existing);
+            }
+            else
+            {
+                existing.SourceGroupKey = sourceGroupKey;
+                existing.ElementLabel = _manufacturingElementName!.Trim();
+                existing.StoredFileName = safeFileName;
+                existing.RelativeFilePath = Path.GetRelativePath(Environment.WebRootPath, targetPath).Replace(Path.DirectorySeparatorChar, '/');
+                existing.InputDefinition = NormalizeInput(_manufacturingInputsDefinition);
+                existing.OutputDefinition = NormalizeInput(_manufacturingOutputsDefinition);
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+
+            await DbContext.SaveChangesAsync();
+            await LoadManufacturingFileLinksAsync();
+
+            _manufacturingFileMessage = $"Uploaded and linked manufacturing file for {_manufacturingElementName} in process-files/{sourceGroupKey}/{elementSlug}.";
+            _pendingManufacturingFile = null;
+            _manufacturingInputsDefinition = null;
+            _manufacturingOutputsDefinition = null;
+        }
+        catch (Exception exception)
+        {
+            _manufacturingFileMessage = $"Manufacturing file could not be linked. {exception.Message}";
+        }
+        finally
+        {
+            _isUploadingManufacturingFile = false;
+        }
+    }
+
+    private void HandleRowManufacturingFileSelected(string elementKey, InputFileChangeEventArgs args)
+    {
+        var browserFile = args.File;
+        _rowPendingManufacturingFiles[elementKey] = new UploadedElementFile(
+            browserFile.Name,
+            string.IsNullOrWhiteSpace(browserFile.ContentType) ? "Unknown" : browserFile.ContentType,
+            browserFile.Size,
+            DateTimeOffset.UtcNow,
+            browserFile);
+
+        _manufacturingFileMessage = null;
+    }
+
+    private async Task UploadManufacturingFileForElementAsync(string sourceGroupKey, string relativePath, string elementLabel, string elementKey)
+    {
+        if (!CanUploadRowManufacturingFile(elementKey))
+        {
+            _manufacturingFileMessage = "Choose at least one stock/consumable input, output quantity per run, and the manufacturing file before uploading.";
+            return;
+        }
+
+        var pendingFile = _rowPendingManufacturingFiles[elementKey];
+
+        try
+        {
+            var processRoot = GetProcessFilesRoot();
+            var normalizedRelativePath = NormalizeRelativePath(relativePath);
+            var targetDirectory = Path.Combine(processRoot, sourceGroupKey, normalizedRelativePath);
+            Directory.CreateDirectory(targetDirectory);
+
+            var safeFileName = GetSafeFileName(pendingFile.Name);
+            var targetPath = Path.Combine(targetDirectory, safeFileName);
+
+            await using (var readStream = pendingFile.BrowserFile.OpenReadStream(MaxUploadSize))
+            await using (var writeStream = File.Create(targetPath))
+            {
+                await readStream.CopyToAsync(writeStream);
+            }
+
+            var manufacturingElementKey = BuildManufacturingElementKey(sourceGroupKey, normalizedRelativePath);
+            var existing = await DbContext.FinishedGoodsManufacturingFiles
+                .FirstOrDefaultAsync(item => item.ElementKey == manufacturingElementKey);
+
+            var inputDefinition = BuildRowInputDefinitionText(elementKey);
+            var outputDefinition = BuildRowOutputDefinitionText(elementKey);
+
+            if (existing is null)
+            {
+                existing = new FinishedGoodsManufacturingFileEntity
+                {
+                    ElementKey = manufacturingElementKey,
+                    SourceGroupKey = sourceGroupKey,
+                    ElementLabel = elementLabel,
+                    StoredFileName = safeFileName,
+                    RelativeFilePath = Path.GetRelativePath(Environment.WebRootPath, targetPath).Replace(Path.DirectorySeparatorChar, '/'),
+                    InputDefinition = inputDefinition,
+                    OutputDefinition = outputDefinition,
+                    UploadedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                };
+
+                DbContext.FinishedGoodsManufacturingFiles.Add(existing);
+            }
+            else
+            {
+                existing.SourceGroupKey = sourceGroupKey;
+                existing.ElementLabel = elementLabel;
+                existing.StoredFileName = safeFileName;
+                existing.RelativeFilePath = Path.GetRelativePath(Environment.WebRootPath, targetPath).Replace(Path.DirectorySeparatorChar, '/');
+                existing.InputDefinition = inputDefinition;
+                existing.OutputDefinition = outputDefinition;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+
+            await DbContext.SaveChangesAsync();
+            await LoadManufacturingFileLinksAsync();
+            _manufacturingFileMessage = $"Uploaded manufacturing file for {elementLabel}.";
+
+            _rowPendingManufacturingFiles.Remove(elementKey);
+            _rowSelectedStockIds.Remove(elementKey);
+            _rowSelectedStockAmounts.Remove(elementKey);
+            _rowInputDefinitions.Remove(elementKey);
+            _rowOutputPerRun.Remove(elementKey);
+        }
+        catch (Exception exception)
+        {
+            _manufacturingFileMessage = $"Manufacturing file upload failed for {elementLabel}. {exception.Message}";
+        }
+    }
+
+    private bool HasManufacturingFileLink(string elementKey) =>
+        ManufacturingFileElementKeys.Contains(elementKey);
+
+    private string? GetRowSelectedStockId(string elementKey) =>
+        _rowSelectedStockIds.TryGetValue(elementKey, out var selectedStockId) ? selectedStockId : null;
+
+    private void SetRowSelectedStockId(string elementKey, string? value)
+    {
+        _rowSelectedStockIds[elementKey] = string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private string GetRowSelectedStockAmountText(string elementKey) =>
+        _rowSelectedStockAmounts.TryGetValue(elementKey, out var selectedAmount) && selectedAmount is > 0
+            ? selectedAmount.Value.ToString("0.##")
+            : string.Empty;
+
+    private void SetRowSelectedStockAmount(string elementKey, string? rawValue)
+    {
+        if (decimal.TryParse(rawValue, out var amount) && amount > 0)
+        {
+            _rowSelectedStockAmounts[elementKey] = decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
+            return;
+        }
+
+        _rowSelectedStockAmounts[elementKey] = null;
+    }
+
+    private bool CanAddRowInputDefinition(string elementKey)
+    {
+        var selectedStockId = GetRowSelectedStockId(elementKey);
+        return !string.IsNullOrWhiteSpace(selectedStockId) &&
+               _rowSelectedStockAmounts.TryGetValue(elementKey, out var selectedAmount) &&
+               selectedAmount is > 0;
+    }
+
+    private void AddRowInputDefinition(string elementKey)
+    {
+        if (!CanAddRowInputDefinition(elementKey))
+        {
+            return;
+        }
+
+        var selectedStockId = _rowSelectedStockIds[elementKey]!;
+        var selectedStock = StockConsumableOptions.FirstOrDefault(option => string.Equals(option.Key, selectedStockId, StringComparison.OrdinalIgnoreCase));
+        if (selectedStock is null)
+        {
+            return;
+        }
+
+        var selectedAmount = _rowSelectedStockAmounts[elementKey]!.Value;
+        if (!_rowInputDefinitions.TryGetValue(elementKey, out var definitions))
+        {
+            definitions = [];
+            _rowInputDefinitions[elementKey] = definitions;
+        }
+
+        var existing = definitions.FirstOrDefault(definition => string.Equals(definition.StockKey, selectedStock.Key, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            definitions.Add(new RowInputDefinition(
+                selectedStock.Key,
+                selectedStock.Name,
+                selectedStock.Type,
+                selectedAmount));
+        }
+        else
+        {
+            definitions.Remove(existing);
+            definitions.Add(existing with
+            {
+                QuantityPerRun = decimal.Round(existing.QuantityPerRun + selectedAmount, 2, MidpointRounding.AwayFromZero)
+            });
+        }
+
+        _rowSelectedStockIds[elementKey] = null;
+        _rowSelectedStockAmounts[elementKey] = null;
+    }
+
+    private IReadOnlyList<RowInputDefinition> GetRowInputDefinitions(string elementKey) =>
+        _rowInputDefinitions.TryGetValue(elementKey, out var definitions)
+            ? definitions
+            : [];
+
+    private void RemoveRowInputDefinition(string elementKey, string stockKey)
+    {
+        if (!_rowInputDefinitions.TryGetValue(elementKey, out var definitions))
+        {
+            return;
+        }
+
+        definitions.RemoveAll(definition => string.Equals(definition.StockKey, stockKey, StringComparison.OrdinalIgnoreCase));
+        if (definitions.Count == 0)
+        {
+            _rowInputDefinitions.Remove(elementKey);
+        }
+    }
+
+    private string GetRowOutputPerRunText(string elementKey) =>
+        _rowOutputPerRun.TryGetValue(elementKey, out var outputPerRun) && outputPerRun is > 0
+            ? outputPerRun.Value.ToString("0.##")
+            : string.Empty;
+
+    private void SetRowOutputPerRun(string elementKey, string? rawValue)
+    {
+        if (decimal.TryParse(rawValue, out var outputPerRun) && outputPerRun > 0)
+        {
+            _rowOutputPerRun[elementKey] = decimal.Round(outputPerRun, 2, MidpointRounding.AwayFromZero);
+            return;
+        }
+
+        _rowOutputPerRun[elementKey] = null;
+    }
+
+    private bool CanUploadRowManufacturingFile(string elementKey) =>
+        !_isUploadingManufacturingFile &&
+        _rowPendingManufacturingFiles.ContainsKey(elementKey) &&
+        GetRowInputDefinitions(elementKey).Count > 0 &&
+        _rowOutputPerRun.TryGetValue(elementKey, out var outputPerRun) &&
+        outputPerRun is > 0;
+
+    private bool TryGetRowPendingFileName(string elementKey, out string fileName)
+    {
+        if (_rowPendingManufacturingFiles.TryGetValue(elementKey, out var file))
+        {
+            fileName = file.Name;
+            return true;
+        }
+
+        fileName = string.Empty;
+        return false;
+    }
+
+    private string BuildRowInputDefinitionText(string elementKey)
+    {
+        var definitions = GetRowInputDefinitions(elementKey);
+        if (definitions.Count == 0)
+        {
+            return "Unspecified";
+        }
+
+        return string.Join(", ", definitions.Select(definition => $"{definition.StockName} ({definition.StockType}) x {definition.QuantityPerRun:0.##}"));
+    }
+
+    private string BuildRowOutputDefinitionText(string elementKey)
+    {
+        if (!_rowOutputPerRun.TryGetValue(elementKey, out var outputPerRun) || outputPerRun is <= 0)
+        {
+            return "Unspecified";
+        }
+
+        return $"{outputPerRun:0.##} output unit(s) per file run";
+    }
+
+    private static string GetFrontFaceManufacturingElementKey(FrontFacesSchemaEntry entry) =>
+        BuildManufacturingElementKey("front-faces", entry.RelativePath);
+
+    private static string GetBackOptionManufacturingElementKey(BackOptionAsset option) =>
+        BuildManufacturingElementKey("back-options", option.RelativePath);
+
+    private static string GetStoredElementManufacturingElementKey(StoredNonImageElementFolder element) =>
+        BuildManufacturingElementKey(element.ElementType, element.RelativePath);
+
+    private static string BuildManufacturingElementKey(string sourceGroupKey, string relativePath) =>
+        $"{sourceGroupKey}/{NormalizeRelativePath(relativePath)}".ToLowerInvariant();
+
+    private static string NormalizeRelativePath(string value) =>
+        value.Replace('\\', '/').Trim('/');
+
+    private void LoadManufacturingTargetGroups()
+    {
+        var processRoot = GetProcessFilesRoot();
+        if (!Directory.Exists(processRoot))
+        {
+            ManufacturingTargetGroups = [];
+            return;
+        }
+
+        ManufacturingTargetGroups = Directory.GetDirectories(processRoot)
+            .Select(path => Path.GetFileName(path))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => new ManufacturingTargetGroup(name, ToDisplaySegment(name)))
+            .OrderBy(group => group.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(_manufacturingSourceGroupKey) && !ManufacturingTargetGroups.Any(group => string.Equals(group.Key, _manufacturingSourceGroupKey, StringComparison.OrdinalIgnoreCase)))
+        {
+            _manufacturingSourceGroupKey = null;
+        }
+    }
+
+    private async Task LoadManufacturingFileLinksAsync()
+    {
+        ManufacturingFileLinks = await DbContext.FinishedGoodsManufacturingFiles
+            .AsNoTracking()
+            .OrderBy(link => link.SourceGroupKey)
+            .ThenBy(link => link.ElementLabel)
+            .Select(link => new ManufacturingFileLinkRow(
+                link.ElementKey,
+                link.SourceGroupKey,
+                link.ElementLabel,
+                link.StoredFileName,
+                string.IsNullOrWhiteSpace(link.InputDefinition) ? "Unspecified" : link.InputDefinition!,
+                string.IsNullOrWhiteSpace(link.OutputDefinition) ? "Unspecified" : link.OutputDefinition!,
+                link.RelativeFilePath))
+            .ToListAsync();
+    }
+
+    private async Task LoadPinnedElementsAsync()
+    {
+        var pinnedKeys = await DbContext.PinnedElements
+            .AsNoTracking()
+            .OrderByDescending(item => item.CreatedAt)
+            .Select(item => item.ElementKey)
+            .ToListAsync();
+
+        _pinnedElementKeys = pinnedKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task TogglePinnedElementAsync(string elementKey, string displayName, string sourceGroup)
+    {
+        _isSavingPin = true;
+
+        try
+        {
+            var existing = await DbContext.PinnedElements.FindAsync(elementKey);
+            if (existing is null)
+            {
+                DbContext.PinnedElements.Add(new PinnedElementEntity
+                {
+                    ElementKey = elementKey,
+                    DisplayName = displayName,
+                    SourceGroup = sourceGroup,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                });
+
+                _elementsSearchMessage = $"Pinned {displayName} to the top.";
+            }
+            else
+            {
+                DbContext.PinnedElements.Remove(existing);
+                _elementsSearchMessage = $"Unpinned {displayName}.";
+            }
+
+            await DbContext.SaveChangesAsync();
+            await LoadPinnedElementsAsync();
+        }
+        catch (Exception exception)
+        {
+            _elementsSearchMessage = $"Pin state could not be updated. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingPin = false;
+        }
+    }
+
+    private bool IsPinned(string key) => _pinnedElementKeys.Contains(key);
+
+    private void ClearElementsSearch()
+    {
+        _elementsSearchTerm = null;
+    }
+
+    private bool MatchesSearch(params string?[] values)
+    {
+        if (string.IsNullOrWhiteSpace(_elementsSearchTerm))
+        {
+            return true;
+        }
+
+        var term = _elementsSearchTerm.Trim();
+        return values.Any(value => !string.IsNullOrWhiteSpace(value) && value.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string GetFrontFacePinKey(FrontFacesSchemaEntry entry) =>
+        $"front-faces::{entry.SchemaPath}".ToLowerInvariant();
+
+    private static string GetBackOptionPinKey(BackOptionAsset option) =>
+        $"back-options::{option.Name}".ToLowerInvariant();
+
+    private static string GetBackOptionFamily(string relativePath)
+    {
+        var firstSegment = NormalizeRelativePath(relativePath)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault() ?? string.Empty;
+
+        return firstSegment.Contains("premium", StringComparison.OrdinalIgnoreCase)
+            ? "Premium Back"
+            : "Back";
+    }
+
+    private static string GetStoredElementPinKey(StoredNonImageElementFolder element) =>
+        $"{element.ElementType}::{element.Name}".ToLowerInvariant();
+
+    private async Task HandleFilesSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var selectedFiles = args.GetMultipleFiles()
+            .Select(file => new UploadedElementFile(
+                file.Name,
+                string.IsNullOrWhiteSpace(file.ContentType) ? "Unknown" : file.ContentType,
+                file.Size,
+                DateTimeOffset.UtcNow,
+                file))
+            .ToList();
+
+        await SaveImageFilesAsync(selectedFiles);
+    }
+
+    private void HandleNonImageDesignSelected(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        NonImageDesignFile = new UploadedElementFile(
+            file.Name,
+            string.IsNullOrWhiteSpace(file.ContentType) ? "Unknown" : file.ContentType,
+            file.Size,
+            DateTimeOffset.UtcNow,
+            file);
+        _nonImageMessage = null;
+    }
+
+    private void ClearNonImageElement()
+    {
+        NonImageDesignFile = null;
+        _nonImageName = null;
+        _nonImageColors = null;
+        _nonImageCogs = null;
+        _nonImageMessage = null;
+    }
+
+    private async Task SaveImageFilesAsync(IReadOnlyList<UploadedElementFile> selectedFiles)
+    {
+        if (selectedFiles.Count == 0)
+        {
+            _uploadMessage = "Choose one or more files to save.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_categoryName))
+        {
+            _uploadMessage = "Enter a category before choosing files.";
+            return;
+        }
+
+        if (_imageElementCogs is null)
+        {
+            _uploadMessage = "Enter COGS before saving the files.";
+            return;
+        }
+
+        var categorySlug = Slugify(_categoryName!);
+        var cogs = _imageElementCogs.GetValueOrDefault();
+        var targetDirectory = Path.Combine(GetProcessFilesRoot(), "front-faces", categorySlug);
+
+        Directory.CreateDirectory(targetDirectory);
+
+        foreach (var file in selectedFiles)
+        {
+            var safeFileName = GetSafeFileName(file.Name);
+            var targetPath = Path.Combine(targetDirectory, safeFileName);
+
+            await using var readStream = file.BrowserFile.OpenReadStream(MaxUploadSize);
+            await using var writeStream = File.Create(targetPath);
+            await readStream.CopyToAsync(writeStream);
+        }
+
+        await File.WriteAllTextAsync(Path.Combine(targetDirectory, "cogs.txt"), cogs.ToString("0.##"));
+
+        _uploadMessage = $"Saved {selectedFiles.Count} file(s) to process-files/front-faces/{categorySlug}.";
+        _imageElementCogs = null;
+        RefreshElementViews();
+    }
+
+    private async Task ApplySectionCogsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_bulkCogsTargetKey))
+        {
+            _bulkCogsMessage = "Select a section before applying COGS.";
+            return;
+        }
+
+        if (_bulkCogsValue is null)
+        {
+            _bulkCogsMessage = "Enter a COGS value before applying.";
+            return;
+        }
+
+        var target = BulkCogsTargets.FirstOrDefault(item =>
+            string.Equals(item.Key, _bulkCogsTargetKey, StringComparison.Ordinal));
+        if (target is null || !Directory.Exists(target.DirectoryPath))
+        {
+            _bulkCogsMessage = "The selected section no longer exists. Refresh and try again.";
+            LoadBulkCogsTargets();
+            return;
+        }
+
+        var assetDirectories = ResolveBulkCogsDirectories(target);
+        if (assetDirectories.Count == 0)
+        {
+            _bulkCogsMessage = "No element folders were found under the selected section.";
+            return;
+        }
+
+        var cogsText = _bulkCogsValue.Value.ToString("0.##");
+
+        var shouldApply = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Apply COGS {cogsText} to {assetDirectories.Count} folder(s) in {target.DisplayName}?\n\nThis will overwrite existing cogs.txt values in those folders.");
+
+        if (!shouldApply)
+        {
+            _bulkCogsMessage = "Bulk COGS update canceled.";
+            return;
+        }
+
+        foreach (var assetDirectory in assetDirectories)
+        {
+            await File.WriteAllTextAsync(Path.Combine(assetDirectory, "cogs.txt"), cogsText);
+        }
+
+        _bulkCogsMessage = $"Applied COGS {cogsText} to {assetDirectories.Count} folder(s) in {target.DisplayName}.";
+        RefreshElementViews();
+    }
+
+    private List<string> ResolveBulkCogsDirectories(SectionCogsTarget target)
+    {
+        var directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (string.Equals(target.Key, "front-faces/__all", StringComparison.Ordinal))
+        {
+            foreach (var categoryDirectory in Directory.GetDirectories(target.DirectoryPath))
+            {
+                AddBulkCogsDirectoriesForSection(categoryDirectory, directories);
+            }
+
+            // Include any assets/cogs directly under front-faces as well.
+            AddBulkCogsDirectoriesForSection(target.DirectoryPath, directories);
+        }
+        else
+        {
+            AddBulkCogsDirectoriesForSection(target.DirectoryPath, directories);
+        }
+
+        return directories
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static void AddBulkCogsDirectoriesForSection(string sectionDirectory, HashSet<string> directories)
+    {
+        if (!Directory.Exists(sectionDirectory))
+        {
+            return;
+        }
+
+        foreach (var assetDirectory in EnumerateAssetDirectories(sectionDirectory))
+        {
+            directories.Add(assetDirectory);
+        }
+
+        foreach (var cogsDirectory in EnumerateCandidateElementDirectories(sectionDirectory))
+        {
+            directories.Add(cogsDirectory);
+        }
+
+        if (File.Exists(Path.Combine(sectionDirectory, "cogs.txt"))
+            || Directory.GetFiles(sectionDirectory).Any(IsSupportedAssetFile))
+        {
+            directories.Add(sectionDirectory);
+        }
+    }
+
+    private async Task SaveNonImageElementAsync()
+    {
+        if (!CanSaveNonImageElement || NonImageDesignFile is null)
+        {
+            _nonImageMessage = "Choose an element type, name, COGS, and one design file before saving.";
+            return;
+        }
+
+        var resolvedTypeName = ResolveNonImageTypeName();
+        var typeSlug = Slugify(resolvedTypeName);
+        var elementSlug = Slugify(_nonImageName!);
+        var cogs = _nonImageCogs.GetValueOrDefault();
+        var targetDirectory = Path.Combine(GetProcessFilesRoot(), typeSlug, elementSlug);
+
+        Directory.CreateDirectory(targetDirectory);
+
+        foreach (var existingFile in Directory.GetFiles(targetDirectory).Where(file => !IsMetadataFile(file)))
+        {
+            File.Delete(existingFile);
+        }
+
+        var targetPath = Path.Combine(targetDirectory, GetSafeFileName(NonImageDesignFile.Name));
+
+        await using var readStream = NonImageDesignFile.BrowserFile.OpenReadStream(MaxUploadSize);
+        await using var writeStream = File.Create(targetPath);
+        await readStream.CopyToAsync(writeStream);
+
+        await File.WriteAllTextAsync(Path.Combine(targetDirectory, "cogs.txt"), cogs.ToString("0.##"));
+
+        if (UsesColorOptions)
+        {
+            await File.WriteAllLinesAsync(
+                Path.Combine(targetDirectory, "colors.txt"),
+                ParseColors(_nonImageColors!));
+        }
+        else
+        {
+            var colorsPath = Path.Combine(targetDirectory, "colors.txt");
+            if (File.Exists(colorsPath))
+            {
+                File.Delete(colorsPath);
+            }
+        }
+
+        _nonImageMessage = $"Saved {resolvedTypeName} design to process-files/{typeSlug}/{elementSlug}.";
+        NonImageDesignFile = null;
+        RefreshElementViews();
+    }
+
+    private string ResolveNonImageTypeName()
+    {
+        var rawType = NormalizeInput(_nonImageElementType) ?? "element";
+
+        if (string.Equals(rawType, "Leather", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(rawType, "Leather Base", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(rawType, "Leather Premium", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(_leatherTier, "Premium", StringComparison.OrdinalIgnoreCase)
+                ? "Leather Premium"
+                : "Leather Base";
+        }
+
+        return rawType;
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes >= 1024 * 1024)
+        {
+            return $"{bytes / 1024m / 1024m:F1} MB";
+        }
+
+        if (bytes >= 1024)
+        {
+            return $"{bytes / 1024m:F1} KB";
+        }
+
+        return $"{bytes} B";
+    }
+
+    private void LoadFrontFacesSchema()
+    {
+        var frontFacesRoot = FindDirectoryIgnoreCase(GetProcessFilesRoot(), "front-faces");
+        if (string.IsNullOrWhiteSpace(frontFacesRoot) || !Directory.Exists(frontFacesRoot))
+        {
+            FrontFacesSchema = [];
+            return;
+        }
+
+        FrontFacesSchema = EnumerateAssetDirectories(frontFacesRoot)
+            .Select(assetDirectory =>
+            {
+                var relativePath = Path.GetRelativePath(frontFacesRoot, assetDirectory);
+                var segments = relativePath
+                    .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+                var reportingCategory = segments.Length == 0
+                    ? "Uncategorized"
+                    : ToDisplaySegment(segments[0]);
+                var schemaPath = string.Join(" / ", segments.Select(ToDisplaySegment));
+                var files = Directory.GetFiles(assetDirectory)
+                    .Where(IsSupportedAssetFile)
+                    .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                    .Select(Path.GetFileName)
+                    .ToList();
+                var (cogsLabel, cogsValue) = GetCogsMetadata(assetDirectory);
+
+                return new FrontFacesSchemaEntry(
+                    schemaPath,
+                    reportingCategory,
+                    relativePath.Replace(Path.DirectorySeparatorChar, '/'),
+                    files.Count,
+                    string.Join(", ", files),
+                    cogsLabel,
+                    cogsValue);
+            })
+            .OrderBy(entry => entry.SchemaPath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void LoadBackOptions()
+    {
+        var processFilesRoot = GetProcessFilesRoot();
+        var backOptionsDirectory = FindDirectoryIgnoreCase(processFilesRoot, "back-options");
+
+        if (string.IsNullOrWhiteSpace(backOptionsDirectory) || !Directory.Exists(backOptionsDirectory))
+        {
+            BackOptions = [];
+            return;
+        }
+
+        BackOptions = EnumerateAssetDirectories(backOptionsDirectory)
+            .Select(assetDirectory =>
+            {
+                var relativePath = Path.GetRelativePath(backOptionsDirectory, assetDirectory);
+                var segments = relativePath
+                    .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+                var name = string.Join(" / ", segments.Select(ToDisplaySegment));
+                var files = Directory.GetFiles(assetDirectory)
+                    .Where(IsSupportedAssetFile)
+                    .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                    .Select(Path.GetFileName)
+                    .ToList();
+                var (cogsLabel, cogsValue) = GetCogsMetadata(assetDirectory);
+
+                return new BackOptionAsset(
+                    name,
+                    relativePath.Replace(Path.DirectorySeparatorChar, '/'),
+                    files.Count,
+                    string.Join(", ", files),
+                    cogsLabel,
+                    cogsValue,
+                    GetBackOptionFamily(relativePath));
+            })
+            .OrderBy(option => option.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void LoadBulkCogsTargets()
+    {
+        var processFilesRoot = GetProcessFilesRoot();
+        if (!Directory.Exists(processFilesRoot))
+        {
+            BulkCogsTargets = [];
+            return;
+        }
+
+        var targets = new List<SectionCogsTarget>();
+        var frontFacesRoot = FindDirectoryIgnoreCase(processFilesRoot, "front-faces");
+
+        if (!string.IsNullOrWhiteSpace(frontFacesRoot) && Directory.Exists(frontFacesRoot))
+        {
+            targets.Add(new SectionCogsTarget(
+                "front-faces/__all",
+                "Front Faces / All",
+                frontFacesRoot));
+
+            foreach (var categoryDirectory in Directory.GetDirectories(frontFacesRoot)
+                         .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                var categoryName = ToDisplaySegment(Path.GetFileName(categoryDirectory));
+                targets.Add(new SectionCogsTarget(
+                    $"front-faces/{Path.GetFileName(categoryDirectory)}",
+                    $"Front Faces / {categoryName}",
+                    categoryDirectory));
+            }
+        }
+
+        foreach (var topLevelDirectory in Directory.GetDirectories(processFilesRoot)
+                     .Where(path => !string.Equals(Path.GetFileName(path), "front-faces", StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        {
+            var displayName = ToDisplaySegment(Path.GetFileName(topLevelDirectory));
+            targets.Add(new SectionCogsTarget(
+                Path.GetFileName(topLevelDirectory),
+                displayName,
+                topLevelDirectory));
+        }
+
+        BulkCogsTargets = targets;
+
+        if (!string.IsNullOrWhiteSpace(_bulkCogsTargetKey) &&
+            !BulkCogsTargets.Any(target => string.Equals(target.Key, _bulkCogsTargetKey, StringComparison.Ordinal)))
+        {
+            _bulkCogsTargetKey = null;
+        }
+    }
+
+    private void LoadStoredNonImageElements()
+    {
+        var processFilesRoot = GetProcessFilesRoot();
+        if (!Directory.Exists(processFilesRoot))
+        {
+            StoredNonImageElements = [];
+            return;
+        }
+
+        StoredNonImageElements = Directory.GetDirectories(processFilesRoot)
+            .SelectMany(typeDirectory => EnumerateNonImageElementEntries(typeDirectory))
+            .OrderBy(folder => folder.ElementType)
+            .ThenBy(folder => folder.Name)
+            .ToList();
+    }
+
+    private string GetProcessFilesRoot() =>
+        Path.Combine(Environment.WebRootPath, "process-files");
+
+    private static string? FindDirectoryIgnoreCase(string parentDirectory, string directoryName)
+    {
+        if (!Directory.Exists(parentDirectory))
+        {
+            return null;
+        }
+
+        return Directory.GetDirectories(parentDirectory)
+            .FirstOrDefault(directory =>
+                string.Equals(Path.GetFileName(directory), directoryName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string ToDisplaySegment(string segment) =>
+        segment.Replace('_', ' ').Replace('-', ' ').Trim();
+
+    private static string[] ParseColors(string colors) =>
+        colors
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(color => !string.IsNullOrWhiteSpace(color))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static bool IsMetadataFile(string filePath)
+    {
+        var fileName = Path.GetFileName(filePath);
+        return string.Equals(fileName, "colors.txt", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(fileName, "cogs.txt", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDesignFile(string filePath) =>
+        Path.GetFileName(filePath).StartsWith("design-file", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSupportedAssetFile(string filePath)
+    {
+        if (IsMetadataFile(filePath))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(filePath);
+        return IsImageFile(filePath) ||
+               extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".nc", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".gc", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".gcode", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".tap", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".lbrn", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".lbrn2", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".svg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".dxf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsImageFile(string filePath)
+    {
+        var extension = Path.GetExtension(filePath);
+        return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".gif", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".svg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".tif", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".tiff", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".avif", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<StoredNonImageElementFolder> EnumerateNonImageElementEntries(string typeDirectory)
+    {
+        foreach (var directory in EnumerateCandidateElementDirectories(typeDirectory))
+        {
+            var colorsPath = Path.Combine(directory, "colors.txt");
+            var cogsPath = Path.Combine(directory, "cogs.txt");
+            var colors = File.Exists(colorsPath)
+                ? File.ReadAllLines(colorsPath).Where(color => !string.IsNullOrWhiteSpace(color)).ToArray()
+                : [];
+            var cogs = File.Exists(cogsPath) ? File.ReadAllText(cogsPath).Trim() : "";
+            var designFile = Directory.GetFiles(directory)
+                .Where(file => !IsMetadataFile(file))
+                .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            var details = colors.Length == 0 ? "No colors saved" : $"Colors: {string.Join(", ", colors)}";
+            var label = Path.GetFileName(directory);
+            var cogsValue = TryParseCogsValue(cogs);
+            var cogsLabel = FormatCogsValue(cogsValue);
+
+            yield return new StoredNonImageElementFolder(
+                Path.GetFileName(typeDirectory),
+                label,
+                Path.GetRelativePath(typeDirectory, directory).Replace(Path.DirectorySeparatorChar, '/'),
+                designFile is null ? "No design file" : Path.GetFileName(designFile),
+                details,
+                cogsLabel,
+                cogsValue);
+        }
+    }
+
+    private static IEnumerable<string> EnumerateCandidateElementDirectories(string directory)
+    {
+        foreach (var childDirectory in Directory.GetDirectories(directory))
+        {
+            if (File.Exists(Path.Combine(childDirectory, "cogs.txt")))
+            {
+                yield return childDirectory;
+            }
+
+            foreach (var nestedDirectory in EnumerateCandidateElementDirectories(childDirectory))
+            {
+                yield return nestedDirectory;
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateAssetDirectories(string directory)
+    {
+        var childDirectories = Directory.GetDirectories(directory)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var childAssetDirectories = childDirectories
+            .SelectMany(EnumerateAssetDirectories)
+            .ToList();
+        var assetFiles = Directory.GetFiles(directory).Where(IsSupportedAssetFile).ToList();
+
+        if (assetFiles.Count > 0 && childAssetDirectories.Count == 0)
+        {
+            yield return directory;
+        }
+
+        foreach (var childAssetDirectory in childAssetDirectories)
+        {
+            yield return childAssetDirectory;
+        }
+    }
+
+    private static (string Label, decimal? Value) GetCogsMetadata(string filePath)
+    {
+        var current = new FileInfo(filePath).Directory;
+        while (current is not null)
+        {
+            var cogsPath = Path.Combine(current.FullName, "cogs.txt");
+            if (File.Exists(cogsPath))
+            {
+                var cogs = File.ReadAllText(cogsPath).Trim();
+                var cogsValue = TryParseCogsValue(cogs);
+                return cogsValue is null
+                    ? ("COGS unset", null)
+                    : (FormatCogsValue(cogsValue), cogsValue);
+            }
+
+            current = current.Parent;
+        }
+
+        return ("COGS unset", null);
+    }
+
+    private static decimal? TryParseCogsValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+
+        if (normalized.StartsWith("COGS", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[4..].TrimStart(':', '-', ' ').Trim();
+        }
+
+        normalized = normalized.Replace("$", string.Empty).Trim();
+
+        if (decimal.TryParse(
+                normalized,
+                System.Globalization.NumberStyles.Number | System.Globalization.NumberStyles.AllowCurrencySymbol,
+                System.Globalization.CultureInfo.CurrentCulture,
+                out var parsedCurrentCulture))
+        {
+            return parsedCurrentCulture;
+        }
+
+        if (decimal.TryParse(
+                normalized,
+                System.Globalization.NumberStyles.Number | System.Globalization.NumberStyles.AllowCurrencySymbol,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var parsedInvariantCulture))
+        {
+            return parsedInvariantCulture;
+        }
+
+        return null;
+    }
+
+    private static string FormatCogsValue(decimal? value) =>
+        value is null ? "COGS unset" : $"COGS {value.Value.ToString("C")}";
+
+    private static string Slugify(string value)
+    {
+        var cleaned = new string(value
+            .Trim()
+            .ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : '-')
+            .ToArray());
+        var parts = cleaned.Split('-', StringSplitOptions.RemoveEmptyEntries);
+
+        return parts.Length == 0 ? "uncategorized" : string.Join("-", parts);
+    }
+
+    private static string GetSafeFileName(string fileName)
+    {
+        var name = Path.GetFileName(fileName);
+        foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalidCharacter, '-');
+        }
+
+        return string.IsNullOrWhiteSpace(name) ? $"upload-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}" : name;
+    }
+
+    private static string? NormalizeInput(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record UploadedElementFile(
+        string Name,
+        string ContentType,
+        long Size,
+        DateTimeOffset UploadedAt,
+        IBrowserFile BrowserFile);
+
+    private sealed record ManufacturingTargetGroup(
+        string Key,
+        string DisplayName);
+
+    private sealed record ManufacturingFileLinkRow(
+        string ElementKey,
+        string SourceGroupKey,
+        string ElementLabel,
+        string StoredFileName,
+        string InputDefinition,
+        string OutputDefinition,
+        string RelativeFilePath);
+
+    private sealed record StockConsumableOption(
+        string Key,
+        string Name,
+        string Type);
+
+    private sealed record RowInputDefinition(
+        string StockKey,
+        string StockName,
+        string StockType,
+        decimal QuantityPerRun);
+
+    private sealed record FrontFacesSchemaEntry(
+        string SchemaPath,
+        string ReportingCategory,
+        string RelativePath,
+        int FileCount,
+        string FilesLabel,
+        string CogsLabel,
+        decimal? CogsValue);
+
+    private sealed record BackOptionAsset(
+        string Name,
+        string RelativePath,
+        int FileCount,
+        string FilesLabel,
+        string CogsLabel,
+        decimal? CogsValue,
+        string OptionFamily);
+
+    private sealed record SectionCogsTarget(
+        string Key,
+        string DisplayName,
+        string DirectoryPath);
+
+    private sealed record StoredNonImageElementFolder(
+        string ElementType,
+        string Name,
+        string RelativePath,
+        string DesignFileName,
+        string Details,
+        string CogsLabel,
+        decimal? CogsValue);
+
+    private sealed record ElementTypeDirectory(
+        string Key,
+        string DisplayName,
+        string DirectoryPath,
+        int FileCount);
+
+    private sealed record ElementTypeFileEntry(
+        string RelativePath,
+        long SizeBytes,
+        DateTime LastModifiedLocal);
+
+}

@@ -1,0 +1,407 @@
+@page "/brain-core"
+@rendermode InteractiveServer
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject IBrainCoreService Brain
+@inject IBrainMemoryService Memory
+@inject IBrainToolGatewayService Gateway
+@inject IBrainReasoningService Reasoning
+@inject IBrainDecisionLearningService DecisionLearning
+
+<PageTitle>Brain Core</PageTitle>
+
+<div class="shows-hero">
+    <p class="shows-eyebrow">Ancient Innovations Brain</p>
+    <h1>Brain Core</h1>
+    <p>The permanent governance, memory, learning and controlled tool-access layer. Models and runtimes are replaceable; Ancient Innovations owns the memory, permissions, evidence and decisions.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_loading)
+{
+    <p>Loading Brain Core…</p>
+}
+else
+{
+    <div class="shows-metrics">
+        <div class="shows-card"><span>Core</span><strong>@_status.BrainCore</strong></div>
+        <div class="shows-card"><span>Active memories</span><strong>@_memoryDashboard.ActiveMemories</strong></div>
+        <div class="shows-card"><span>Learning review</span><strong>@_memoryDashboard.ProposedLearnings</strong></div>
+        <div class="shows-card"><span>Open contradictions</span><strong>@_memoryDashboard.OpenContradictions</strong></div>
+    </div>
+    <div class="shows-metrics mt-3">
+        <div class="shows-card"><span>Gateway</span><strong>ACTIVE</strong></div>
+        <div class="shows-card"><span>Registered tools</span><strong>@_gatewayDashboard.RegisteredTools</strong></div>
+        <div class="shows-card"><span>Denied requests</span><strong>@_gatewayDashboard.DeniedExecutions</strong></div>
+        <div class="shows-card"><span>Pending approvals</span><strong>@_gatewayDashboard.PendingApprovals</strong></div>
+    </div>
+    <div class="shows-metrics mt-3">
+        <div class="shows-card"><span>Reasoning router</span><strong>ACTIVE</strong></div>
+        <div class="shows-card"><span>Provider</span><strong>@_reasoningStatus.ProviderKey</strong></div>
+        <div class="shows-card"><span>Model</span><strong>@(_reasoningStatus.ModelName ?? "Not configured")</strong></div>
+        <div class="shows-card"><span>Reasoning runs</span><strong>@_reasoningDashboard.TotalRuns</strong></div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="alert alert-success mt-3">@_message</div>
+    }
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>Memory contract</h2><p>The Brain keeps different kinds of knowledge separate so an observation never silently turns into a learned rule.</p></div></div>
+        <div class="showarm-evidence-list">
+            <div class="showarm-evidence-item"><strong>FACT</strong><span>A currently believed business fact with source and confidence.</span></div>
+            <div class="showarm-evidence-item"><strong>EPISODE</strong><span>Something that happened: a show result, decision, failure, success or important event.</span></div>
+            <div class="showarm-evidence-item"><strong>PROCEDURE</strong><span>How Ancient Innovations intentionally does something.</span></div>
+            <div class="showarm-evidence-item"><strong>LESSON</strong><span>A reviewed, durable inference learned from evidence and outcomes.</span></div>
+            <div class="showarm-evidence-item"><strong>ASSUMPTION</strong><span>A useful belief that is explicitly marked uncertain and may need verification.</span></div>
+        </div>
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head">
+            <div><h2>Brain Memory & Learning</h2><p>Owner-confirmed memory is durable immediately. Agent learning stays staged until reviewed. Contradictions stay visible until resolved.</p></div>
+            <span class="badge text-bg-light">B2</span>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-xl-5">
+                <div class="border rounded p-3 h-100">
+                    <h3 class="h5">Add owner-confirmed memory</h3>
+                    <p class="text-body-secondary">Use this for facts, experiences, procedures, assumptions or lessons you explicitly want the Brain to know.</p>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label">Memory type</label>
+                            <select class="form-select" @bind="_newMemoryType"><option>FACT</option><option>EPISODE</option><option>PROCEDURE</option><option>LESSON</option><option>ASSUMPTION</option></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Arm</label>
+                            <select class="form-select" @bind="_newMemoryArm"><option>SHOW_ARM</option><option>BRAIN_CORE</option><option>MARKETING</option><option>PRODUCTION</option><option>INVENTORY</option><option>FULFILLMENT</option><option>FINANCE</option></select>
+                        </div>
+                    </div>
+                    <label class="form-label mt-2">Title</label>
+                    <input class="form-control" @bind="_newMemoryTitle" placeholder="Short description" />
+                    <label class="form-label mt-2">What should the Brain remember?</label>
+                    <textarea class="form-control" rows="4" @bind="_newMemoryContent"></textarea>
+                    <label class="form-label mt-2">Confidence</label>
+                    <select class="form-select" @bind="_newMemoryConfidence"><option value="1.00">Confirmed / 100%</option><option value="0.80">High / 80%</option><option value="0.60">Moderate / 60%</option><option value="0.40">Tentative / 40%</option></select>
+                    <button class="btn btn-primary mt-3" @onclick="AddMemoryAsync" disabled="@string.IsNullOrWhiteSpace(_newMemoryTitle)">Save durable memory</button>
+                </div>
+            </div>
+            <div class="col-xl-7">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between gap-2 flex-wrap"><div><h3 class="h5 mb-1">Recent durable memory</h3><p class="text-body-secondary mb-0">Each record keeps type, scope, provenance and confidence.</p></div><span class="badge text-bg-light">@_memories.Count shown</span></div>
+                    @if (_memories.Count == 0)
+                    {
+                        <p class="mt-3 mb-0">No durable Brain memory has been recorded yet.</p>
+                    }
+                    else
+                    {
+                        <div class="showarm-evidence-list mt-3">
+                            @foreach (var item in _memories.Take(12))
+                            {
+                                <div class="showarm-evidence-item">
+                                    <div class="d-flex justify-content-between gap-2 flex-wrap"><strong>@item.Title</strong><div><span class="badge text-bg-light">@item.MemoryType</span> <span class="badge text-bg-info">@item.ArmScope</span></div></div>
+                                    <span>@item.Content</span>
+                                    <small>@item.SourceType · confidence @((item.Confidence * 100m).ToString("0"))% · @item.UpdatedAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</small>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>Learning review queue</h2><p>Agents may propose lessons. Proposed does not mean learned. Approval promotes the lesson into durable memory; rejection preserves the review history without teaching the Brain the rule.</p></div><span class="badge text-bg-warning">@_learning.Count(x => x.Status == "PROPOSED") proposed</span></div>
+        @if (_learning.Count == 0)
+        {
+            <p class="mb-0">No learning proposals yet. Show Brain and Scout will begin feeding this queue in later passes.</p>
+        }
+        else
+        {
+            <div class="showarm-evidence-list">
+                @foreach (var item in _learning.Take(20))
+                {
+                    <div class="showarm-evidence-item">
+                        <div class="d-flex justify-content-between gap-2 flex-wrap"><strong>@item.ProposedLesson</strong><span class="badge @(item.Status == "PROPOSED" ? "text-bg-warning" : item.Status == "APPROVED" ? "text-bg-success" : "text-bg-secondary")">@item.Status</span></div>
+                        @if (!string.IsNullOrWhiteSpace(item.Reasoning)) { <span>@item.Reasoning</span> }
+                        <small>@item.AgentKey · @item.ArmScope · confidence @((item.Confidence * 100m).ToString("0"))%</small>
+                        @if (item.Status == "PROPOSED")
+                        {
+                            <div class="d-flex gap-2 mt-2"><button class="btn btn-sm btn-success" @onclick="() => ReviewLearningAsync(item.Id, true)">Approve lesson</button><button class="btn btn-sm btn-outline-secondary" @onclick="() => ReviewLearningAsync(item.Id, false)">Reject</button></div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>Decision → reasoning → outcome ledger</h2><p>The Brain keeps its recommendation beside the human decision, the human reason, and the eventual result. This is how later passes can measure who was right and why.</p></div><span class="badge text-bg-light">@_decisions.Count records</span></div>
+        @if (_decisions.Count == 0)
+        {
+            <p class="mb-0">No Brain decision records yet. The Show Brain will begin writing recommendations here after its reasoning connection is enabled.</p>
+        }
+        else
+        {
+            <div class="showarm-evidence-list">
+                @foreach (var item in _decisions.Take(12))
+                {
+                    <div class="showarm-evidence-item">
+                        <strong>@item.DecisionType · @item.Recommendation</strong>
+                        <span>@(item.HumanDecision is null ? "Awaiting human decision" : $"Human: {item.HumanDecision}")</span>
+                        @if(!string.IsNullOrWhiteSpace(item.HumanReasoning)){<small><strong>Why:</strong> @item.HumanReasoning</small>}
+                        @if(!string.IsNullOrWhiteSpace(item.Outcome)){<small><strong>Outcome:</strong> @item.Outcome</small>}
+                        else if(item.HumanDecision is not null)
+                        {
+                            <div class="row g-2 mt-2">
+                                <div class="col-md-4"><input class="form-control form-control-sm" value="@OutcomeValue(item.Id)" @oninput="e => SetOutcome(item.Id, e.Value?.ToString())" placeholder="What actually happened?" /></div>
+                                <div class="col-md-5"><input class="form-control form-control-sm" value="@OutcomeNoteValue(item.Id)" @oninput="e => SetOutcomeNote(item.Id, e.Value?.ToString())" placeholder="Outcome notes (optional)" /></div>
+                                <div class="col-md-3"><button class="btn btn-sm btn-primary" @onclick="() => RecordOutcomeAsync(item.Id)" disabled="@string.IsNullOrWhiteSpace(OutcomeValue(item.Id))">Record outcome + review learning</button></div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>Contradiction control</h2><p>Conflicting memories are never silently overwritten. They remain open until the conflict is explicitly resolved.</p></div><span class="badge @(_contradictions.Count == 0 ? "text-bg-success" : "text-bg-danger")">@_contradictions.Count open</span></div>
+        @if (_contradictions.Count == 0) { <p class="mb-0">No unresolved contradictions.</p> }
+        else
+        {
+            <div class="showarm-evidence-list">@foreach(var item in _contradictions){<div class="showarm-evidence-item"><strong>Memory @item.MemoryAId ↔ @item.MemoryBId</strong><span>@item.Description</span><small>Detected by @item.DetectedBy</small></div>}</div>
+        }
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head">
+            <div><h2>Controlled agent & tool gateway</h2><p>Every runtime request is matched to a registered tool, checked against the requesting agent's capability grant, audited, and only then allowed to reach a handler.</p></div>
+            <span class="badge text-bg-light">B3</span>
+        </div>
+        <div class="row g-3">
+            <div class="col-xl-7">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between gap-2 flex-wrap"><div><h3 class="h5 mb-1">Registered tools</h3><p class="text-body-secondary mb-0">Code-defined allowlist. Unregistered tools are denied by default.</p></div><span class="badge text-bg-info">@_gatewayTools.Count tools</span></div>
+                    <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Tool</th><th>Agent</th><th>Capability</th><th>Boundary</th></tr></thead><tbody>
+                    @foreach (var tool in _gatewayTools)
+                    {
+                        <tr><td><code>@tool.ToolKey</code>@if(tool.IsDiagnostic){<span class="badge text-bg-light ms-1">diagnostic</span>}</td><td>@tool.AgentKey</td><td><code>@tool.CapabilityKey</code></td><td>@tool.Boundary</td></tr>
+                    }
+                    </tbody></table></div>
+                </div>
+            </div>
+            <div class="col-xl-5">
+                <div class="border rounded p-3 h-100">
+                    <h3 class="h5">Safety self-test</h3>
+                    <p class="text-body-secondary">Runs two harmless governed reads and then deliberately attempts an application submission and money-spend request. The denied handlers must never execute.</p>
+                    <button class="btn btn-primary" @onclick="RunGatewaySelfTestAsync">Run B3 gateway self-test</button>
+                    @if (_selfTestResults.Count > 0)
+                    {
+                        <div class="showarm-evidence-list mt-3">
+                        @foreach (var r in _selfTestResults)
+                        {
+                            <div class="showarm-evidence-item"><div class="d-flex justify-content-between gap-2"><strong>@r.State</strong><span class="badge @(r.Succeeded ? "text-bg-success" : r.State == "DENIED" ? "text-bg-success" : "text-bg-warning")">@(r.Succeeded ? "allowed" : r.State.ToLowerInvariant())</span></div><small>@r.Message</small></div>
+                        }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="row g-3 mt-1">
+            <div class="col-xl-7">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between gap-2"><h3 class="h5 mb-0">Recent gateway executions</h3><span class="badge text-bg-light">@_gatewayExecutions.Count shown</span></div>
+                    @if (_gatewayExecutions.Count == 0) { <p class="mt-3 mb-0">No tool requests have crossed the gateway yet.</p> }
+                    else
+                    {
+                        <div class="showarm-evidence-list mt-3">
+                        @foreach (var x in _gatewayExecutions.Take(12))
+                        {
+                            <div class="showarm-evidence-item"><div class="d-flex justify-content-between gap-2"><strong>@x.AgentKey · @x.ToolKey</strong><span class="badge @(x.State == "COMPLETED" ? "text-bg-success" : x.State == "DENIED" ? "text-bg-danger" : "text-bg-warning")">@x.State</span></div><small>@x.CapabilityKey · @x.RequestedAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</small>@if(!string.IsNullOrWhiteSpace(x.DenialReason)){<span>@x.DenialReason</span>}</div>
+                        }
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="col-xl-5">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between gap-2"><h3 class="h5 mb-0">Human approval gate</h3><span class="badge @(_pendingApprovals.Count == 0 ? "text-bg-success" : "text-bg-warning")">@_pendingApprovals.Count pending</span></div>
+                    <p class="text-body-secondary mt-2">DENY stays denied. This queue is only for future capabilities that are allowed in principle but require explicit human approval.</p>
+                    @if (_pendingApprovals.Count == 0) { <p class="mb-0">No pending approval requests.</p> }
+                    else
+                    {
+                        <div class="showarm-evidence-list">
+                        @foreach (var a in _pendingApprovals)
+                        {
+                            <div class="showarm-evidence-item"><strong>@a.AgentKey · @a.ToolKey</strong><span>@a.RequestReason</span><div class="d-flex gap-2 mt-2"><button class="btn btn-sm btn-success" @onclick="() => ReviewGatewayApprovalAsync(a.Id, true)">Approve</button><button class="btn btn-sm btn-outline-secondary" @onclick="() => ReviewGatewayApprovalAsync(a.Id, false)">Reject</button></div></div>
+                        }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>Architecture contract</h2><p>These boundaries stay ours even when individual AI technologies change.</p></div></div>
+        <div class="showarm-evidence-list">
+            <div class="showarm-evidence-item"><strong>Source of truth</strong><span>@_status.SourceOfTruth</span></div>
+            <div class="showarm-evidence-item"><strong>Autonomous runtime</strong><span>@_status.AutonomousAgentRuntime</span></div>
+            <div class="showarm-evidence-item"><strong>Controlled orchestration</strong><span>@_status.Orchestration</span></div>
+            <div class="showarm-evidence-item"><strong>Reasoning models</strong><span>@_status.ModelRouter</span></div>
+        </div>
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>Agent boundaries</h2><p>Scout and the Show Brain are different workers using the same Brain governance.</p></div></div>
+        @foreach (var agent in _agents)
+        {
+            var grants = _grants.Where(x => x.AgentKey == agent.AgentKey).ToList();
+            <div class="border rounded p-3 mb-3">
+                <div class="d-flex justify-content-between gap-3 flex-wrap">
+                    <div><h3 class="h5 mb-1">@agent.DisplayName</h3><p class="mb-1">@agent.Purpose</p><small>@agent.ArmScope · @agent.RuntimeKind · @agent.AutonomyLevel</small></div>
+                    <span class="badge @(agent.Enabled ? "text-bg-success" : "text-bg-secondary")">@(agent.Enabled ? "Enabled" : "Disabled")</span>
+                </div>
+                <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Capability</th><th>Access</th><th>Human gate</th><th>Boundary</th></tr></thead><tbody>
+                @foreach (var grant in grants)
+                {
+                    <tr><td><code>@grant.CapabilityKey</code></td><td><span class="badge @(grant.AccessMode == "DENY" ? "text-bg-danger" : grant.AccessMode == "READ" ? "text-bg-info" : "text-bg-warning")">@grant.AccessMode</span></td><td>@(grant.RequiresHumanApproval ? "Required" : "No")</td><td>@grant.BoundaryNote</td></tr>
+                }
+                </tbody></table></div>
+            </div>
+        }
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>What Brain Core deliberately does not do</h2><p>The Brain now has a governed tool gateway, but no external autonomous runtime has been connected yet.</p></div></div>
+        <p class="mb-0">B3 does not install or connect Hermes yet. It proves the boundary Hermes must use: registered tools only, capability checks first, human gates where explicitly allowed, and audit records for every request. Applications, spending, vendor assignment and raw database access remain denied.</p>
+    </section>
+}
+
+@code {
+    private bool _loading = true;
+    private string? _error;
+    private string? _message;
+    private IReadOnlyList<BrainAgentProfileEntity> _agents = Array.Empty<BrainAgentProfileEntity>();
+    private IReadOnlyList<BrainCapabilityGrantEntity> _grants = Array.Empty<BrainCapabilityGrantEntity>();
+    private IReadOnlyList<BrainMemoryItemEntity> _memories = Array.Empty<BrainMemoryItemEntity>();
+    private IReadOnlyList<BrainLearningCandidateEntity> _learning = Array.Empty<BrainLearningCandidateEntity>();
+    private IReadOnlyList<BrainDecisionRecordEntity> _decisions = Array.Empty<BrainDecisionRecordEntity>();
+    private readonly Dictionary<long,string> _outcomes = new();
+    private readonly Dictionary<long,string> _outcomeNotes = new();
+    private IReadOnlyList<BrainContradictionEntity> _contradictions = Array.Empty<BrainContradictionEntity>();
+    private BrainMemoryDashboard _memoryDashboard = new(0, 0, 0, 0);
+    private BrainGatewayDashboard _gatewayDashboard = new(0, 0, 0, 0);
+    private BrainModelStatus _reasoningStatus = new("UNCONFIGURED", false, null, "", "");
+    private BrainReasoningDashboard _reasoningDashboard = new(0, 0, 0, null);
+    private IReadOnlyList<BrainToolDescriptor> _gatewayTools = Array.Empty<BrainToolDescriptor>();
+    private IReadOnlyList<BrainToolExecutionEntity> _gatewayExecutions = Array.Empty<BrainToolExecutionEntity>();
+    private IReadOnlyList<BrainApprovalRequestEntity> _pendingApprovals = Array.Empty<BrainApprovalRequestEntity>();
+    private IReadOnlyList<BrainToolResult> _selfTestResults = Array.Empty<BrainToolResult>();
+    private BrainRuntimeStatus _status = new("LOADING", "", "", "", "");
+    private string _newMemoryType = "FACT";
+    private string _newMemoryArm = "SHOW_ARM";
+    private string _newMemoryTitle = "";
+    private string _newMemoryContent = "";
+    private decimal _newMemoryConfidence = 1m;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await ReloadAsync(); }
+        catch (Exception ex) { _error = $"Brain Core could not initialize: {ex.Message}"; }
+        finally { _loading = false; }
+    }
+
+    private async Task ReloadAsync()
+    {
+        await Brain.EnsureFoundationAsync();
+        _agents = await Brain.GetAgentsAsync();
+        _grants = await Brain.GetCapabilitiesAsync();
+        _status = Brain.GetRuntimeStatus();
+        _memoryDashboard = await Memory.GetDashboardAsync();
+        _memories = await Memory.GetRecentMemoryAsync(50);
+        _learning = await Memory.GetLearningQueueAsync(50);
+        _decisions = await Memory.GetRecentDecisionsAsync(50);
+        _contradictions = await Memory.GetOpenContradictionsAsync(50);
+        _gatewayDashboard = await Gateway.GetDashboardAsync();
+        _reasoningStatus = Reasoning.GetModelStatus();
+        _reasoningDashboard = await Reasoning.GetDashboardAsync();
+        _gatewayTools = Gateway.GetRegisteredTools();
+        _gatewayExecutions = await Gateway.GetRecentExecutionsAsync(50);
+        _pendingApprovals = await Gateway.GetPendingApprovalsAsync(50);
+    }
+
+    private async Task AddMemoryAsync()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_newMemoryTitle) || string.IsNullOrWhiteSpace(_newMemoryContent)) { _message = "Enter both a title and what the Brain should remember."; return; }
+            await Memory.AddOwnerMemoryAsync(_newMemoryType, _newMemoryArm, _newMemoryTitle, _newMemoryContent, _newMemoryConfidence);
+            _newMemoryTitle = ""; _newMemoryContent = ""; _message = "Durable Brain memory saved.";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"Memory was not saved: {ex.Message}"; }
+    }
+
+    private async Task ReviewLearningAsync(long id, bool approve)
+    {
+        try { await Memory.ReviewLearningAsync(id, approve, "OWNER", approve ? "Owner approved this lesson for durable memory." : "Owner rejected this proposed lesson."); _message = approve ? "Lesson approved and promoted to durable memory." : "Learning proposal rejected."; await ReloadAsync(); }
+        catch (Exception ex) { _message = $"Learning review failed: {ex.Message}"; }
+    }
+
+    private string OutcomeValue(long id) => _outcomes.TryGetValue(id, out var value) ? value : "";
+    private string OutcomeNoteValue(long id) => _outcomeNotes.TryGetValue(id, out var value) ? value : "";
+    private void SetOutcome(long id, string? value) => _outcomes[id] = value ?? "";
+    private void SetOutcomeNote(long id, string? value) => _outcomeNotes[id] = value ?? "";
+
+    private async Task RecordOutcomeAsync(long id)
+    {
+        try
+        {
+            var outcome = OutcomeValue(id);
+            if (string.IsNullOrWhiteSpace(outcome)) { _message = "Enter the actual outcome first."; return; }
+            await Memory.RecordOutcomeAsync(id, outcome, OutcomeNoteValue(id));
+            var proposal = await DecisionLearning.ProposeFromOutcomeAsync(id);
+            _message = proposal is null
+                ? "Outcome recorded. The Brain reviewed the episode and did not find enough evidence for a durable lesson."
+                : "Outcome recorded. One narrow lesson was staged in Learning Review — it is not learned until you approve it.";
+            _outcomes.Remove(id); _outcomeNotes.Remove(id);
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"Outcome/learning review failed: {ex.Message}"; }
+    }
+
+    private async Task RunGatewaySelfTestAsync()
+    {
+        try
+        {
+            _selfTestResults = await Gateway.RunSafetySelfTestAsync();
+            var allowed = _selfTestResults.Count(x => x.Succeeded);
+            var denied = _selfTestResults.Count(x => x.State == "DENIED");
+            _message = allowed == 2 && denied == 2
+                ? "B3 self-test passed: 2 governed reads allowed and 2 consequential requests denied before handler execution."
+                : $"B3 self-test needs review: {allowed} allowed, {denied} denied.";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"Gateway self-test failed: {ex.Message}"; }
+    }
+
+    private async Task ReviewGatewayApprovalAsync(long id, bool approve)
+    {
+        try
+        {
+            await Gateway.ReviewApprovalAsync(id, approve, "OWNER", approve ? "Owner approved this specific gated tool request." : "Owner rejected this gated tool request.");
+            _message = approve ? "Gateway approval granted for that specific request." : "Gateway request rejected.";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"Gateway approval review failed: {ex.Message}"; }
+    }
+
+}

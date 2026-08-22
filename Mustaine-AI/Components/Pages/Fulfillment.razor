@@ -1,0 +1,257 @@
+@page "/fulfillment"
+@rendermode InteractiveServer
+@using System.Text.Json
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+
+<PageTitle>Fulfillment</PageTitle>
+
+<div class="sales-hero">
+    <p class="sales-eyebrow">Shipping & Fulfillment</p>
+    <h1 class="sales-title">Fulfillment</h1>
+    <p class="sales-subtitle">Pack the customer order here. Pirate Ship handles postage and labels; this screen only coordinates the work.</p>
+</div>
+
+@if (_loading)
+{
+    <div class="sales-card">Loading fulfillment...</div>
+}
+else if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else
+{
+    <div class="sales-summary">
+        <section class="sales-card sales-metric"><span class="sales-metric-label">Ready</span><strong class="sales-metric-value">@ActiveOrders.Count</strong><span class="sales-metric-note">Customer orders still in shipping</span></section>
+        <section class="sales-card sales-metric"><span class="sales-metric-label">Shipped</span><strong class="sales-metric-value">@ShippedOrders.Count</strong><span class="sales-metric-note">Fulfillment history</span></section>
+    </div>
+
+    <div class="d-flex gap-2 mb-3">
+        <button class="btn @(_showHistory ? "btn-outline-primary" : "btn-primary")" @onclick="() => _showHistory = false">Active Fulfillment</button>
+        <button class="btn @(_showHistory ? "btn-primary" : "btn-outline-primary")" @onclick="() => _showHistory = true">Shipped History</button>
+        <button class="btn btn-outline-secondary ms-auto" @onclick="LoadAsync">Refresh</button>
+    </div>
+
+    @if (!_showHistory)
+    {
+        @if (ActiveOrders.Count == 0)
+        {
+            <div class="sales-card">Nothing is waiting for fulfillment. Orders appear here after finished product is reserved or scanned complete.</div>
+        }
+        else
+        {
+            <div class="sales-employee-grid">
+                @foreach (var order in ActiveOrders)
+                {
+                    <section class="sales-card employee-sales-card">
+                        <div class="sales-sheet-header">
+                            <div>
+                                <p class="sales-eyebrow mb-1">@SourceLabel(order.SourceChannel) · @order.Created.LocalDateTime.ToString("MMM d, yyyy · h:mm tt")</p>
+                                <h2>Order @OrderNumber(order)</h2>
+                                <div class="text-body-secondary">@(string.IsNullOrWhiteSpace(order.CustomerName) ? "Customer" : order.CustomerName)</div>
+                            </div>
+                            <span class="badge @StatusBadge(order.Status)">@StatusLabel(order.Status)</span>
+                        </div>
+
+                        <div class="mt-3">
+                            @foreach (var line in order.Lines)
+                            {
+                                <div class="border rounded p-2 mb-2">
+                                    <strong>@line.ProductName</strong> · Qty @line.Quantity.ToString("0.####")
+                                    @if (!string.IsNullOrWhiteSpace(line.VariationName)) { <div>@line.VariationName</div> }
+                                    @if (Selections(line).Count > 0) { <div>@string.Join(" · ", Selections(line))</div> }
+                                    @if (!string.IsNullOrWhiteSpace(line.OrderNotes)) { <div><strong>Note:</strong> @line.OrderNotes</div> }
+                                </div>
+                            }
+                        </div>
+
+                        <div class="mt-3">
+                            <strong>Ship to</strong>
+                            <div>@(string.IsNullOrWhiteSpace(order.ShipToName) ? order.CustomerName : order.ShipToName)</div>
+                            @if (!string.IsNullOrWhiteSpace(order.ShipAddress1)) { <div>@order.ShipAddress1</div> }
+                            @if (!string.IsNullOrWhiteSpace(order.ShipAddress2)) { <div>@order.ShipAddress2</div> }
+                            @if (!string.IsNullOrWhiteSpace(CityStateZip(order))) { <div>@CityStateZip(order)</div> }
+                            @if (!string.IsNullOrWhiteSpace(order.CustomerEmail)) { <div>@order.CustomerEmail</div> }
+                            @if (!string.IsNullOrWhiteSpace(order.CustomerPhone)) { <div>@order.CustomerPhone</div> }
+                        </div>
+
+                        <div class="d-grid gap-2 mt-3">
+                            @if (order.Status == "READY_TO_FULFILL")
+                            {
+                                <button class="btn btn-primary" @onclick='() => SetStatusAsync(order, "PACKING")'>Start Packing</button>
+                            }
+                            @if (order.Status == "PACKING")
+                            {
+                                <button class="btn btn-primary" @onclick='() => SetStatusAsync(order, "READY_TO_SHIP")'>Packed — Ready to Ship</button>
+                            }
+                            @if (order.Status == "READY_TO_SHIP")
+                            {
+                                <button class="btn btn-success" @onclick="OpenPirateShip">Open Pirate Ship</button>
+                                <div class="small text-body-secondary">Find Order @OrderNumber(order) in Pirate Ship, buy the label, and print it on the LUFIER.</div>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-md-5"><input class="form-control" placeholder="Tracking number (optional)" @bind="order.TrackingInput" /></div>
+                                    <div class="col-md-3"><input class="form-control" placeholder="Carrier" @bind="order.CarrierInput" /></div>
+                                    <div class="col-md-4"><button class="btn btn-outline-success w-100" @onclick="() => MarkShippedAsync(order)">Mark Shipped</button></div>
+                                </div>
+                                <div class="small text-body-secondary">Tracking email stays with the existing Pirate Ship/WooCommerce workflow. This button only closes the Control App fulfillment job.</div>
+                            }
+                        </div>
+                    </section>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        @if (ShippedOrders.Count == 0)
+        {
+            <div class="sales-card">No shipped fulfillment history yet.</div>
+        }
+        else
+        {
+            <div class="table-responsive sales-card">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th>Order</th><th>Customer</th><th>Shipped</th><th>Carrier</th><th>Tracking</th></tr></thead>
+                    <tbody>
+                        @foreach (var order in ShippedOrders)
+                        {
+                            <tr>
+                                <td>@OrderNumber(order)</td>
+                                <td>@order.CustomerName</td>
+                                <td>@(order.ShippedAt?.LocalDateTime.ToString("MMM d, yyyy · h:mm tt") ?? "—")</td>
+                                <td>@(string.IsNullOrWhiteSpace(order.Carrier) ? "—" : order.Carrier)</td>
+                                <td>@(string.IsNullOrWhiteSpace(order.TrackingNumber) ? "—" : order.TrackingNumber)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private bool _showHistory;
+    private string? _error;
+    private List<FulfillmentOrderView> _orders = [];
+
+    private List<FulfillmentOrderView> ActiveOrders => _orders
+        .Where(x => x.Status is "READY_TO_FULFILL" or "PACKING" or "READY_TO_SHIP")
+        .OrderBy(x => x.Created).ToList();
+    private List<FulfillmentOrderView> ShippedOrders => _orders
+        .Where(x => x.Status is "SHIPPED" or "COMPLETE")
+        .OrderByDescending(x => x.ShippedAt ?? x.Created).ToList();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var rows = await DbContext.FulfillmentOrderLines.AsNoTracking()
+                .Where(x => x.ProductionStatus == "PRODUCTION_COMPLETE" &&
+                            (x.FulfillmentStatus == "READY_TO_FULFILL" || x.FulfillmentStatus == "PACKING" || x.FulfillmentStatus == "READY_TO_SHIP" || x.FulfillmentStatus == "SHIPPED" || x.FulfillmentStatus == "COMPLETE"))
+                .OrderBy(x => x.OrderCreatedAt).ToListAsync();
+
+            _orders = rows.GroupBy(x => new { x.SourceChannel, x.SourceOrderId })
+                .Select(g => FulfillmentOrderView.From(g.ToList()))
+                .ToList();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task SetStatusAsync(FulfillmentOrderView order, string status)
+    {
+        var rows = await DbContext.FulfillmentOrderLines
+            .Where(x => x.SourceChannel == order.SourceChannel && x.SourceOrderId == order.SourceOrderId)
+            .ToListAsync();
+        foreach (var row in rows)
+        {
+            row.FulfillmentStatus = status;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private void OpenPirateShip() => Navigation.NavigateTo("https://ship.pirateship.com/ship", forceLoad: true);
+
+    private async Task MarkShippedAsync(FulfillmentOrderView order)
+    {
+        var rows = await DbContext.FulfillmentOrderLines
+            .Where(x => x.SourceChannel == order.SourceChannel && x.SourceOrderId == order.SourceOrderId)
+            .ToListAsync();
+        var now = DateTimeOffset.UtcNow;
+        foreach (var row in rows)
+        {
+            row.FulfillmentStatus = "SHIPPED";
+            row.ShippedAt = now;
+            if (!string.IsNullOrWhiteSpace(order.TrackingInput)) row.TrackingNumber = order.TrackingInput.Trim();
+            if (!string.IsNullOrWhiteSpace(order.CarrierInput)) row.Carrier = order.CarrierInput.Trim();
+            row.UpdatedAt = now;
+        }
+        await DbContext.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private static string OrderNumber(FulfillmentOrderView x) => string.IsNullOrWhiteSpace(x.OrderNumber) ? x.SourceOrderId : x.OrderNumber;
+    private static string SourceLabel(string source) => source == "SQUARE_SHOW_ORDER" ? "Show Order" : source == "WOOCOMMERCE" ? "Website" : source.Replace('_', ' ');
+    private static string StatusLabel(string status) => status switch { "READY_TO_FULFILL" => "Ready to Fulfill", "PACKING" => "Packing", "READY_TO_SHIP" => "Ready to Ship", _ => status.Replace('_', ' ') };
+    private static string StatusBadge(string status) => status switch { "READY_TO_SHIP" => "text-bg-success", "PACKING" => "text-bg-warning", _ => "text-bg-primary" };
+    private static string CityStateZip(FulfillmentOrderView x) => string.Join(", ", new[] { x.ShipCity, string.Join(" ", new[] { x.ShipState, x.ShipPostalCode }.Where(v => !string.IsNullOrWhiteSpace(v))) }.Where(v => !string.IsNullOrWhiteSpace(v)));
+    private static List<string> Selections(FulfillmentOrderLineEntity x)
+    {
+        if (string.IsNullOrWhiteSpace(x.SelectionJson)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(x.SelectionJson) ?? []; }
+        catch { return []; }
+    }
+
+    private sealed class FulfillmentOrderView
+    {
+        public string SourceChannel { get; init; } = "";
+        public string SourceOrderId { get; init; } = "";
+        public string? OrderNumber { get; init; }
+        public string Status { get; init; } = "";
+        public DateTimeOffset Created { get; init; }
+        public DateTimeOffset? ShippedAt { get; init; }
+        public string? CustomerName { get; init; }
+        public string? CustomerEmail { get; init; }
+        public string? CustomerPhone { get; init; }
+        public string? ShipToName { get; init; }
+        public string? ShipAddress1 { get; init; }
+        public string? ShipAddress2 { get; init; }
+        public string? ShipCity { get; init; }
+        public string? ShipState { get; init; }
+        public string? ShipPostalCode { get; init; }
+        public string? Carrier { get; init; }
+        public string? TrackingNumber { get; init; }
+        public string? TrackingInput { get; set; }
+        public string? CarrierInput { get; set; }
+        public List<FulfillmentOrderLineEntity> Lines { get; init; } = [];
+
+        public static FulfillmentOrderView From(List<FulfillmentOrderLineEntity> lines)
+        {
+            var first = lines[0];
+            var status = lines.Select(x => x.FulfillmentStatus).FirstOrDefault(x => x == "READY_TO_SHIP")
+                ?? lines.Select(x => x.FulfillmentStatus).FirstOrDefault(x => x == "PACKING")
+                ?? lines.Select(x => x.FulfillmentStatus).FirstOrDefault(x => x == "READY_TO_FULFILL")
+                ?? lines[0].FulfillmentStatus;
+            return new FulfillmentOrderView
+            {
+                SourceChannel = first.SourceChannel, SourceOrderId = first.SourceOrderId, OrderNumber = first.SourceOrderNumber,
+                Status = status, Created = lines.Min(x => x.OrderCreatedAt), ShippedAt = lines.Max(x => x.ShippedAt),
+                CustomerName = first.CustomerName, CustomerEmail = first.CustomerEmail, CustomerPhone = first.CustomerPhone,
+                ShipToName = first.ShipToName, ShipAddress1 = first.ShipAddress1, ShipAddress2 = first.ShipAddress2,
+                ShipCity = first.ShipCity, ShipState = first.ShipState, ShipPostalCode = first.ShipPostalCode,
+                Carrier = first.Carrier, TrackingNumber = first.TrackingNumber, Lines = lines
+            };
+        }
+    }
+}

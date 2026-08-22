@@ -1,0 +1,17 @@
+Ancient Innovations Control App v10 Pass 9.4
+Vendor Operations + Intelligent Intake
+
+Built from Pass 9.3 without resetting existing data.
+
+Adds:
+- Vendor Shows portal on the existing Show Schedule concept
+- Vendor-tracked sales vs system/Square sales reconciliation
+- Mileage, commission rate, earned/paid commission, vendor show notes
+- Vendor year-end summary foundation
+- Show Email & Document Intake queue and show/year matching foundation
+- Shared financial-reference schema designed to hand expenses to the future Tax Arm (no duplicate Show accounting system)
+- Document vault schema for contracts, packets, maps, receipts and historical records
+- Smarter candidate discovery filtering to reject generic directories/social list pages before they become candidates
+- Existing maps, historical intelligence and frozen forecasts remain preserved
+
+Important: a dedicated inbound mailbox/address is not fabricated in this pass. The intake schema/UI is ready; mailbox credentials/provider connection must be configured before true forwarding can be enabled.

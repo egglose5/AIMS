@@ -1,0 +1,13 @@
+Ancient Innovations Control App v10 Pass 8.2
+Customer-order routing repair + production cleanup
+
+- Production now self-hydrates pending Square Show Orders into the shared fulfillment backbone.
+  The user no longer has to open Show Orders first for customer production work to appear.
+- Repairs unshipped Show Orders left in prototype/intermediate statuses when no real inventory
+  reservation exists, returning them to Customer Order Production safely.
+- Existing orders already handed off by a real ORDER_RESERVATION are preserved and are not
+  pushed backward.
+- Square shipping/service lines (including USPS Shipping) are excluded from production needs.
+- The Needs Made metric now includes physical pieces needed for customer-order production as
+  well as inventory-replacement pieces.
+- No database wipe. No schema changes. Existing fulfillment and inventory records are preserved.

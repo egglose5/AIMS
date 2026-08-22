@@ -1,0 +1,374 @@
+@page "/show-orders"
+@rendermode InteractiveServer
+@using System.Text.Json
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+@inject ISquareApiService SquareApiService
+
+<PageTitle>Show Orders</PageTitle>
+
+<div class="sales-hero">
+    <p class="sales-eyebrow">Fulfillment</p>
+    <h1 class="sales-title">Show Orders</h1>
+    <p class="sales-subtitle">Custom orders taken in Square. These stay separate from normal replacement-stock production.</p>
+</div>
+
+@if (_loading)
+{
+    <div class="sales-card">Loading show orders...</div>
+}
+else if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_orders.Count == 0)
+{
+    <div class="sales-card">No Show Orders are synced yet.</div>
+}
+else
+{
+    <div class="sales-employee-grid">
+        @foreach (var order in _orders)
+        {
+            <section class="sales-card employee-sales-card">
+                <div class="sales-sheet-header">
+                    <div>
+                        <p class="sales-eyebrow mb-1">@order.CreatedAt.LocalDateTime.ToString("MMM d, yyyy · h:mm tt")</p>
+                        <h2>@order.Product</h2>
+                        <div class="text-body-secondary">Qty @order.Quantity · Sold by @order.Seller</div>
+                    </div>
+                    <span class="badge text-bg-primary">@StatusLabel(order.Status)</span>
+                </div>
+
+                <div class="mt-3">
+                    <strong>Customer</strong>
+                    @if (order.Customer is not null)
+                    {
+                        <div>@CustomerName(order.Customer)</div>
+                        @if (order.Customer.Address is not null)
+                        {
+                            @if (!string.IsNullOrWhiteSpace(order.Customer.Address.AddressLine1)) { <div>@order.Customer.Address.AddressLine1</div> }
+                            @if (!string.IsNullOrWhiteSpace(order.Customer.Address.AddressLine2)) { <div>@order.Customer.Address.AddressLine2</div> }
+                            <div>@CityStateZip(order.Customer.Address)</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(order.Customer.PhoneNumber)) { <div>@order.Customer.PhoneNumber</div> }
+                        @if (!string.IsNullOrWhiteSpace(order.Customer.EmailAddress)) { <div>@order.Customer.EmailAddress</div> }
+                    }
+                    else if (!string.IsNullOrWhiteSpace(order.CustomerError))
+                    {
+                        <div class="text-body-secondary">Customer attached, but details could not be loaded: @order.CustomerError</div>
+                    }
+                    else
+                    {
+                        <div>No Square customer attached</div>
+                    }
+                </div>
+
+                @if (order.Modifiers.Count > 0)
+                {
+                    <div class="mt-3">
+                        <strong>Selections</strong>
+                        <div>@string.Join(" · ", order.Modifiers)</div>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(order.Note))
+                {
+                    <div class="mt-3">
+                        <strong>Artwork / Note</strong>
+                        <div>@order.Note</div>
+                    </div>
+                }
+
+                <div class="settings-actions mt-4">
+                    @foreach (var status in Statuses)
+                    {
+                        <button class="btn @(order.Status == status.Code ? "btn-primary" : "btn-outline-secondary")"
+                                disabled="@(order.Status == status.Code)"
+                                @onclick="() => SetStatusAsync(order, status.Code)">@status.Label</button>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private string? _error;
+    private List<ShowOrderRow> _orders = [];
+    private static readonly (string Code, string Label)[] Statuses =
+    [
+        ("NEEDS_PRODUCTION", "Needs Production"),
+        ("READY_TO_SHIP", "Ready to Ship"),
+        ("SHIPPED", "Shipped"),
+        ("COMPLETE", "Complete")
+    ];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var lines = await DbContext.SquareSaleLineItems.AsNoTracking()
+                .Where(x => x.LineItemName != null && x.LineItemName.StartsWith("Show Order -"))
+                .OrderByDescending(x => x.SaleCreatedAt)
+                .ToListAsync();
+            var orderIds = lines.Select(x => x.SquareOrderId).Distinct().ToList();
+            var sales = await DbContext.SquareSales.AsNoTracking()
+                .Where(x => x.OrderId != null && orderIds.Contains(x.OrderId))
+                .ToListAsync();
+            var states = await DbContext.ShowOrderFulfillments.AsNoTracking()
+                .Where(x => orderIds.Contains(x.SquareOrderId))
+                .ToListAsync();
+
+            _orders = lines.Select(line =>
+            {
+                var sale = sales.Where(x => x.OrderId == line.SquareOrderId).OrderByDescending(x => x.CreatedAt).FirstOrDefault();
+                var state = states.FirstOrDefault(x => x.SquareOrderId == line.SquareOrderId && x.LineItemUid == line.LineItemUid);
+                return new ShowOrderRow(
+                    line.SquareOrderId, line.LineItemUid,
+                    (line.LineItemName ?? "Show Order").Replace("Show Order -", "", StringComparison.OrdinalIgnoreCase).Trim(),
+                    Math.Max(1, (int)Math.Round(line.Quantity)), line.SaleCreatedAt,
+                    sale?.TeamMemberName ?? "Unknown", sale?.CustomerId,
+                    line.Note, ParseModifiers(line.ModifiersJson), state?.Status ?? "NEEDS_PRODUCTION");
+            }).ToList();
+
+            foreach (var order in _orders.Where(x => !string.IsNullOrWhiteSpace(x.CustomerId)))
+            {
+                try { order.Customer = await SquareApiService.GetCustomerAsync(order.CustomerId!); }
+                catch (Exception ex) { order.CustomerError = ex.Message; }
+            }
+
+            // Pass 5: hydrate the shared fulfillment backbone from the working Show Order view.
+            // This is idempotent and keeps Show Orders as the detailed source view while Fulfillment
+            // becomes the shared operational queue.
+            foreach (var order in _orders)
+            {
+                await UpsertSharedFulfillmentAsync(order);
+            }
+            await DbContext.SaveChangesAsync();
+
+            // Pass 8: route stockable Show Orders automatically. If the exact finished unit
+            // already exists on the shelf, reserve it and release the order to Fulfillment.
+            // Otherwise the order stays in customer-order production until one completion scan.
+            foreach (var order in _orders)
+            {
+                await TryRouteFromExistingInventoryAsync(order);
+            }
+            await DbContext.SaveChangesAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task SetStatusAsync(ShowOrderRow order, string status)
+    {
+        var entity = await DbContext.ShowOrderFulfillments.FindAsync(order.SquareOrderId, order.LineItemUid);
+        if (entity is null)
+        {
+            entity = new ShowOrderFulfillmentEntity { SquareOrderId = order.SquareOrderId, LineItemUid = order.LineItemUid };
+            DbContext.ShowOrderFulfillments.Add(entity);
+        }
+        entity.Status = status;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+
+        var shared = await DbContext.FulfillmentOrderLines.FirstOrDefaultAsync(x =>
+            x.SourceChannel == "SQUARE_SHOW_ORDER" &&
+            x.SourceOrderId == order.SquareOrderId &&
+            x.SourceLineItemId == order.LineItemUid);
+        if (shared is null)
+        {
+            shared = CreateSharedFulfillment(order);
+            DbContext.FulfillmentOrderLines.Add(shared);
+        }
+        FulfillmentWorkflowRules.ApplyLegacyStatus(shared, status);
+        shared.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await DbContext.SaveChangesAsync();
+        order.Status = status;
+    }
+
+    private async Task UpsertSharedFulfillmentAsync(ShowOrderRow order)
+    {
+        var shared = await DbContext.FulfillmentOrderLines.FirstOrDefaultAsync(x =>
+            x.SourceChannel == "SQUARE_SHOW_ORDER" &&
+            x.SourceOrderId == order.SquareOrderId &&
+            x.SourceLineItemId == order.LineItemUid);
+
+        if (shared is null)
+        {
+            shared = CreateSharedFulfillment(order);
+            DbContext.FulfillmentOrderLines.Add(shared);
+        }
+
+        shared.SourceCustomerId = order.CustomerId;
+        shared.CustomerName = order.Customer is null ? null : CustomerName(order.Customer);
+        shared.CustomerEmail = order.Customer?.EmailAddress;
+        shared.CustomerPhone = order.Customer?.PhoneNumber;
+        shared.ShipToName = shared.CustomerName;
+        shared.ShipAddress1 = order.Customer?.Address?.AddressLine1;
+        shared.ShipAddress2 = order.Customer?.Address?.AddressLine2;
+        shared.ShipCity = order.Customer?.Address?.Locality;
+        shared.ShipState = order.Customer?.Address?.State;
+        shared.ShipPostalCode = order.Customer?.Address?.PostalCode;
+        shared.ShipCountry = order.Customer?.Address?.Country;
+        shared.ProductName = order.Product;
+        shared.Quantity = order.Quantity;
+        shared.OrderNotes = order.Note;
+        shared.SelectionJson = JsonSerializer.Serialize(order.Modifiers);
+        shared.OrderCreatedAt = order.CreatedAt;
+        // Pass 6: legacy Show Orders may hydrate details, but must not push an older coarse
+        // status backward over the richer shared fulfillment workflow every time this page opens.
+        if (shared.CreatedAt == shared.UpdatedAt ||
+            (shared.ProductionStatus == "UNASSESSED" && shared.FulfillmentStatus == "OPEN"))
+        {
+            FulfillmentWorkflowRules.ApplyLegacyStatus(shared, order.Status);
+        }
+        shared.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    private static FulfillmentOrderLineEntity CreateSharedFulfillment(ShowOrderRow order) => new()
+    {
+        SourceChannel = "SQUARE_SHOW_ORDER",
+        SourceOrderId = order.SquareOrderId,
+        SourceLineItemId = order.LineItemUid,
+        ProductName = order.Product,
+        Quantity = order.Quantity,
+        OrderCreatedAt = order.CreatedAt,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow
+    };
+
+    private async Task TryRouteFromExistingInventoryAsync(ShowOrderRow order)
+    {
+        var shared = await DbContext.FulfillmentOrderLines.FirstOrDefaultAsync(x =>
+            x.SourceChannel == "SQUARE_SHOW_ORDER" &&
+            x.SourceOrderId == order.SquareOrderId &&
+            x.SourceLineItemId == order.LineItemUid);
+        if (shared is null || shared.ProductionStatus != "NEEDS_PRODUCTION" ||
+            !string.IsNullOrWhiteSpace(shared.TrackingNumber)) return;
+
+        var products = await DbContext.SellableProducts
+            .Where(x => x.IsActive && x.PermanentSku != null)
+            .ToListAsync();
+        var matches = products.Where(x => ShowOrderMatchesProduct(shared, x)).ToList();
+        if (matches.Count != 1) return; // Never guess which physical SKU belongs to a customer.
+
+        var product = matches[0];
+        var available = await GetAvailableShelfQuantityAsync(product);
+        if (available < shared.Quantity) return;
+
+        var reservationKey = $"SHOW_ORDER:{shared.SourceOrderId}:{shared.SourceLineItemId}";
+        var alreadyReserved = await DbContext.InventoryTransactions.AnyAsync(x =>
+            x.TransactionType == "ORDER_RESERVATION" && x.Notes == reservationKey);
+        if (!alreadyReserved)
+        {
+            DbContext.InventoryTransactions.Add(new InventoryTransactionEntity
+            {
+                SellableProductId = product.Id,
+                PermanentSku = product.PermanentSku!,
+                LocationCode = "FINISHED_SHELF",
+                TransactionType = "ORDER_RESERVATION",
+                QuantityDelta = -decimal.ToInt32(shared.Quantity),
+                Notes = reservationKey
+            });
+        }
+
+        shared.Sku = product.PermanentSku;
+        FulfillmentWorkflowRules.MarkReadyToFulfill(shared);
+        shared.UpdatedAt = DateTimeOffset.UtcNow;
+
+        var legacy = await DbContext.ShowOrderFulfillments.FindAsync(shared.SourceOrderId, shared.SourceLineItemId);
+        if (legacy is not null)
+        {
+            legacy.Status = "READY_TO_SHIP";
+            legacy.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private async Task<int> GetAvailableShelfQuantityAsync(SellableProductEntity product)
+    {
+        var initial = await DbContext.InventoryTransactions
+            .Where(x => x.SellableProductId == product.Id && x.LocationCode == "FINISHED_SHELF" && x.TransactionType == "INITIAL_COUNT")
+            .OrderBy(x => x.CreatedAt).Select(x => (DateTimeOffset?)x.CreatedAt).FirstOrDefaultAsync();
+        if (!initial.HasValue) return 0;
+
+        var inventory = await DbContext.InventoryTransactions
+            .Where(x => x.SellableProductId == product.Id && x.LocationCode == "FINISHED_SHELF" && x.CreatedAt >= initial.Value)
+            .SumAsync(x => x.QuantityDelta);
+
+        var sold = 0;
+        if (!string.IsNullOrWhiteSpace(product.SquareCatalogVariationId))
+        {
+            var soldDecimal = await DbContext.SquareSaleLineItems
+                .Where(x => x.CatalogObjectId == product.SquareCatalogVariationId && x.SaleCreatedAt >= initial.Value &&
+                            (x.LineItemName == null || !x.LineItemName.StartsWith("Show Order -")))
+                .SumAsync(x => x.Quantity);
+            sold = Math.Max(0, (int)Math.Round(soldDecimal, MidpointRounding.AwayFromZero));
+        }
+        return Math.Max(0, inventory - sold);
+    }
+
+    private static bool ShowOrderMatchesProduct(FulfillmentOrderLineEntity order, SellableProductEntity product)
+    {
+        var selections = ParseSelectionValues(order.SelectionJson);
+        var haystack = (string.Join(" | ", selections) + " | " + (order.OrderNotes ?? "") + " | " + order.ProductName).ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(product.ArtworkName) && !haystack.Contains(product.ArtworkName.Trim().ToLowerInvariant())) return false;
+        var leather = product.LeatherCode?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(leather))
+        {
+            var leatherLabel = leather switch { "blk" or "black" => "black", "brn" or "brown" => "brown", _ => leather };
+            if (!haystack.Contains(leatherLabel)) return false;
+        }
+        return true;
+    }
+
+    private static List<string> ParseSelectionValues(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; } catch { return []; }
+    }
+
+    private static List<string> ParseModifiers(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.EnumerateArray()
+                .Select(x => x.TryGetProperty("name", out var name) ? name.GetString() : null)
+                .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToList();
+        }
+        catch { return []; }
+    }
+
+    private static string StatusLabel(string code) => Statuses.FirstOrDefault(x => x.Code == code).Label ?? code;
+    private static string CustomerName(SquareCustomer c)
+    {
+        var person = string.Join(" ", new[] { c.GivenName, c.FamilyName }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        return !string.IsNullOrWhiteSpace(person) ? person : !string.IsNullOrWhiteSpace(c.CompanyName) ? c.CompanyName! : "Square Customer";
+    }
+
+    private static string CityStateZip(SquareCustomerAddress a) =>
+        string.Join(", ", new[] { a.Locality, string.Join(" ", new[] { a.State, a.PostalCode }.Where(x => !string.IsNullOrWhiteSpace(x))) }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private sealed class ShowOrderRow(string squareOrderId, string lineItemUid, string product, int quantity, DateTimeOffset createdAt, string seller, string? customerId, string? note, List<string> modifiers, string status)
+    {
+        public string SquareOrderId { get; } = squareOrderId;
+        public string LineItemUid { get; } = lineItemUid;
+        public string Product { get; } = product;
+        public int Quantity { get; } = quantity;
+        public DateTimeOffset CreatedAt { get; } = createdAt;
+        public string Seller { get; } = seller;
+        public string? CustomerId { get; } = customerId;
+        public SquareCustomer? Customer { get; set; }
+        public string? CustomerError { get; set; }
+        public string? Note { get; } = note;
+        public List<string> Modifiers { get; } = modifiers;
+        public string Status { get; set; } = status;
+    }
+}

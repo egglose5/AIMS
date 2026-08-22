@@ -1,0 +1,7 @@
+Mustaine-AI v9.4 — Barcode Readiness
+
+- Production ignores historical Square line items that have no identifiable product name.
+- Those sales remain untouched in Square Sales / financial history.
+- Named catalog products continue to feed What Needs Made.
+- Finished-product barcode scan remains one action: scan + scanner Enter adds +1 finished inventory.
+- Production still reads local PostgreSQL sales only; it does not re-sync Square on page load.

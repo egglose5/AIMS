@@ -1,0 +1,5 @@
+V10 Pass 3 - Square Customer Details
+- Added read-only Square Customers API lookup using the CustomerId already captured on Square sales.
+- Show Orders now displays customer name, shipping address, phone, and email when present in Square.
+- Customer lookup failures are isolated to the customer block and do not prevent the Show Orders page from loading.
+- No database schema changes are required for this pass.

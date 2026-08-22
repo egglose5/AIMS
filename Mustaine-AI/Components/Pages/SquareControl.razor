@@ -1,0 +1,131 @@
+@page "/square-control"
+@rendermode InteractiveServer
+@inject ISquareApiService SquareApiService
+
+<PageTitle>Square Control</PageTitle>
+
+<div class="settings-hero">
+    <p class="settings-eyebrow">Integrations</p>
+    <h1 class="settings-title">Square Control</h1>
+    <p class="settings-subtitle">
+        Administrative controls for destructive Square operations.
+    </p>
+</div>
+
+<section class="settings-card">
+    <h2>Clear Square Catalog</h2>
+
+    <div class="settings-status settings-status-error">
+        <strong>Danger Zone</strong>
+        <div>
+            This permanently deletes all catalog objects in your connected Square environment.
+            Use this only when you intentionally want to rebuild your catalog from scratch.
+        </div>
+        <div class="mt-2">Current environment: @_environmentLabel</div>
+    </div>
+
+    <div class="mb-3 mt-3">
+        <label class="form-label" for="confirm-catalog-clear">
+            Type <strong>@ConfirmPhrase</strong> to confirm
+        </label>
+        <InputText id="confirm-catalog-clear" class="form-control" @bind-Value="_confirmText" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="confirm-environment-name">
+            Type environment name <strong>@_environmentLabel</strong>
+        </label>
+        <InputText id="confirm-environment-name" class="form-control" @bind-Value="_environmentConfirmText" />
+    </div>
+
+    <div class="form-check mb-3">
+        <input id="confirm-permanent-action" class="form-check-input" type="checkbox" @bind="_acknowledgePermanent" />
+        <label class="form-check-label" for="confirm-permanent-action">
+            I understand this permanently deletes all Square catalog objects.
+        </label>
+    </div>
+
+    <div class="settings-actions">
+        <button class="btn btn-danger" type="button" @onclick="ClearCatalogAsync" disabled="@(!CanClearCatalog)">
+            @(_isClearing ? "Clearing..." : "Clear Catalog")
+        </button>
+    </div>
+
+    @if (_result is not null)
+    {
+        <div class="settings-status mt-3 @(_result.IsSuccessful ? "settings-status-success" : "settings-status-error")">
+            <strong>@(_result.IsSuccessful ? "Catalog cleared" : "Catalog clear failed")</strong>
+            <div>@_result.Message</div>
+            @if (_result.IsSuccessful)
+            {
+                <div class="mt-2">
+                    Deleted objects: @_result.DeletedObjectCount
+                    <span class="ms-2">Batch requests: @_result.BatchRequestsExecuted</span>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private const string ConfirmPhrase = "CLEAR CATALOG";
+
+    private bool _isClearing;
+    private string _confirmText = string.Empty;
+    private string _environmentConfirmText = string.Empty;
+    private bool _acknowledgePermanent;
+    private string _environmentLabel = "Unknown";
+    private SquareCatalogClearResult? _result;
+
+    private bool CanClearCatalog =>
+        !_isClearing
+        && _acknowledgePermanent
+        && string.Equals(_confirmText?.Trim(), ConfirmPhrase, StringComparison.Ordinal)
+        && string.Equals(_environmentConfirmText?.Trim(), _environmentLabel.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await SquareApiService.GetConnectionSettingsAsync();
+            _environmentLabel = string.IsNullOrWhiteSpace(settings.Environment)
+                ? "Unknown"
+                : settings.Environment;
+        }
+        catch
+        {
+            _environmentLabel = "Unknown";
+        }
+    }
+
+    private async Task ClearCatalogAsync()
+    {
+        if (!CanClearCatalog)
+        {
+            return;
+        }
+
+        _isClearing = true;
+        _result = null;
+
+        try
+        {
+            _result = await SquareApiService.ClearCatalogAsync();
+
+            if (_result.IsSuccessful)
+            {
+                _confirmText = string.Empty;
+                _environmentConfirmText = string.Empty;
+                _acknowledgePermanent = false;
+            }
+        }
+        catch (Exception exception)
+        {
+            _result = new SquareCatalogClearResult(false, exception.Message, 0, 0);
+        }
+        finally
+        {
+            _isClearing = false;
+        }
+    }
+}

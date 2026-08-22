@@ -1,0 +1,855 @@
+@page "/initial-inventory"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+@inject IPermanentSkuService SkuService
+@inject IArtworkVisualService ArtworkVisuals
+@inject ISquareApiService SquareApiService
+@inject NavigationManager Navigation
+
+<PageTitle>Inventory</PageTitle>
+
+<div class="container py-4">
+    <h1>Inventory + Barcodes</h1>
+    <p class="text-body-secondary">Square is the catalog source of truth. Square items stay visible here permanently; color/variation choices are grouped under one inventory card.</p>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="alert @(_error ? "alert-danger" : "alert-success")">@_message</div>
+    }
+
+    <div class="inventory-progress-card mb-4">
+        <div>
+            <div class="inventory-progress-label">Barcode progress</div>
+            <div class="inventory-progress-value">@InitializedChoiceCount of @TotalChoiceCount Square stock choices initialized</div>
+        </div>
+        <div class="inventory-progress-track" aria-label="Barcode progress">
+            <div class="inventory-progress-fill" style="width:@ProgressPercent%"></div>
+        </div>
+    </div>
+
+    <div class="card p-3 mb-4">
+        @if (!_loading && _groups.Count > 0)
+        {
+            <div class="mb-3">
+                <label class="form-label fw-semibold d-block">Category</label>
+                <div class="d-flex flex-wrap gap-2 inventory-category-buttons">
+                    @foreach (var category in InventoryCategories)
+                    {
+                        <button type="button"
+                                class="btn btn-sm @(CategoryButtonClass(category.Key))"
+                                @onclick="() => SetCategory(category.Key)">
+                            @category.Label <span class="badge text-bg-light ms-1">@category.Count</span>
+                        </button>
+                    }
+                </div>
+                <div class="form-text mt-2">These are the live categories assigned by Square. Mustaine-AI does not reclassify items.</div>
+            </div>
+
+            @if (ShowArtworkSubcategories)
+            {
+                <div class="mb-3">
+                    <label class="form-label fw-semibold d-block">Artwork subcategory</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach (var subcategory in ArtworkSubcategoryFilters)
+                        {
+                            <button type="button" class="btn btn-sm @(SubcategoryButtonClass(subcategory))" @onclick="() => SetSubcategory(subcategory)">@subcategory</button>
+                        }
+                    </div>
+                    <div class="form-text mt-2">Shared by the matching Notebook and Modular artwork. Classify it once.</div>
+                </div>
+            }
+        }
+
+        <div class="inventory-intake-toolbar">
+            <div class="inventory-search-wrap">
+                <label class="form-label fw-semibold">Find item</label>
+                <input class="form-control" placeholder="Search Square item, category, variation, or SKU" @bind="_search" @bind:event="oninput" />
+            </div>
+            <div>
+                <label class="form-label fw-semibold d-block">Show</label>
+                <div class="btn-group inventory-filter-buttons" role="group" aria-label="Inventory filter">
+                    <button type="button" class="btn @AllFilterClass" @onclick="SetAllFilter">All</button>
+                    <button type="button" class="btn @NotFilterClass" @onclick="SetNotFilter">Needs Barcode</button>
+                    <button type="button" class="btn @DoneFilterClass" @onclick="SetDoneFilter">Initialized</button>
+                </div>
+            </div>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="py-5 text-center text-body-secondary">Loading the current Square catalog…</div>
+        }
+        else if (_selected is not null)
+        {
+            <div class="artwork-selected mb-3 mt-3">
+                @if (!string.IsNullOrWhiteSpace(_selected.ImageUrl))
+                {
+                    <img src="@_selected.ImageUrl" alt="@_selected.Name" class="artwork-selected-image" />
+                }
+                else
+                {
+                    <div class="artwork-selected-image d-flex align-items-center justify-content-center bg-light text-secondary" style="min-width:180px;min-height:130px">No local image</div>
+                }
+                <div class="flex-grow-1">
+                    <div class="text-body-secondary small text-uppercase fw-semibold">Square inventory item</div>
+                    <div class="fs-4 fw-bold">@_selected.Name</div>
+                    <div class="text-body-secondary small">@_selected.CategoryName</div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @onclick="ClearSelection">Back to Inventory</button>
+                </div>
+            </div>
+
+            <div class="row g-3 mt-1">
+                @foreach (var input in _selectedInputs)
+                {
+                    <div class="col-md-6 col-lg-4">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-bold mb-2">@input.Choice.DisplayName</div>
+                            @if (!string.IsNullOrWhiteSpace(input.Choice.SquareSku))
+                            {
+                                <div class="small text-body-secondary mb-2">Square SKU: @input.Choice.SquareSku</div>
+                            }
+
+                            <label class="form-label">Labels to print</label>
+                            <input class="form-control" type="number" min="0" max="9999" placeholder="0" @bind="input.Quantity" />
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <button class="btn btn-primary mt-3" @onclick="RecordAndPrintAsync" disabled="@_busy">
+                @(_busy ? "Printing..." : "Print Barcodes")
+            </button>
+            <div class="form-text mt-2">
+                These numbers are only how many labels to print now. They do not change inventory after the first barcode initialization.
+            </div>
+        }
+        else
+        {
+            <div class="artwork-help mt-3 mb-2">One card per inventory item. Black/Brown or other Square choices live inside the card instead of becoming duplicate cards. Missing local artwork never hides a Square item.</div>
+            <div class="artwork-card-grid mb-3">
+                @foreach (var group in FilteredGroups)
+                {
+                    var state = GetGroupState(group);
+                    <div class="artwork-card @(state.AllInitialized ? "artwork-card-initialized" : string.Empty)">
+                        @if (state.AllInitialized)
+                        {
+                            <div class="artwork-initialized-badge">✓ Initialized</div>
+                        }
+                        else if (state.InitializedCount > 0)
+                        {
+                            <div class="artwork-initialized-badge">@state.InitializedCount/@group.Choices.Count</div>
+                        }
+
+                        <button type="button" class="artwork-card-select" @onclick="() => SelectGroup(group)">
+                            @if (!string.IsNullOrWhiteSpace(group.ImageUrl))
+                            {
+                                <img src="@group.ImageUrl" alt="@group.Name" class="artwork-card-image" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span class="artwork-card-image d-flex align-items-center justify-content-center bg-light text-secondary" style="min-height:180px">No local image</span>
+                            }
+                            <span class="artwork-card-name">@group.Name</span>
+                            <span class="small text-body-secondary px-2 pb-1">@group.CategoryName</span>
+                            @if (IsArtworkFamily(group.CategoryName))
+                            {
+                                <span class="px-2 pb-2" @onclick:stopPropagation="true">
+                                    <select class="form-select form-select-sm" value="@GetArtworkSubcategory(group)" @onchange="e => SaveArtworkSubcategoryAsync(group, e.Value?.ToString())" @onclick:stopPropagation="true">
+                                        <option value="">Unassigned</option>
+                                        @foreach (var option in ArtworkSubcategoryOptions)
+                                        {
+                                            <option value="@option">@option</option>
+                                        }
+                                    </select>
+                                </span>
+                            }
+                            @if (group.Choices.Count > 1)
+                            {
+                                <span class="small fw-semibold px-2 pb-2">@string.Join(" · ", group.Choices.Select(x => x.DisplayName))</span>
+                            }
+                        </button>
+
+                        <div class="px-2 pb-2">
+                            @if (IsHeld(group))
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-success w-100"
+                                        @onclick="() => RestoreFromHoldAsync(group)">
+                                    Restore from Hold
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-secondary w-100"
+                                        @onclick="() => MoveToHoldAsync(group)">
+                                    Move to Hold
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+            @if (!FilteredGroups.Any() && !_loading)
+            {
+                <div class="alert alert-warning">No Square catalog items matched that category/search/filter.</div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private readonly List<InventoryGroup> _groups = [];
+    private readonly List<ArtworkVisual> _visuals = [];
+    private List<InitializedRow> _initialized = [];
+    private InventoryGroup? _selected;
+    private readonly List<ChoiceInput> _selectedInputs = [];
+    private string _search = string.Empty;
+    private string _filter = "all";
+    private string _category = "ALL";
+    private string _subcategory = "All";
+    private readonly Dictionary<string, string> _artworkSubcategories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _heldInventoryKeys = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly string[] ArtworkSubcategoryOptions = ["IP", "Animals", "Birds & Insects", "Dragons", "Fantasy", "Nature", "Faith & Inspiration"];
+    private bool _busy;
+    private bool _loading = true;
+    private bool _error;
+    private string? _message;
+
+    private int TotalChoiceCount => _groups.Sum(x => x.Choices.Count);
+    private int InitializedChoiceCount => _groups.Sum(x => x.Choices.Count(choice => GetState(choice).IsInitialized));
+    private int ProgressPercent => TotalChoiceCount == 0 ? 0 : (int)Math.Round(InitializedChoiceCount * 100d / TotalChoiceCount);
+
+    private IReadOnlyList<CategoryFilter> InventoryCategories
+    {
+        get
+        {
+            var activeGroups = _groups.Where(x => !IsHeld(x)).ToList();
+            var categories = activeGroups
+                .GroupBy(x => x.CategoryName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new CategoryFilter(g.Key, g.Key, g.Count()))
+                .OrderBy(x => string.Equals(x.Label, "Uncategorized", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                .ThenBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            categories.Insert(0, new CategoryFilter("ALL", "All", activeGroups.Count));
+            categories.Add(new CategoryFilter("HOLD", "Hold", _groups.Count(IsHeld)));
+            return categories;
+        }
+    }
+
+    private IReadOnlyList<InventoryGroup> FilteredGroups => _groups
+        .Where(x => _category == "HOLD"
+            ? IsHeld(x)
+            : !IsHeld(x) && (!string.IsNullOrWhiteSpace(_search) || _category == "ALL" || string.Equals(x.CategoryName, _category, StringComparison.OrdinalIgnoreCase)))
+        .Where(x => !ShowArtworkSubcategories || _subcategory == "All" || (_subcategory == "Unassigned" ? string.IsNullOrWhiteSpace(GetArtworkSubcategory(x)) : string.Equals(GetArtworkSubcategory(x), _subcategory, StringComparison.OrdinalIgnoreCase)))
+        .Where(x => string.IsNullOrWhiteSpace(_search) ||
+                    x.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                    x.CategoryName.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                    x.Choices.Any(choice => choice.DisplayName.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                                            (choice.SquareSku?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)))
+        .Where(x => _filter switch
+        {
+            "done" => GetGroupState(x).AllInitialized,
+            "not" => !GetGroupState(x).AllInitialized,
+            _ => true
+        })
+        .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _visuals.AddRange(ArtworkVisuals.GetAll());
+            var savedSubcategories = await DbContext.ArtworkSubcategories.AsNoTracking().ToListAsync();
+            foreach (var saved in savedSubcategories)
+                _artworkSubcategories[saved.ArtworkKey] = saved.Subcategory;
+
+            var savedHolds = await DbContext.InventoryHolds.AsNoTracking().ToListAsync();
+            foreach (var held in savedHolds)
+                _heldInventoryKeys.Add(held.HoldKey);
+
+            var categories = await SquareApiService.GetCatalogCategoriesAsync();
+            var categoryById = categories
+                .Where(x => !string.IsNullOrWhiteSpace(x.Id))
+                .ToDictionary(x => x.Id!, x => x.Name, StringComparer.OrdinalIgnoreCase);
+            var items = await SquareApiService.GetCatalogItemsAsync();
+
+            var builders = new Dictionary<string, GroupBuilder>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in items)
+            {
+                var squareCategoryName = item.CategoryId is not null && categoryById.TryGetValue(item.CategoryId, out var category)
+                    ? category
+                    : "Uncategorized";
+
+                var itemName = item.Name?.Trim() ?? "Untitled item";
+                var categoryName = NormalizeInventoryFamily(squareCategoryName, itemName);
+                var groupName = StripTerminalColor(itemName, out var itemColor);
+                var groupKey = $"{categoryName}|{Normalize(groupName)}";
+                if (!builders.TryGetValue(groupKey, out var builder))
+                {
+                    builder = new GroupBuilder(groupName, categoryName, FindVisual(groupName)?.ImageUrl ?? FindVisual(itemName)?.ImageUrl);
+                    builders[groupKey] = builder;
+                }
+                else if (string.IsNullOrWhiteSpace(builder.ImageUrl))
+                {
+                    builder.ImageUrl = FindVisual(groupName)?.ImageUrl ?? FindVisual(itemName)?.ImageUrl;
+                }
+
+                IReadOnlyList<SquareCatalogVariation> variations = item.Variations.Count > 0
+                    ? item.Variations
+                    : new List<SquareCatalogVariation> { new(null, "Regular", null, null) };
+
+                foreach (var variation in variations)
+                {
+                    var variationName = string.IsNullOrWhiteSpace(variation.Name) ? "Regular" : variation.Name.Trim();
+                    var displayName = GetChoiceDisplayName(itemColor, variationName);
+                    builder.AddChoice(new CatalogChoice(
+                        item.Id,
+                        variation.Id,
+                        itemName,
+                        groupName,
+                        displayName,
+                        variation.Sku,
+                        categoryName,
+                        variation.PriceCents));
+                }
+            }
+
+            _groups.AddRange(builders.Values
+                .Select(x => x.Build())
+                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase));
+
+            await BackfillSquareSkusAsync();
+
+            if (_groups.Count == 0)
+            {
+                _error = true;
+                _message = "Square returned no catalog items. Inventory is intentionally not falling back to local artwork folders because Square is the source of truth.";
+            }
+
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = true;
+            _message = $"Could not load the Square catalog: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private ArtworkVisual? FindVisual(string itemName)
+    {
+        var normalized = Normalize(itemName);
+        return _visuals.FirstOrDefault(x => Normalize(x.Name) == normalized)
+            ?? _visuals.OrderByDescending(x => x.Name.Length)
+                .FirstOrDefault(x => normalized.Contains(Normalize(x.Name), StringComparison.OrdinalIgnoreCase) || Normalize(x.Name).Contains(normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void SetFilter(string filter) { _filter = filter; ClearSelection(); }
+    private void SetCategory(string category) { _category = category; _subcategory = "All"; ClearSelection(); }
+    private bool ShowArtworkSubcategories => _category != "HOLD" && IsArtworkFamily(_category);
+    private static bool IsArtworkFamily(string category) => string.Equals(category, "Never-Ending Notebooks", StringComparison.OrdinalIgnoreCase) || string.Equals(category, "Modular Books", StringComparison.OrdinalIgnoreCase);
+    private IReadOnlyList<string> ArtworkSubcategoryFilters => ["All", "Unassigned", .. ArtworkSubcategoryOptions];
+    private void SetSubcategory(string value) { _subcategory = value; ClearSelection(); }
+    private string SubcategoryButtonClass(string value) => string.Equals(_subcategory, value, StringComparison.OrdinalIgnoreCase) ? "btn-primary" : "btn-outline-secondary";
+
+    private string GetArtworkSubcategory(InventoryGroup group)
+    {
+        var key = ArtworkFamilyKey(group.Name);
+        return _artworkSubcategories.TryGetValue(key, out var value) ? value : string.Empty;
+    }
+
+    private async Task SaveArtworkSubcategoryAsync(InventoryGroup group, string? subcategory)
+    {
+        var key = ArtworkFamilyKey(group.Name);
+        var value = subcategory?.Trim() ?? string.Empty;
+        var existing = await DbContext.ArtworkSubcategories.SingleOrDefaultAsync(x => x.ArtworkKey == key);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (existing is not null) DbContext.ArtworkSubcategories.Remove(existing);
+            _artworkSubcategories.Remove(key);
+        }
+        else
+        {
+            if (!ArtworkSubcategoryOptions.Contains(value, StringComparer.OrdinalIgnoreCase)) return;
+            if (existing is null)
+            {
+                existing = new ArtworkSubcategoryEntity { ArtworkKey = key, ArtworkName = ArtworkFamilyName(group.Name), Subcategory = value };
+                DbContext.ArtworkSubcategories.Add(existing);
+            }
+            else
+            {
+                existing.ArtworkName = ArtworkFamilyName(group.Name);
+                existing.Subcategory = value;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+            _artworkSubcategories[key] = value;
+        }
+        await DbContext.SaveChangesAsync();
+        _message = string.IsNullOrWhiteSpace(value) ? $"{ArtworkFamilyName(group.Name)} is unassigned." : $"{ArtworkFamilyName(group.Name)} → {value}. Notebook and Modular now share it.";
+        _error = false;
+    }
+
+    private static string ArtworkFamilyName(string name) => System.Text.RegularExpressions.Regex.Replace(name, @"\s+Modular Book$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+    private static string ArtworkFamilyKey(string name) => Normalize(ArtworkFamilyName(name));
+    private static string HoldKey(InventoryGroup group) => $"{group.CategoryName}|{Normalize(group.Name)}";
+    private bool IsHeld(InventoryGroup group) => _heldInventoryKeys.Contains(HoldKey(group));
+
+    private async Task MoveToHoldAsync(InventoryGroup group)
+    {
+        var key = HoldKey(group);
+        if (!_heldInventoryKeys.Contains(key))
+        {
+            DbContext.InventoryHolds.Add(new InventoryHoldEntity
+            {
+                HoldKey = key,
+                ItemName = group.Name,
+                OriginalCategory = group.CategoryName,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+            await DbContext.SaveChangesAsync();
+            _heldInventoryKeys.Add(key);
+        }
+
+        if (_selected == group) ClearSelection();
+        _message = $"{group.Name} moved to Hold.";
+        _error = false;
+    }
+
+    private async Task RestoreFromHoldAsync(InventoryGroup group)
+    {
+        var key = HoldKey(group);
+        var existing = await DbContext.InventoryHolds.SingleOrDefaultAsync(x => x.HoldKey == key);
+        if (existing is not null)
+        {
+            DbContext.InventoryHolds.Remove(existing);
+            await DbContext.SaveChangesAsync();
+        }
+
+        _heldInventoryKeys.Remove(key);
+        if (_selected == group) ClearSelection();
+        _message = $"{group.Name} restored to {group.CategoryName}.";
+        _error = false;
+    }
+
+    private string CategoryButtonClass(string category) => string.Equals(_category, category, StringComparison.OrdinalIgnoreCase) ? "btn-primary" : "btn-outline-primary";
+    private string NotFilterClass => _filter == "not" ? "btn-primary" : "btn-outline-secondary";
+    private string DoneFilterClass => _filter == "done" ? "btn-primary" : "btn-outline-secondary";
+    private string AllFilterClass => _filter == "all" ? "btn-primary" : "btn-outline-secondary";
+    private void SetNotFilter() => SetFilter("not");
+    private void SetDoneFilter() => SetFilter("done");
+    private void SetAllFilter() => SetFilter("all");
+
+    private void SelectGroup(InventoryGroup group)
+    {
+        _selected = group;
+        _selectedInputs.Clear();
+
+        // Every visit is the same barcode-print station:
+        // Black [blank], Brown [blank], etc. The numbers are labels to print NOW.
+        foreach (var choice in group.Choices)
+            _selectedInputs.Add(new ChoiceInput(choice, GetState(choice)));
+
+        _message = null;
+        _error = false;
+    }
+
+    private void ClearSelection()
+    {
+        _selected = null;
+        _selectedInputs.Clear();
+    }
+
+    private InventoryState GetState(CatalogChoice choice)
+    {
+        var match = _initialized.FirstOrDefault(x => SameCatalogIdentity(choice, x));
+        if (match is null)
+        {
+            var leather = InferLeather(choice.DisplayName);
+            if (leather is not null)
+            {
+                match = _initialized.FirstOrDefault(x =>
+                    string.Equals(Normalize(x.ArtworkName), Normalize(choice.GroupName), StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(x.LeatherCode, leather, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+        return match is null ? new InventoryState(false, 0, null) : new InventoryState(true, match.Quantity, match.Sku);
+    }
+
+    private GroupState GetGroupState(InventoryGroup group)
+    {
+        var initialized = group.Choices.Count(choice => GetState(choice).IsInitialized);
+        return new GroupState(initialized, group.Choices.Count > 0 && initialized == group.Choices.Count);
+    }
+
+    private static bool SameCatalogIdentity(CatalogChoice choice, InitializedRow initialized)
+    {
+        if (!string.IsNullOrWhiteSpace(choice.VariationId))
+            return string.Equals(choice.VariationId, initialized.SquareVariationId, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(choice.ItemId, initialized.SquareItemId, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(initialized.SquareVariationId);
+    }
+
+    private async Task BackfillSquareSkusAsync()
+    {
+        var choices = _groups.SelectMany(x => x.Choices)
+            .Where(x => !string.IsNullOrWhiteSpace(x.SquareSku))
+            .ToList();
+
+        if (choices.Count == 0) return;
+
+        var products = await DbContext.SellableProducts
+            .Where(x => x.IsActive && (x.SquareCatalogItemId != null || x.SquareCatalogVariationId != null))
+            .ToListAsync();
+
+        var changed = false;
+        foreach (var product in products)
+        {
+            CatalogChoice? choice = null;
+
+            if (!string.IsNullOrWhiteSpace(product.SquareCatalogVariationId))
+                choice = choices.FirstOrDefault(x => string.Equals(x.VariationId, product.SquareCatalogVariationId, StringComparison.OrdinalIgnoreCase));
+
+            if (choice is null && !string.IsNullOrWhiteSpace(product.SquareCatalogItemId))
+                choice = choices.FirstOrDefault(x => string.Equals(x.ItemId, product.SquareCatalogItemId, StringComparison.OrdinalIgnoreCase)
+                    && string.IsNullOrWhiteSpace(x.VariationId));
+
+            if (choice is null || string.Equals(product.SquareSku, choice.SquareSku, StringComparison.Ordinal))
+                continue;
+
+            product.SquareSku = choice.SquareSku;
+            product.UpdatedAt = DateTimeOffset.UtcNow;
+            changed = true;
+        }
+
+        if (changed)
+            await DbContext.SaveChangesAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var rows = await DbContext.InventoryTransactions
+            .Where(x => x.LocationCode == "FINISHED_SHELF" && x.TransactionType == "INITIAL_COUNT")
+            .Select(x => new
+            {
+                x.SellableProductId,
+                x.PermanentSku,
+                SquareItemId = x.SellableProduct != null ? x.SellableProduct.SquareCatalogItemId : null,
+                SquareVariationId = x.SellableProduct != null ? x.SellableProduct.SquareCatalogVariationId : null,
+                ArtworkName = x.SellableProduct != null ? x.SellableProduct.ArtworkName : null,
+                LeatherCode = x.SellableProduct != null ? x.SellableProduct.LeatherCode : null,
+                x.QuantityDelta
+            })
+            .ToListAsync();
+
+        _initialized = rows
+            .GroupBy(x => new { x.SellableProductId, x.PermanentSku, x.SquareItemId, x.SquareVariationId })
+            .Select(g => new InitializedRow(
+                g.Key.PermanentSku,
+                g.Key.SquareItemId,
+                g.Key.SquareVariationId,
+                g.Select(x => x.ArtworkName).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)),
+                g.Select(x => x.LeatherCode).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)),
+                g.Sum(x => x.QuantityDelta)))
+            .ToList();
+
+        if (_selected is not null)
+            SelectGroup(_selected);
+    }
+
+    private async Task RecordAndPrintAsync()
+    {
+        _error = false;
+        _message = null;
+
+        if (_selected is null)
+        {
+            _error = true;
+            _message = "Select a Square inventory item first.";
+            return;
+        }
+
+        var entries = _selectedInputs
+            .Where(x => x.Quantity.HasValue && x.Quantity.Value > 0)
+            .ToList();
+
+        if (entries.Count == 0)
+        {
+            _error = true;
+            _message = "Enter how many Black/Brown labels you want to print.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var labels = new List<string>();
+
+            foreach (var input in entries)
+            {
+                if (string.IsNullOrWhiteSpace(input.Choice.SquareSku))
+                    throw new InvalidOperationException($"{_selected.Name} / {input.Choice.DisplayName} has no Square SKU. Add one in Square before printing its barcode.");
+
+                var product = await FindOrCreateProductAsync(input.Choice);
+                var permanentSku = await SkuService.GetOrAssignAsync(product.Id);
+                var quantityToPrint = input.Quantity!.Value;
+
+                var alreadyInitialized = await DbContext.InventoryTransactions.AnyAsync(
+                    x => x.SellableProductId == product.Id && x.TransactionType == "INITIAL_COUNT");
+
+                // FIRST print initializes starting inventory. Every later print is label-only.
+                if (!alreadyInitialized)
+                {
+                    DbContext.InventoryTransactions.Add(new InventoryTransactionEntity
+                    {
+                        SellableProductId = product.Id,
+                        PermanentSku = permanentSku,
+                        LocationCode = "FINISHED_SHELF",
+                        TransactionType = "INITIAL_COUNT",
+                        QuantityDelta = quantityToPrint,
+                        Notes = "Initial physical inventory count from first barcode print"
+                    });
+                }
+
+                labels.Add($"{input.Choice.SquareSku}:{quantityToPrint}:{SafeLabel(BuildLabelText(_selected.Name, input.Choice.DisplayName))}");
+            }
+
+            await DbContext.SaveChangesAsync();
+            await ReloadAsync();
+
+            // Blank them again so every return to the item starts clean.
+            foreach (var input in _selectedInputs)
+                input.Quantity = null;
+
+            Navigation.NavigateTo($"/initial-inventory/labels?labels={Uri.EscapeDataString(string.Join(',', labels))}");
+        }
+        catch (Exception ex)
+        {
+            _error = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task<SellableProductEntity> FindOrCreateProductAsync(CatalogChoice choice)
+    {
+        SellableProductEntity? product = null;
+        if (!string.IsNullOrWhiteSpace(choice.VariationId))
+            product = await DbContext.SellableProducts.SingleOrDefaultAsync(x => x.SquareCatalogVariationId == choice.VariationId);
+        if (product is null && !string.IsNullOrWhiteSpace(choice.ItemId) && string.IsNullOrWhiteSpace(choice.VariationId))
+            product = await DbContext.SellableProducts.SingleOrDefaultAsync(x => x.SquareCatalogItemId == choice.ItemId && x.SquareCatalogVariationId == null);
+
+        var leatherCode = InferLeather(choice.DisplayName);
+        var productType = InferProductType(choice.CategoryName, choice.GroupName, choice.DisplayName);
+
+        if (product is null && productType == "NOTEBOOK" && leatherCode is not null)
+        {
+            var candidates = await DbContext.SellableProducts
+                .Where(x => x.ProductTypeCode == "NOTEBOOK" && x.LeatherCode == leatherCode && x.ArtworkName != null)
+                .ToListAsync();
+            product = candidates.FirstOrDefault(x => string.Equals(Normalize(x.ArtworkName), Normalize(choice.GroupName), StringComparison.OrdinalIgnoreCase));
+        }
+
+        var displayProductName = IsRegularChoice(choice.DisplayName) ? choice.GroupName : $"{choice.GroupName} — {choice.DisplayName}";
+        if (product is null)
+        {
+            product = new SellableProductEntity
+            {
+                Identifier = $"SQ-{choice.VariationId ?? choice.ItemId ?? Guid.NewGuid().ToString("N")}",
+                Name = displayProductName,
+                ProductFamily = choice.CategoryName,
+                ProductionFamily = choice.CategoryName,
+                ProductTypeCode = productType,
+                ArtworkKey = productType == "NOTEBOOK" ? Normalize(choice.GroupName) : null,
+                ArtworkName = productType == "NOTEBOOK" ? choice.GroupName : null,
+                LeatherCode = leatherCode,
+                Currency = "USD",
+                SquareCategoryName = choice.CategoryName,
+                SquareCatalogItemId = choice.ItemId,
+                SquareCatalogVariationId = choice.VariationId,
+                SquareSku = choice.SquareSku,
+                PriceCents = choice.PriceCents ?? 0,
+                LifecycleStatus = "ACTIVE",
+                CreatedSource = "SQUARE_BARCODE_SETUP",
+                SquareSyncedAt = DateTimeOffset.UtcNow,
+                IsActive = true,
+                Notes = "Created from grouped Square catalog during physical inventory/barcode setup"
+            };
+            DbContext.SellableProducts.Add(product);
+        }
+        else
+        {
+            product.Name = displayProductName;
+            product.ProductFamily ??= choice.CategoryName;
+            product.ProductionFamily ??= choice.CategoryName;
+            product.ProductTypeCode = string.IsNullOrWhiteSpace(product.ProductTypeCode) ? productType : product.ProductTypeCode;
+            if (productType == "NOTEBOOK")
+            {
+                product.ArtworkKey ??= Normalize(choice.GroupName);
+                product.ArtworkName ??= choice.GroupName;
+                product.LeatherCode ??= leatherCode;
+            }
+            product.SquareCategoryName = choice.CategoryName;
+            product.SquareCatalogItemId = choice.ItemId;
+            product.SquareCatalogVariationId = choice.VariationId;
+            product.SquareSku = choice.SquareSku;
+            product.PriceCents = choice.PriceCents ?? product.PriceCents;
+            product.LifecycleStatus = string.IsNullOrWhiteSpace(product.LifecycleStatus) ? "ACTIVE" : product.LifecycleStatus;
+            product.CreatedSource = string.IsNullOrWhiteSpace(product.CreatedSource) ? "SQUARE_BARCODE_SETUP" : product.CreatedSource;
+            product.IsActive = true;
+            product.SquareSyncedAt = DateTimeOffset.UtcNow;
+            product.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await DbContext.SaveChangesAsync();
+        return product;
+    }
+
+    private void ReprintOne(string sku, string label)
+    {
+        var spec = $"{sku}:1:{SafeLabel(label)}";
+        Navigation.NavigateTo($"/initial-inventory/labels?labels={Uri.EscapeDataString(spec)}");
+    }
+
+    private static string StripTerminalColor(string value, out string? color)
+    {
+        color = null;
+        var match = System.Text.RegularExpressions.Regex.Match(value.Trim(), @"^(.*?)(?:\s*[-—–]\s*)(Black|Brown)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!match.Success) return value.Trim();
+        color = NormalizeColor(match.Groups[2].Value);
+        return match.Groups[1].Value.Trim();
+    }
+
+    private static string GetChoiceDisplayName(string? itemColor, string variationName)
+    {
+        if (!string.IsNullOrWhiteSpace(itemColor)) return itemColor;
+        if (variationName.Contains("black", StringComparison.OrdinalIgnoreCase)) return "Black";
+        if (variationName.Contains("brown", StringComparison.OrdinalIgnoreCase)) return "Brown";
+        return string.IsNullOrWhiteSpace(variationName) ? "Regular" : variationName;
+    }
+
+    private static string NormalizeInventoryFamily(string squareCategory, string itemName)
+    {
+        // Square is the inventory category source of truth.
+        // Do not infer or force a family from the item name.
+        // Black/Brown grouping happens separately and does not change category.
+        return string.IsNullOrWhiteSpace(squareCategory)
+            ? "Uncategorized"
+            : squareCategory.Trim();
+    }
+
+    private static string NormalizeColor(string value) => value.Equals("black", StringComparison.OrdinalIgnoreCase) ? "Black" : "Brown";
+    private static bool IsRegularChoice(string? value) => string.IsNullOrWhiteSpace(value) || string.Equals(value, "Regular", StringComparison.OrdinalIgnoreCase);
+
+    private static string InferProductType(string category, string name, string variation) =>
+        category.Contains("notebook", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("notebook", StringComparison.OrdinalIgnoreCase)
+            ? "NOTEBOOK"
+            : "SQUARE_ITEM";
+
+    private static string? InferLeather(string variation)
+    {
+        if (variation.Contains("black", StringComparison.OrdinalIgnoreCase)) return "BK";
+        if (variation.Contains("brown", StringComparison.OrdinalIgnoreCase)) return "BR";
+        return null;
+    }
+
+    private static string BuildLabelText(string item, string? variation)
+    {
+        var color = variation?.Contains("black", StringComparison.OrdinalIgnoreCase) == true
+            ? "BLK"
+            : variation?.Contains("brown", StringComparison.OrdinalIgnoreCase) == true
+                ? "BR"
+                : null;
+
+        var cleanItem = item.Trim();
+
+        if (color is null)
+            return cleanItem.Length <= 24 ? cleanItem : cleanItem[..24];
+
+        // Put leather color first so stitchers can read it instantly and truncation never removes it.
+        var availableNameLength = color == "BLK" ? 18 : 19;
+        var shortName = cleanItem.Length <= availableNameLength
+            ? cleanItem
+            : cleanItem[..availableNameLength];
+
+        return $"{color} · {shortName}";
+    }
+
+    private static string SafeLabel(string value) => value.Replace(":", "-").Replace(",", " ");
+
+    private static string Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var text = value.Trim().Replace("—", "-").Replace("–", "-").Replace("’", "'");
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
+        return text.ToUpperInvariant();
+    }
+
+    private sealed record InventoryGroup(string Name, string CategoryName, string? ImageUrl, IReadOnlyList<CatalogChoice> Choices);
+    private sealed record CatalogChoice(string? ItemId, string? VariationId, string ItemName, string GroupName, string DisplayName, string? SquareSku, string CategoryName, long? PriceCents);
+    private sealed record InitializedRow(string Sku, string? SquareItemId, string? SquareVariationId, string? ArtworkName, string? LeatherCode, int Quantity);
+    private sealed record InventoryState(bool IsInitialized, int Quantity, string? Sku);
+    private sealed record GroupState(int InitializedCount, bool AllInitialized);
+    private sealed record CategoryFilter(string Key, string Label, int Count);
+
+    private sealed class ChoiceInput
+    {
+        public ChoiceInput(CatalogChoice choice, InventoryState state)
+        {
+            Choice = choice;
+            State = state;
+            Quantity = null;
+        }
+        public CatalogChoice Choice { get; }
+        public InventoryState State { get; }
+        public int? Quantity { get; set; }
+    }
+
+    private sealed class GroupBuilder
+    {
+        private readonly List<CatalogChoice> _choices = [];
+        public GroupBuilder(string name, string categoryName, string? imageUrl)
+        {
+            Name = name;
+            CategoryName = categoryName;
+            ImageUrl = imageUrl;
+        }
+        public string Name { get; }
+        public string CategoryName { get; }
+        public string? ImageUrl { get; set; }
+
+        public void AddChoice(CatalogChoice choice)
+        {
+            if (_choices.Any(x => (!string.IsNullOrWhiteSpace(choice.VariationId) && string.Equals(x.VariationId, choice.VariationId, StringComparison.OrdinalIgnoreCase)) ||
+                                  (string.IsNullOrWhiteSpace(choice.VariationId) && string.Equals(x.ItemId, choice.ItemId, StringComparison.OrdinalIgnoreCase))))
+                return;
+            _choices.Add(choice);
+        }
+
+        public InventoryGroup Build()
+        {
+            var choices = _choices
+                .OrderBy(x => ChoiceSort(x.DisplayName))
+                .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return new InventoryGroup(Name, CategoryName, ImageUrl, choices);
+        }
+
+        private static int ChoiceSort(string value)
+        {
+            if (value.Equals("Black", StringComparison.OrdinalIgnoreCase)) return 0;
+            if (value.Equals("Brown", StringComparison.OrdinalIgnoreCase)) return 1;
+            if (value.Equals("Regular", StringComparison.OrdinalIgnoreCase)) return 2;
+            return 3;
+        }
+    }
+}

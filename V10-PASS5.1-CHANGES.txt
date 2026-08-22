@@ -1,0 +1,9 @@
+Ancient Innovations Control App — v10 Pass 5.1
+
+Fixes the Pass 5 startup/schema bug where FulfillmentOrderLines could be queried before the table existed if EF migration startup failed earlier.
+
+- Adds an idempotent SQL schema repair/verification file.
+- Upgrade script explicitly verifies/creates FulfillmentOrderLines after PostgreSQL is healthy.
+- Backfills existing ShowOrderFulfillments safely with ON CONFLICT DO NOTHING.
+- Does not wipe or recreate the PostgreSQL data directory.
+- Does not change the existing Show Orders workflow.

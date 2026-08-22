@@ -1,0 +1,1411 @@
+@page "/stitch-orders"
+@rendermode InteractiveServer
+@using MustaineAI.Data
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@inject ApplicationDbContext DbContext
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject IWebHostEnvironment HostEnvironment
+
+<PageTitle>Stitch Orders</PageTitle>
+
+<div class="production-hero">
+    <p class="production-eyebrow">Workflow</p>
+    <h1 class="production-title">Stitch Orders</h1>
+    <p class="production-subtitle">
+        Manage stitcher assignments, completed product options, and production labels in one stitch-focused workspace.
+    </p>
+</div>
+
+<section class="production-card mb-3">
+    <div class="production-card-header">
+        <div>
+            <h2>Stitch Team</h2>
+            <span class="text-body-secondary">Non-Square employees with the Stitcher role</span>
+        </div>
+        <span class="production-badge">@Stitchers.Count stitcher(s)</span>
+    </div>
+
+    @if (_isLoadingStitchers)
+    {
+        <div class="production-empty">Loading stitchers...</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(_stitcherLoadError))
+    {
+        <div class="production-status production-status-error">@_stitcherLoadError</div>
+    }
+    else if (!Stitchers.Any())
+    {
+        <div class="production-empty">No non-Square employees with role "Stitcher" were found.</div>
+    }
+    else
+    {
+        <div class="production-label-template-form">
+            <div>
+                <label class="form-label" for="stitcher-picker">Assigned Stitcher</label>
+                <select id="stitcher-picker" class="form-select" @bind="_selectedStitcherId">
+                    @foreach (var stitcher in Stitchers)
+                    {
+                        <option value="@stitcher.Id.ToString()">@stitcher.Name</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Role</label>
+                <input class="form-control" value="@SelectedStitcherRoleLabel" disabled />
+            </div>
+            <div>
+                <label class="form-label">Contact</label>
+                <input class="form-control" value="@SelectedStitcherContactLabel" disabled />
+            </div>
+        </div>
+    }
+</section>
+
+<section class="production-card mb-3">
+    <div class="production-card-header">
+        <div>
+            <h2>Available Front-Face Elements</h2>
+            <span class="text-body-secondary">All front faces from process files</span>
+        </div>
+        <span class="production-badge">@FilteredAvailableFrontFaceElements.Count item(s)</span>
+    </div>
+
+    <div class="production-label-template-form mb-3">
+        <div>
+            <label class="form-label" for="stitch-elements-search">Search Elements</label>
+            <InputText id="stitch-elements-search"
+                       class="form-control"
+                       @bind-Value="_availableElementsSearchTerm"
+                       placeholder="Search name, category, details, or COGS" />
+        </div>
+        <div class="d-flex align-items-end">
+            <button class="btn btn-outline-secondary" type="button" @onclick="ClearAvailableElementsSearch" disabled="@string.IsNullOrWhiteSpace(_availableElementsSearchTerm)">
+                Clear
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_availableElementsLoadError))
+    {
+        <div class="production-status production-status-error">@_availableElementsLoadError</div>
+    }
+
+    @if (!AvailableFrontFaceElements.Any())
+    {
+        <div class="production-empty">No front-face elements were found.</div>
+    }
+    else if (!FilteredAvailableFrontFaceElements.Any())
+    {
+        <div class="production-empty">No front-face elements match your search.</div>
+    }
+    else
+    {
+        <div class="production-element-list">
+            @foreach (var element in FilteredAvailableFrontFaceElements)
+            {
+                var queuedItem = GetQueuedItem(element);
+
+                <article class="production-element-row @(queuedItem is not null ? "is-queued" : string.Empty)">
+                    <div class="production-element-main">
+                        <div class="production-element-topline">
+                            <div class="production-name">@element.Name</div>
+                            <div class="production-element-badges">
+                                <span class="production-badge production-badge-muted">@element.ElementType</span>
+                                <span class="production-badge production-badge-primary">@element.BadgeLabel</span>
+                                @if (queuedItem is not null)
+                                {
+                                    <span class="production-badge production-badge-success">In Queue: @queuedItem.Quantity</span>
+                                }
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(element.SourceReference))
+                        {
+                            <div class="production-meta">@element.SourceReference</div>
+                        }
+
+                        <div class="production-meta">@element.Details</div>
+                    </div>
+
+                    <div class="production-element-action-shell">
+                        <div class="production-element-action">
+                            <button class="btn btn-sm btn-outline-primary"
+                                    type="button"
+                                    @onclick="() => AddElementToProductionQueueAsync(element, 1)"
+                                    disabled="@_isSavingQueueItem">
+                                +1
+                            </button>
+                            <input class="form-control form-control-sm production-amount-input"
+                                   type="number"
+                                   min="1"
+                                   step="1"
+                                   value="@GetDraftQuantity(element.ElementKey)"
+                                   @oninput="eventArgs => UpdateDraftQuantity(element.ElementKey, eventArgs.Value?.ToString())" />
+                            <button class="btn btn-sm btn-primary"
+                                    type="button"
+                                    @onclick="() => AddElementToProductionQueueAsync(element, GetDraftQuantity(element.ElementKey))"
+                                    disabled="@_isSavingQueueItem">
+                                Add
+                            </button>
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="production-card mb-3">
+    <div class="production-card-header">
+        <div>
+            <h2>Completed Product Options</h2>
+            <span class="text-body-secondary">Set front-face tier/color options for queued stitch work</span>
+        </div>
+        <span class="production-badge">@FrontFaceQueueItems.Count item(s)</span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_queueMessage))
+    {
+        <div class="production-status">@_queueMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_queueLoadError))
+    {
+        <div class="production-status production-status-error">@_queueLoadError</div>
+    }
+
+    @if (_isLoadingQueue)
+    {
+        <div class="production-empty">Loading queued products...</div>
+    }
+    else if (!FrontFaceQueueItems.Any())
+    {
+        <div class="production-empty">No front-face products are queued for today.</div>
+    }
+    else
+    {
+        <div class="production-element-list">
+            @foreach (var item in FrontFaceQueueItems)
+            {
+                <article class="production-element-row is-queued">
+                    <div class="production-element-main">
+                        <div class="production-element-topline">
+                            <div class="production-name">@item.ElementName</div>
+                            <div class="production-element-badges">
+                                <span class="production-badge production-badge-primary">Qty @item.Quantity</span>
+                                <span class="production-badge @GetStageClass(item.Stage)">@item.Stage</span>
+                            </div>
+                        </div>
+
+                        <div class="production-meta">@item.SourceGroup</div>
+
+                        @if (!string.IsNullOrWhiteSpace(GetConfiguredOutputSummary(item)))
+                        {
+                            <div class="production-meta">Configured Output: @GetConfiguredOutputSummary(item)</div>
+                        }
+
+                        <div class="production-front-face-tier-prompt">
+                            <span>Is this base or deluxe?</span>
+                            <div class="production-front-face-tier-actions">
+                                @foreach (var tierOption in FrontFaceTierOptions)
+                                {
+                                    <button class="btn btn-sm @(string.Equals(item.FrontFaceTier, tierOption, StringComparison.OrdinalIgnoreCase) ? "btn-primary" : "btn-outline-primary")"
+                                            type="button"
+                                            @onclick='() => SetFrontFaceTierAsync(item, tierOption)'
+                                            disabled="@_isSavingQueueItem">
+                                        @tierOption
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(item.FrontFaceTier))
+                        {
+                            <div class="production-front-face-tier-prompt">
+                                <span>Is this black or brown?</span>
+                                <div class="production-front-face-tier-actions">
+                                    @foreach (var colorOption in FrontFaceColorOptions)
+                                    {
+                                        <button class="btn btn-sm @(string.Equals(item.FrontFaceColor, colorOption, StringComparison.OrdinalIgnoreCase) ? "btn-primary" : "btn-outline-primary")"
+                                                type="button"
+                                                @onclick='() => SetFrontFaceColorAsync(item, colorOption)'
+                                                disabled="@_isSavingQueueItem">
+                                            @colorOption
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                           <div class="production-front-face-tier-prompt">
+                            <span>Finished Goods Category</span>
+                            <input class="form-control form-control-sm"
+                                value="@GetConfigurationDraft(item.Id).ProductCategory"
+                                @oninput='eventArgs => UpdateConfigurationCategory(item.Id, eventArgs.Value?.ToString())'
+                                placeholder="Passport Sleeves, Travel Games, etc." />
+                        </div>
+
+                        <div class="production-front-face-tier-prompt">
+                            <span>Finished Goods Name</span>
+                            <input class="form-control form-control-sm"
+                                value="@GetConfigurationDraft(item.Id).ProductName"
+                                @oninput='eventArgs => UpdateConfigurationName(item.Id, eventArgs.Value?.ToString())'
+                                placeholder="Passport Sleeve Deluxe, etc." />
+                           </div>
+
+                           <div class="production-front-face-tier-prompt">
+                            <span>Product COGS</span>
+                            <input class="form-control form-control-sm"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value="@GetConfigurationDraft(item.Id).ProductCogs"
+                                @oninput='eventArgs => UpdateConfigurationCogs(item.Id, eventArgs.Value?.ToString())'
+                                placeholder="0.00" />
+                           </div>
+
+                           <div class="production-front-face-tier-prompt">
+                            <span>Sell Price</span>
+                            <input class="form-control form-control-sm"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value="@GetConfigurationDraft(item.Id).SellPrice"
+                                @oninput='eventArgs => UpdateConfigurationSellPrice(item.Id, eventArgs.Value?.ToString())'
+                                placeholder="0.00" />
+                        </div>
+
+                        <div class="production-front-face-tier-prompt">
+                            <span>Any stitch notes?</span>
+                            <input class="form-control form-control-sm"
+                                   value="@GetConfigurationDraft(item.Id).AdditionalNotes"
+                                   @oninput='eventArgs => UpdateConfigurationNotes(item.Id, eventArgs.Value?.ToString())'
+                                   placeholder="Special assembly instructions" />
+                            <div class="d-flex justify-content-end mt-2">
+                                <button class="btn btn-sm btn-outline-primary"
+                                        type="button"
+                                        @onclick='() => SaveConfigurationAsync(item)'
+                                        disabled="@_isSavingConfiguration">
+                                    Save Configuration
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="production-card mb-3">
+    <div class="production-card-header">
+        <div>
+            <h2>Recent Production Adds</h2>
+            <span class="text-body-secondary">Everything added to today's production sheet, including notebook parts and other non-stitch builds.</span>
+        </div>
+        <span class="production-badge">@RecentProductionAdds.Count item(s)</span>
+    </div>
+
+    @if (!RecentProductionAdds.Any())
+    {
+        <div class="production-empty">No production items have been added yet.</div>
+    }
+    else
+    {
+        <div class="production-folder-list">
+            @foreach (var item in RecentProductionAdds)
+            {
+                <article class="production-folder-row">
+                    <div>
+                        <div class="production-name">@item.ElementName</div>
+                        <div class="production-meta">@item.ElementType / @item.SourceGroup</div>
+                        @if (!string.IsNullOrWhiteSpace(item.SourceReference))
+                        {
+                            <div class="production-meta">@item.SourceReference</div>
+                        }
+                    </div>
+                    <div class="production-complete-meta">
+                        <span>@item.AddedLabel</span>
+                        <strong>Qty @item.Quantity</strong>
+                        <span class="production-badge @(string.Equals(item.Stage, "Queued", StringComparison.OrdinalIgnoreCase) ? "production-badge-success" : "production-badge-muted")">
+                            @item.Stage
+                        </span>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="production-card">
+    <div class="production-card-header">
+        <div>
+            <h2>Label Template</h2>
+            <span class="text-body-secondary">Dymo-style label layout with name, barcode image, SKU text, and optional price line.</span>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+            <span class="production-badge">@ProductionQueue.Count label(s)</span>
+            <button class="btn btn-primary" type="button" @onclick="OpenLabelPrintPageAsync" disabled="@(!ProductionQueue.Any())">Print Labels</button>
+        </div>
+    </div>
+
+    <div class="production-label-template-grid">
+        <section class="production-focus-card">
+            <div class="production-section-header">
+                <div>
+                    <h3>Label Template</h3>
+                    <span>Adjust the print layout before opening the label sheet.</span>
+                </div>
+            </div>
+
+            <div class="production-label-template-form">
+                <div>
+                    <label class="form-label" for="label-width">Label Width</label>
+                    <InputNumber id="label-width" class="form-control" @bind-Value="_labelTemplateWidthInInches" />
+                </div>
+                <div>
+                    <label class="form-label" for="label-height">Label Height</label>
+                    <InputNumber id="label-height" class="form-control" @bind-Value="_labelTemplateHeightInInches" />
+                </div>
+                <div>
+                    <label class="form-label" for="label-margin-top">Top Margin</label>
+                    <InputNumber id="label-margin-top" class="form-control" @bind-Value="_labelTemplateMarginTopInInches" />
+                </div>
+                <div>
+                    <label class="form-label" for="label-margin-right">Right Margin</label>
+                    <InputNumber id="label-margin-right" class="form-control" @bind-Value="_labelTemplateMarginRightInInches" />
+                </div>
+                <div>
+                    <label class="form-label" for="label-margin-bottom">Bottom Margin</label>
+                    <InputNumber id="label-margin-bottom" class="form-control" @bind-Value="_labelTemplateMarginBottomInInches" />
+                </div>
+                <div>
+                    <label class="form-label" for="label-margin-left">Left Margin</label>
+                    <InputNumber id="label-margin-left" class="form-control" @bind-Value="_labelTemplateMarginLeftInInches" />
+                </div>
+                <div>
+                    <label class="form-label" for="label-price-text">Optional Price</label>
+                    <InputText id="label-price-text" class="form-control" @bind-Value="_labelTemplatePriceText" placeholder="$12.00" />
+                </div>
+                <div class="form-check production-label-template-include-price">
+                    <input id="label-include-price" class="form-check-input" type="checkbox" @bind="_labelTemplateIncludePrice" />
+                    <label class="form-check-label" for="label-include-price">Include price line</label>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_labelTemplateMessage))
+            {
+                <div class="production-status">@_labelTemplateMessage</div>
+            }
+        </section>
+
+        <section class="production-focus-card production-label-template-preview" aria-label="Label preview">
+            <div class="production-section-header">
+                <div>
+                    <h3>Preview</h3>
+                    <span>Name, barcode image, SKU text, and optional price match the print sheet.</span>
+                </div>
+            </div>
+
+            @if (!ProductionQueue.Any())
+            {
+                <div class="production-empty">No queued items to label yet.</div>
+            }
+            else
+            {
+                <div class="production-label-grid">
+                    @foreach (var item in ProductionQueue)
+                    {
+                        <article class="production-label-card" style="width:@($"{_labelTemplateWidthInInches}in"); min-height:@($"{_labelTemplateHeightInInches}in"); padding:@($"{_labelTemplateMarginTopInInches}in {_labelTemplateMarginRightInInches}in {_labelTemplateMarginBottomInInches}in {_labelTemplateMarginLeftInInches}in")">
+                            <div class="production-label-name">@GetLabelDisplayName(item)</div>
+                            <div class="production-label-barcode">
+                                @((MarkupString)GenerateCode128Svg(GetLabelSku(item)))
+                            </div>
+                            <div class="production-label-sku">SKU: @GetLabelSku(item)</div>
+                            @if (!string.IsNullOrWhiteSpace(GetLabelPriceText(item)))
+                            {
+                                <div class="production-label-price">@GetLabelPriceText(item)</div>
+                            }
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</section>
+
+@code {
+    private readonly DateOnly _productionDate = DateOnly.FromDateTime(DateTime.Now);
+    private bool _isLoadingStitchers = true;
+    private bool _isLoadingQueue = true;
+    private bool _isSavingQueueItem;
+    private bool _isSavingConfiguration;
+    private string? _stitcherLoadError;
+    private string? _availableElementsLoadError;
+    private string? _queueLoadError;
+    private string? _queueMessage;
+    private string? _availableElementsSearchTerm;
+    private Guid? _selectedStitcherId;
+    private readonly Dictionary<string, int> _quantityDrafts = new(StringComparer.Ordinal);
+    private readonly Dictionary<Guid, StitchConfigurationDraft> _configurationDrafts = new();
+
+    private IReadOnlyList<StitcherRow> Stitchers = [];
+    private IReadOnlyList<ProductionQueueRow> ProductionQueue = [];
+    private IReadOnlyList<StitchElementLibraryRow> AvailableFrontFaceElements = [];
+    private IReadOnlyList<string> FrontFaceTierOptions = ["Base", "Deluxe"];
+    private IReadOnlyList<string> FrontFaceColorOptions = ["Black", "Brown"];
+
+    private decimal _labelTemplateWidthInInches = 2.13m;
+    private decimal _labelTemplateHeightInInches = 1.13m;
+    private decimal _labelTemplateMarginTopInInches = 0.10m;
+    private decimal _labelTemplateMarginRightInInches = 0.10m;
+    private decimal _labelTemplateMarginBottomInInches = 0.10m;
+    private decimal _labelTemplateMarginLeftInInches = 0.10m;
+    private bool _labelTemplateIncludePrice;
+    private string? _labelTemplatePriceText;
+    private string? _labelTemplateMessage;
+
+    private IReadOnlyList<ProductionQueueRow> FrontFaceQueueItems =>
+        ProductionQueue
+            .Where(IsFrontFaceQueueItem)
+            .OrderBy(item => item.ElementName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private IReadOnlyList<ProductionQueueRow> RecentProductionAdds =>
+        ProductionQueue
+            .OrderByDescending(item => item.AddedAt)
+            .ThenByDescending(item => item.Quantity)
+            .Take(8)
+            .ToList();
+
+    private IReadOnlyList<StitchElementLibraryRow> FilteredAvailableFrontFaceElements =>
+        string.IsNullOrWhiteSpace(_availableElementsSearchTerm)
+            ? AvailableFrontFaceElements
+            : AvailableFrontFaceElements
+                .Where(element => MatchesElementSearch(element, _availableElementsSearchTerm))
+                .ToList();
+
+    private StitcherRow? SelectedStitcher =>
+        _selectedStitcherId is null
+            ? null
+            : Stitchers.FirstOrDefault(stitcher => stitcher.Id == _selectedStitcherId.Value);
+
+    private string SelectedStitcherRoleLabel =>
+        string.IsNullOrWhiteSpace(SelectedStitcher?.Role)
+            ? "Stitcher"
+            : SelectedStitcher.Role!;
+
+    private string SelectedStitcherContactLabel =>
+        FirstConfigured(SelectedStitcher?.EmailAddress, SelectedStitcher?.PhoneNumber)
+            ?? "No contact saved";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTemplateOptionsAsync();
+        await LoadStitchersAsync();
+        await LoadAvailableFrontFaceElementsAsync();
+        await LoadProductionQueueAsync();
+    }
+
+    private Task LoadAvailableFrontFaceElementsAsync()
+    {
+        try
+        {
+            var processFilesRoot = GetProcessFilesRoot();
+
+            if (!Directory.Exists(processFilesRoot))
+            {
+                AvailableFrontFaceElements = [];
+                _availableElementsLoadError = null;
+                return Task.CompletedTask;
+            }
+
+            var frontFacesRoot = FindDirectoryIgnoreCase(processFilesRoot, "front-faces");
+
+            if (string.IsNullOrWhiteSpace(frontFacesRoot) || !Directory.Exists(frontFacesRoot))
+            {
+                AvailableFrontFaceElements = [];
+                _availableElementsLoadError = null;
+                return Task.CompletedTask;
+            }
+
+            var elements = EnumerateAssetDirectories(frontFacesRoot)
+                .Select(assetDirectory =>
+                {
+                    var relativePath = Path.GetRelativePath(frontFacesRoot, assetDirectory);
+                    var segments = relativePath
+                        .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+                    var displayPath = string.Join(" / ", segments.Select(ToDisplaySegment));
+                    var files = Directory.GetFiles(assetDirectory)
+                        .Where(IsSupportedAssetFile)
+                        .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                        .Select(Path.GetFileName)
+                        .ToList();
+                    var cogsLabel = GetCogsLabel(assetDirectory);
+
+                    return new StitchElementLibraryRow(
+                        "Front Face",
+                        $"front-faces::{relativePath.Replace(Path.DirectorySeparatorChar, '/')}".ToLowerInvariant(),
+                        displayPath,
+                        "Front Faces",
+                        displayPath,
+                        files.Count == 0 ? cogsLabel : $"{files.Count} file(s) · {cogsLabel}",
+                        cogsLabel);
+                })
+                .DistinctBy(item => item.ElementKey)
+                .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            AvailableFrontFaceElements = elements;
+
+            _availableElementsLoadError = null;
+        }
+        catch (Exception exception)
+        {
+            AvailableFrontFaceElements = [];
+            _availableElementsLoadError = $"Front-face elements could not be loaded. {exception.Message}";
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadTemplateOptionsAsync()
+    {
+        try
+        {
+            var template = await DbContext.FinishedGoodsTemplates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(entity => entity.Id == FinishedGoodsTemplateEntity.DefaultId);
+
+            if (template is null)
+            {
+                return;
+            }
+
+            var tierOptions = ParseCsvValues(template.FrontFaceTierOptionsCsv);
+            if (tierOptions.Count > 0)
+            {
+                FrontFaceTierOptions = tierOptions;
+            }
+
+            var colorOptions = ParseCsvValues(template.FrontFaceColorOptionsCsv);
+            if (colorOptions.Count > 0)
+            {
+                FrontFaceColorOptions = colorOptions;
+            }
+        }
+        catch
+        {
+            // Keep defaults if templates are unavailable.
+        }
+    }
+
+    private async Task LoadStitchersAsync()
+    {
+        _isLoadingStitchers = true;
+
+        try
+        {
+            Stitchers = await DbContext.EmployeeRosterEntries
+                .AsNoTracking()
+                .Where(employee => EF.Functions.ILike(employee.Status, "active"))
+                .Where(employee => employee.Role != null && EF.Functions.ILike(employee.Role, "%stitcher%"))
+                .OrderBy(employee => employee.Name)
+                .Select(employee => new StitcherRow(
+                    employee.Id,
+                    employee.Name,
+                    employee.Role,
+                    employee.Department,
+                    employee.EmailAddress,
+                    employee.PhoneNumber))
+                .ToListAsync();
+
+            if (_selectedStitcherId is null || Stitchers.All(stitcher => stitcher.Id != _selectedStitcherId))
+            {
+                _selectedStitcherId = Stitchers.FirstOrDefault()?.Id;
+            }
+
+            _stitcherLoadError = null;
+        }
+        catch (Exception exception)
+        {
+            Stitchers = [];
+            _stitcherLoadError = $"Stitchers could not be loaded. {exception.Message}";
+        }
+        finally
+        {
+            _isLoadingStitchers = false;
+        }
+    }
+
+    private async Task LoadProductionQueueAsync()
+    {
+        _isLoadingQueue = true;
+
+        try
+        {
+            var queueItems = await DbContext.ProductionQueueItems
+                .AsNoTracking()
+                .Where(item => item.ProductionDate == _productionDate)
+                .Where(item => !(item.ElementType == "Sheet"
+                    && item.SourceGroup == "System"
+                    && item.Stage == "Sheet"))
+                .OrderBy(item => item.Stage)
+                .ThenBy(item => item.ElementName, StringComparer.OrdinalIgnoreCase)
+                .ToListAsync();
+
+            ProductionQueue = queueItems
+                .Select(item => new ProductionQueueRow(
+                    item.Id,
+                    item.ElementType,
+                    item.ElementKey,
+                    item.Sku,
+                    item.ElementName,
+                    item.SourceGroup,
+                    item.SourceReference,
+                    item.Stage,
+                    item.FrontFaceTier,
+                    item.FrontFaceColor,
+                    item.Quantity,
+                    item.AddedAt))
+                .ToList();
+
+            SyncConfigurationDrafts(queueItems);
+
+            _queueLoadError = null;
+        }
+        catch (Exception exception)
+        {
+            ProductionQueue = [];
+            _queueLoadError = $"Production queue could not be loaded. {exception.Message}";
+        }
+        finally
+        {
+            _isLoadingQueue = false;
+        }
+    }
+
+    private async Task AddElementToProductionQueueAsync(StitchElementLibraryRow element, int quantity)
+    {
+        _queueMessage = null;
+
+        if (quantity < 1)
+        {
+            _queueMessage = "Quantity must be at least 1.";
+            return;
+        }
+
+        _isSavingQueueItem = true;
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var queueItem = await DbContext.ProductionQueueItems
+                .FirstOrDefaultAsync(item => item.ProductionDate == _productionDate && item.ElementKey == element.ElementKey);
+
+            if (queueItem is null)
+            {
+                queueItem = new ProductionQueueItemEntity
+                {
+                    ProductionDate = _productionDate,
+                    ElementType = element.ElementType,
+                    ElementKey = element.ElementKey,
+                    Sku = element.ElementKey,
+                    ElementName = element.Name,
+                    SourceGroup = element.SourceGroup,
+                    SourceReference = element.SourceReference,
+                    Stage = "Queued",
+                    Quantity = quantity,
+                    AddedAt = now,
+                    UpdatedAt = now,
+                };
+
+                DbContext.ProductionQueueItems.Add(queueItem);
+            }
+            else
+            {
+                queueItem.Quantity += quantity;
+                queueItem.UpdatedAt = now;
+            }
+
+            await DbContext.SaveChangesAsync();
+            _queueMessage = $"Added {quantity} {element.Name} item(s) to today&apos;s stitch queue.";
+            await LoadProductionQueueAsync();
+        }
+        catch (Exception exception)
+        {
+            _queueMessage = $"{element.Name} could not be queued. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingQueueItem = false;
+        }
+    }
+
+    private async Task SetFrontFaceTierAsync(ProductionQueueRow queuedItem, string tier)
+    {
+        _queueMessage = null;
+        _isSavingQueueItem = true;
+
+        try
+        {
+            var queueItem = await DbContext.ProductionQueueItems
+                .FirstOrDefaultAsync(item => item.Id == queuedItem.Id);
+
+            if (queueItem is null)
+            {
+                _queueMessage = "The queued front face could not be found.";
+                return;
+            }
+
+            queueItem.FrontFaceTier = tier;
+            queueItem.UpdatedAt = DateTimeOffset.UtcNow;
+
+            await DbContext.SaveChangesAsync();
+
+            _queueMessage = $"Marked {queuedItem.ElementName} as {tier.ToLowerInvariant()}.";
+            await LoadProductionQueueAsync();
+        }
+        catch (Exception exception)
+        {
+            _queueMessage = $"Front face tier could not be saved. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingQueueItem = false;
+        }
+    }
+
+    private async Task SetFrontFaceColorAsync(ProductionQueueRow queuedItem, string color)
+    {
+        _queueMessage = null;
+        _isSavingQueueItem = true;
+
+        try
+        {
+            var queueItem = await DbContext.ProductionQueueItems
+                .FirstOrDefaultAsync(item => item.Id == queuedItem.Id);
+
+            if (queueItem is null)
+            {
+                _queueMessage = "The queued front face could not be found.";
+                return;
+            }
+
+            queueItem.FrontFaceColor = color;
+            queueItem.UpdatedAt = DateTimeOffset.UtcNow;
+
+            await DbContext.SaveChangesAsync();
+
+            _queueMessage = $"Marked {queuedItem.ElementName} as {color.ToLowerInvariant()}.";
+            await LoadProductionQueueAsync();
+        }
+        catch (Exception exception)
+        {
+            _queueMessage = $"Front face color could not be saved. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingQueueItem = false;
+        }
+    }
+
+    private StitchConfigurationDraft GetConfigurationDraft(Guid queueItemId)
+    {
+        if (!_configurationDrafts.TryGetValue(queueItemId, out var draft))
+        {
+            draft = new StitchConfigurationDraft();
+            _configurationDrafts[queueItemId] = draft;
+        }
+
+        return draft;
+    }
+
+    private void UpdateConfigurationCategory(Guid queueItemId, string? value)
+    {
+        GetConfigurationDraft(queueItemId).ProductCategory = value ?? string.Empty;
+    }
+
+    private void UpdateConfigurationName(Guid queueItemId, string? value)
+    {
+        GetConfigurationDraft(queueItemId).ProductName = value ?? string.Empty;
+    }
+
+    private void UpdateConfigurationCogs(Guid queueItemId, string? value)
+    {
+        GetConfigurationDraft(queueItemId).ProductCogs = value ?? string.Empty;
+    }
+
+    private void UpdateConfigurationSellPrice(Guid queueItemId, string? value)
+    {
+        GetConfigurationDraft(queueItemId).SellPrice = value ?? string.Empty;
+    }
+
+    private void UpdateConfigurationNotes(Guid queueItemId, string? value)
+    {
+        GetConfigurationDraft(queueItemId).AdditionalNotes = value ?? string.Empty;
+    }
+
+    private async Task SaveConfigurationAsync(ProductionQueueRow queuedItem)
+    {
+        _queueMessage = null;
+        _isSavingConfiguration = true;
+
+        try
+        {
+            var queueItem = await DbContext.ProductionQueueItems
+                .FirstOrDefaultAsync(item => item.Id == queuedItem.Id);
+
+            if (queueItem is null)
+            {
+                _queueMessage = "The queued item could not be found.";
+                return;
+            }
+
+            var draft = GetConfigurationDraft(queuedItem.Id);
+            queueItem.Notes = BuildConfigurationNotes(draft);
+            queueItem.UpdatedAt = DateTimeOffset.UtcNow;
+
+            await DbContext.SaveChangesAsync();
+            _queueMessage = $"Saved configuration for {queuedItem.ElementName}.";
+        }
+        catch (Exception exception)
+        {
+            _queueMessage = $"Configuration could not be saved. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingConfiguration = false;
+        }
+    }
+
+    private async Task OpenLabelPrintPageAsync()
+    {
+        _labelTemplateMessage = null;
+
+        if (!ProductionQueue.Any())
+        {
+            _labelTemplateMessage = "Add items to the production queue before printing labels.";
+            return;
+        }
+
+        var url = BuildLabelPrintUrl();
+        await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+        _labelTemplateMessage = "Opened printable labels in a new page.";
+    }
+
+    private string BuildLabelPrintUrl()
+    {
+        var query = new List<string>
+        {
+            $"date={Uri.EscapeDataString(_productionDate.ToString("yyyy-MM-dd"))}",
+            $"width={Uri.EscapeDataString(_labelTemplateWidthInInches.ToString(System.Globalization.CultureInfo.InvariantCulture))}",
+            $"height={Uri.EscapeDataString(_labelTemplateHeightInInches.ToString(System.Globalization.CultureInfo.InvariantCulture))}",
+            $"marginTop={Uri.EscapeDataString(_labelTemplateMarginTopInInches.ToString(System.Globalization.CultureInfo.InvariantCulture))}",
+            $"marginRight={Uri.EscapeDataString(_labelTemplateMarginRightInInches.ToString(System.Globalization.CultureInfo.InvariantCulture))}",
+            $"marginBottom={Uri.EscapeDataString(_labelTemplateMarginBottomInInches.ToString(System.Globalization.CultureInfo.InvariantCulture))}",
+            $"marginLeft={Uri.EscapeDataString(_labelTemplateMarginLeftInInches.ToString(System.Globalization.CultureInfo.InvariantCulture))}",
+            $"includePrice={_labelTemplateIncludePrice.ToString().ToLowerInvariant()}",
+            $"price={Uri.EscapeDataString(_labelTemplatePriceText ?? string.Empty)}",
+            "autoprint=true"
+        };
+
+        return NavigationManager.ToAbsoluteUri($"/production/labels?{string.Join("&", query)}").ToString();
+    }
+
+    private static IReadOnlyList<string> ParseCsvValues(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(token => !string.IsNullOrWhiteSpace(token))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+    private static bool IsFrontFaceQueueItem(ProductionQueueRow item) =>
+        string.Equals(item.SourceGroup, "Front Faces", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(item.ElementType, "Front Face", StringComparison.OrdinalIgnoreCase);
+
+    private static bool MatchesElementSearch(StitchElementLibraryRow element, string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return true;
+        }
+
+        var query = searchTerm.Trim();
+        return ContainsIgnoreCase(element.Name, query)
+            || ContainsIgnoreCase(element.ElementType, query)
+            || ContainsIgnoreCase(element.SourceGroup, query)
+            || ContainsIgnoreCase(element.SourceReference, query)
+            || ContainsIgnoreCase(element.Details, query)
+            || ContainsIgnoreCase(element.BadgeLabel, query)
+            || ContainsIgnoreCase(element.ElementKey, query);
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string query) =>
+        !string.IsNullOrWhiteSpace(value) && value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    private void ClearAvailableElementsSearch()
+    {
+        _availableElementsSearchTerm = null;
+    }
+
+    private int GetDraftQuantity(string elementKey) =>
+        _quantityDrafts.TryGetValue(elementKey, out var quantity) && quantity > 0 ? quantity : 1;
+
+    private void UpdateDraftQuantity(string elementKey, string? rawValue)
+    {
+        if (!int.TryParse(rawValue, out var quantity) || quantity < 1)
+        {
+            _quantityDrafts[elementKey] = 1;
+            return;
+        }
+
+        _quantityDrafts[elementKey] = quantity;
+    }
+
+    private ProductionQueueRow? GetQueuedItem(StitchElementLibraryRow element) =>
+        ProductionQueue.FirstOrDefault(item => string.Equals(item.ElementKey, element.ElementKey, StringComparison.Ordinal));
+
+    private string GetProcessFilesRoot() =>
+        Path.Combine(HostEnvironment.WebRootPath, "process-files");
+
+    private static string? FindDirectoryIgnoreCase(string parentDirectory, string directoryName)
+    {
+        if (!Directory.Exists(parentDirectory))
+        {
+            return null;
+        }
+
+        return Directory.GetDirectories(parentDirectory)
+            .FirstOrDefault(directory =>
+                string.Equals(Path.GetFileName(directory), directoryName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string ToDisplaySegment(string segment) =>
+        segment.Replace('_', ' ').Replace('-', ' ').Trim();
+
+    private static bool IsMetadataFile(string filePath)
+    {
+        var fileName = Path.GetFileName(filePath);
+        return string.Equals(fileName, "colors.txt", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(fileName, "cogs.txt", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSupportedAssetFile(string filePath)
+    {
+        if (IsMetadataFile(filePath))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(filePath);
+        return IsImageFile(filePath)
+               || extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".nc", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".gc", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".gcode", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".tap", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".lbrn", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".lbrn2", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".svg", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".dxf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsImageFile(string filePath)
+    {
+        var extension = Path.GetExtension(filePath);
+        return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".gif", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".webp", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".svg", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".tif", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".tiff", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".avif", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<string> EnumerateAssetDirectories(string directory)
+    {
+        var childDirectories = Directory.GetDirectories(directory)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var childAssetDirectories = childDirectories
+            .SelectMany(EnumerateAssetDirectories)
+            .ToList();
+        var assetFiles = Directory.GetFiles(directory).Where(IsSupportedAssetFile).ToList();
+
+        if (assetFiles.Count > 0 && childAssetDirectories.Count == 0)
+        {
+            yield return directory;
+        }
+
+        foreach (var childAssetDirectory in childAssetDirectories)
+        {
+            yield return childAssetDirectory;
+        }
+    }
+
+    private static string GetCogsLabel(string filePath)
+    {
+        var current = new FileInfo(filePath).Directory;
+        while (current is not null)
+        {
+            var cogsPath = Path.Combine(current.FullName, "cogs.txt");
+            if (File.Exists(cogsPath))
+            {
+                var cogs = File.ReadAllText(cogsPath).Trim();
+                var cogsValue = TryParseCogsValue(cogs);
+                return cogsValue is null ? "COGS unset" : $"COGS {cogsValue.Value.ToString("C")}";
+            }
+
+            current = current.Parent;
+        }
+
+        return "COGS unset";
+    }
+
+    private static decimal? TryParseCogsValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+
+        if (normalized.StartsWith("COGS", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[4..].TrimStart(':', '-', ' ').Trim();
+        }
+
+        normalized = normalized.Replace("$", string.Empty).Trim();
+
+        if (decimal.TryParse(
+                normalized,
+                System.Globalization.NumberStyles.Number | System.Globalization.NumberStyles.AllowCurrencySymbol,
+                System.Globalization.CultureInfo.CurrentCulture,
+                out var parsedCurrentCulture))
+        {
+            return parsedCurrentCulture;
+        }
+
+        if (decimal.TryParse(
+                normalized,
+                System.Globalization.NumberStyles.Number | System.Globalization.NumberStyles.AllowCurrencySymbol,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var parsedInvariantCulture))
+        {
+            return parsedInvariantCulture;
+        }
+
+        return null;
+    }
+
+    private static string? FirstConfigured(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+    private void SyncConfigurationDrafts(IEnumerable<ProductionQueueItemEntity> queueItems)
+    {
+        var ids = new HashSet<Guid>();
+
+        foreach (var queueItem in queueItems)
+        {
+            ids.Add(queueItem.Id);
+            _configurationDrafts[queueItem.Id] = ParseConfigurationFromNotes(queueItem.Notes);
+        }
+
+        foreach (var staleKey in _configurationDrafts.Keys.Where(key => !ids.Contains(key)).ToList())
+        {
+            _configurationDrafts.Remove(staleKey);
+        }
+    }
+
+    private static StitchConfigurationDraft ParseConfigurationFromNotes(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return new StitchConfigurationDraft();
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<StitchConfigurationPayload>(notes);
+            if (payload is not null && IsSupportedConfigurationSchema(payload.Schema))
+            {
+                return new StitchConfigurationDraft
+                {
+                    ProductCategory = payload.ProductCategory ?? payload.ProductTarget ?? string.Empty,
+                    ProductName = payload.ProductName ?? payload.Variant ?? string.Empty,
+                    ProductCogs = payload.ProductCogs ?? string.Empty,
+                    SellPrice = payload.SellPrice ?? string.Empty,
+                    AdditionalNotes = payload.AdditionalNotes ?? string.Empty,
+                };
+            }
+        }
+        catch
+        {
+            // Fallback below for legacy/plain notes values.
+        }
+
+        return new StitchConfigurationDraft
+        {
+            AdditionalNotes = notes,
+        };
+    }
+
+    private static string BuildConfigurationNotes(StitchConfigurationDraft draft)
+    {
+        var payload = new StitchConfigurationPayload(
+            StitchConfigurationPayload.SchemaVersion,
+            NormalizeInput(draft.ProductCategory),
+            NormalizeInput(draft.ProductName),
+            NormalizeNumericInput(draft.ProductCogs),
+            NormalizeNumericInput(draft.SellPrice),
+            NormalizeInput(draft.AdditionalNotes));
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    private static bool IsSupportedConfigurationSchema(string? schema) =>
+        string.Equals(schema, StitchConfigurationPayload.SchemaVersion, StringComparison.Ordinal)
+        || string.Equals(schema, StitchConfigurationPayload.LegacySchemaVersion, StringComparison.Ordinal);
+
+    private static string? NormalizeInput(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? NormalizeNumericInput(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return decimal.TryParse(trimmed, out var parsed)
+            ? parsed.ToString("0.##")
+            : null;
+    }
+
+    private string GetConfiguredOutputSummary(ProductionQueueRow item)
+    {
+        var draft = GetConfigurationDraft(item.Id);
+        var segments = new List<string>();
+
+        var category = NormalizeInput(draft.ProductCategory);
+        var name = NormalizeInput(draft.ProductName);
+
+        if (!string.IsNullOrWhiteSpace(category) && !string.IsNullOrWhiteSpace(name))
+        {
+            segments.Add($"{category} / {name}");
+        }
+        else if (!string.IsNullOrWhiteSpace(name))
+        {
+            segments.Add(name);
+        }
+        else if (!string.IsNullOrWhiteSpace(category))
+        {
+            segments.Add(category);
+        }
+
+        if (TryGetCurrencyLabel(draft.ProductCogs, out var cogsLabel))
+        {
+            segments.Add($"COGS {cogsLabel}");
+        }
+
+        if (TryGetCurrencyLabel(draft.SellPrice, out var sellPriceLabel))
+        {
+            segments.Add($"Sell {sellPriceLabel}");
+        }
+
+        return string.Join(" • ", segments);
+    }
+
+    private string GetLabelDisplayName(ProductionQueueRow item)
+    {
+        var configuredName = NormalizeInput(GetConfigurationDraft(item.Id).ProductName);
+        return string.IsNullOrWhiteSpace(configuredName) ? item.ElementName : configuredName;
+    }
+
+    private string? GetLabelPriceText(ProductionQueueRow item)
+    {
+        if (!_labelTemplateIncludePrice)
+        {
+            return null;
+        }
+
+        if (TryGetCurrencyLabel(GetConfigurationDraft(item.Id).SellPrice, out var configuredPriceLabel))
+        {
+            return configuredPriceLabel;
+        }
+
+        return NormalizeInput(_labelTemplatePriceText);
+    }
+
+    private static bool TryGetCurrencyLabel(string? value, out string currency)
+    {
+        currency = string.Empty;
+
+        var normalized = NormalizeNumericInput(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        if (!decimal.TryParse(normalized, out var parsed))
+        {
+            return false;
+        }
+
+        currency = parsed.ToString("C");
+        return true;
+    }
+
+    private string GetLabelSku(ProductionQueueRow item) =>
+        string.IsNullOrWhiteSpace(item.Sku) ? item.ElementKey : item.Sku;
+
+    private static string GetStageClass(string stage) => stage switch
+    {
+        "Queued" => "production-badge-muted",
+        "In Progress" => "production-badge-primary",
+        "Ready" => "production-badge-success",
+        _ => string.Empty,
+    };
+
+    private static string GenerateCode128Svg(string value)
+    {
+        var payload = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        var codes = new List<int> { 104 };
+
+        foreach (var character in payload)
+        {
+            var normalized = character is < ' ' or > '~' ? '?' : character;
+            codes.Add(normalized - 32);
+        }
+
+        var checksum = codes[0];
+        for (var index = 1; index < codes.Count; index++)
+        {
+            checksum += codes[index] * index;
+        }
+
+        checksum %= 103;
+        codes.Add(checksum);
+        codes.Add(106);
+
+        const int moduleWidth = 2;
+        const int quietZone = 10;
+        const int barHeight = 48;
+
+        var x = quietZone;
+        var bars = new List<string>();
+
+        foreach (var code in codes)
+        {
+            var pattern = Code128Patterns[code];
+            var drawBar = true;
+
+            foreach (var digit in pattern)
+            {
+                var width = (digit - '0') * moduleWidth;
+                if (drawBar)
+                {
+                    bars.Add($"<rect x=\"{x}\" y=\"0\" width=\"{width}\" height=\"{barHeight}\" fill=\"#000\" />");
+                }
+
+                x += width;
+                drawBar = !drawBar;
+            }
+        }
+
+        var totalWidth = x + quietZone;
+        var text = System.Net.WebUtility.HtmlEncode(payload);
+
+        return $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{totalWidth}\" height=\"{barHeight}\" viewBox=\"0 0 {totalWidth} {barHeight}\" shape-rendering=\"crispEdges\" role=\"img\" aria-label=\"Code 128 barcode for {text}\"><rect width=\"100%\" height=\"100%\" fill=\"#fff\" />{string.Join(string.Empty, bars)}</svg>";
+    }
+
+    private static readonly string[] Code128Patterns =
+    [
+        "212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213",
+        "221312", "231212", "112232", "122132", "122231", "113222", "123122", "123221", "223211", "221132",
+        "221231", "213212", "223112", "312131", "311222", "321122", "321221", "312212", "322112", "322211",
+        "212123", "212321", "232121", "111323", "131123", "131321", "112313", "132113", "132311", "211313",
+        "231113", "231311", "112133", "112331", "132131", "113123", "113321", "133121", "313121", "211331",
+        "231131", "213113", "213311", "213131", "311123", "311321", "331121", "312113", "312311", "332111",
+        "314111", "221411", "431111", "111224", "111422", "121124", "121421", "141122", "141221", "112214",
+        "112412", "122114", "122411", "142112", "142211", "241211", "221114", "413111", "241112", "134111",
+        "111242", "121142", "121241", "114212", "124112", "124211", "411212", "421112", "421211", "212141",
+        "214121", "412121", "111143", "111341", "131141", "114113", "114311", "411113", "411311", "113141",
+        "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
+    ];
+
+    private sealed record StitcherRow(
+        Guid Id,
+        string Name,
+        string? Role,
+        string? Department,
+        string? EmailAddress,
+        string? PhoneNumber);
+
+    private sealed record ProductionQueueRow(
+        Guid Id,
+        string ElementType,
+        string ElementKey,
+        string? Sku,
+        string ElementName,
+        string SourceGroup,
+        string? SourceReference,
+        string Stage,
+        string? FrontFaceTier,
+        string? FrontFaceColor,
+        int Quantity,
+        DateTimeOffset AddedAt)
+    {
+        public string AddedLabel => AddedAt.ToLocalTime().ToString("h:mm tt");
+    }
+
+    private sealed record StitchElementLibraryRow(
+        string ElementType,
+        string ElementKey,
+        string Name,
+        string SourceGroup,
+        string? SourceReference,
+        string Details,
+        string BadgeLabel);
+
+    private sealed class StitchConfigurationDraft
+    {
+        public string ProductCategory { get; set; } = string.Empty;
+
+        public string ProductName { get; set; } = string.Empty;
+
+        public string ProductCogs { get; set; } = string.Empty;
+
+        public string SellPrice { get; set; } = string.Empty;
+
+        public string AdditionalNotes { get; set; } = string.Empty;
+    }
+
+    private sealed record StitchConfigurationPayload(
+        string Schema,
+        string? ProductCategory,
+        string? ProductName,
+        string? ProductCogs,
+        string? SellPrice,
+        string? AdditionalNotes)
+    {
+        // Keep compatibility with earlier payload shapes by accepting v1 and v2.
+        public string? ProductTarget { get; init; }
+
+        public string? Variant { get; init; }
+
+        public const string LegacySchemaVersion = "stitch-orders:v1";
+
+        public const string SchemaVersion = "stitch-orders:v2";
+    }
+}

@@ -1,0 +1,494 @@
+﻿@page "/employees"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Employees</PageTitle>
+
+<div class="employees-hero">
+    <p class="employees-eyebrow">People</p>
+    <h1 class="employees-title">Employees</h1>
+    <p class="employees-subtitle">
+        Square team members with synced sales totals, location assignment, and current roster status.
+    </p>
+</div>
+
+@if (_isLoading)
+{
+    <section class="employees-card">
+        Loading employees...
+    </section>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_loadError))
+    {
+        <section class="employees-card mb-3">
+            <strong>Employee data unavailable.</strong>
+            <div>@_loadError</div>
+        </section>
+    }
+
+    <div class="employees-metrics">
+        <section class="employees-card employees-metric">
+            <span class="employees-metric-label">Active Employees</span>
+            <strong class="employees-metric-value">@EmployeeRows.Count</strong>
+            <span class="employees-metric-note">@SquareEmployeeCount Square, @ManualEmployeeCount non-Square</span>
+        </section>
+
+        <section class="employees-card employees-metric">
+            <span class="employees-metric-label">Net Collected</span>
+            <strong class="employees-metric-value">@TotalNet.ToString("C0")</strong>
+            <span class="employees-metric-note">From assigned synced sales</span>
+        </section>
+
+        <section class="employees-card employees-metric">
+            <span class="employees-metric-label">Gross Sales</span>
+            <strong class="employees-metric-value">@TotalGross.ToString("C0")</strong>
+            <span class="employees-metric-note">Adjusted line-item sales</span>
+        </section>
+    </div>
+
+    <div class="employees-grid">
+        <section class="employees-card">
+            <div class="employees-card-header">
+                <h2>Employee Directory</h2>
+                <span class="text-body-secondary">@SquareEmployeeCount Square, @ManualEmployeeCount non-Square</span>
+            </div>
+
+            @if (EmployeeRows.Count == 0)
+            {
+                <div class="text-body-secondary">
+                    No active employees are available yet. Run a Square sales sync or add a non-Square employee below.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle employees-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Name</th>
+                                <th scope="col">Assignment</th>
+                                <th scope="col">Commission</th>
+                                <th scope="col" class="text-end">Net</th>
+                                <th scope="col" class="text-end">Gross</th>
+                                <th scope="col">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var employee in EmployeeRows)
+                            {
+                                <tr class="employees-row @(employee.Key == _selectedEmployeeKey ? "is-selected" : string.Empty)"
+                                    @onclick="() => SelectEmployee(employee.Key)">
+                                    <td>
+                                        <div class="employees-name">@employee.Name</div>
+                                        <div class="employees-email">@employee.Source</div>
+                                    </td>
+                                    <td>
+                                        <div>@employee.Assignment</div>
+                                        <div class="employees-email">@employee.Contact</div>
+                                    </td>
+                                    <td>@employee.CommissionLabel</td>
+                                    <td class="text-end">@employee.NetTotal.ToString("C0")</td>
+                                    <td class="text-end">@employee.GrossTotal.ToString("C0")</td>
+                                    <td>
+                                        <span class="employees-badge @GetStatusClass(employee.Status)">@employee.Status</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <hr />
+
+            <h2>Add Non-Square Employee</h2>
+
+            <div class="employees-form employees-form-inline">
+                <div>
+                    <label class="form-label" for="manual-employee-name">Name</label>
+                    <InputText id="manual-employee-name" class="form-control" @bind-Value="_manualEmployee.Name" />
+                </div>
+                <div>
+                    <label class="form-label" for="manual-employee-role">Role</label>
+                    <InputText id="manual-employee-role" class="form-control" @bind-Value="_manualEmployee.Role" />
+                </div>
+                <div>
+                    <label class="form-label" for="manual-employee-department">Department</label>
+                    <InputText id="manual-employee-department" class="form-control" @bind-Value="_manualEmployee.Department" />
+                </div>
+                <div>
+                    <label class="form-label" for="manual-employee-email">Email</label>
+                    <InputText id="manual-employee-email" class="form-control" @bind-Value="_manualEmployee.EmailAddress" />
+                </div>
+                <div>
+                    <label class="form-label" for="manual-employee-phone">Phone</label>
+                    <InputText id="manual-employee-phone" class="form-control" @bind-Value="_manualEmployee.PhoneNumber" />
+                </div>
+                <button class="btn btn-primary" type="button" @onclick="AddManualEmployeeAsync" disabled="@_isSavingManualEmployee">
+                    @(_isSavingManualEmployee ? "Adding..." : "Add Employee")
+                </button>
+                @if (!string.IsNullOrWhiteSpace(_manualEmployeeMessage))
+                {
+                    <div class="text-body-secondary">@_manualEmployeeMessage</div>
+                }
+            </div>
+        </section>
+
+        <section class="employees-card">
+            @if (SelectedEmployee is null)
+            {
+                <div class="text-body-secondary">
+                    Select an employee to view details.
+                </div>
+            }
+            else
+            {
+                <div class="employees-detail-header">
+                    <div>
+                        <h2>@SelectedEmployee.Name</h2>
+                        <span class="employees-badge @GetSourceClass(SelectedEmployee.IsSquareEmployee)">@SelectedEmployee.Source</span>
+                    </div>
+                    <span class="employees-badge @GetStatusClass(SelectedEmployee.Status)">@SelectedEmployee.Status</span>
+                </div>
+
+                <dl class="employees-detail-list">
+                    <dt>Contact</dt>
+                    <dd>@SelectedEmployee.Contact</dd>
+                    <dt>Assignment</dt>
+                    <dd>@SelectedEmployee.Assignment</dd>
+                    <dt>Identifier</dt>
+                    <dd>@SelectedEmployee.ExternalId</dd>
+                    <dt>Net collected</dt>
+                    <dd>@SelectedEmployee.NetTotal.ToString("C0")</dd>
+                    <dt>Gross sales</dt>
+                    <dd>@SelectedEmployee.GrossTotal.ToString("C0")</dd>
+                    <dt>Commission</dt>
+                    <dd>
+                        <div class="employees-form employees-form-inline">
+                            <div>
+                                <label class="form-label" for="employee-commission">Commission %</label>
+                                <InputNumber id="employee-commission" class="form-control" @bind-Value="_commissionInput" min="0" max="100" step="0.01" />
+                            </div>
+                            <button class="btn btn-outline-primary" type="button" @onclick="SaveCommissionAsync" disabled="@_isSavingCommission">
+                                @(_isSavingCommission ? "Saving..." : "Save")
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_commissionMessage))
+                        {
+                            <div class="text-body-secondary mt-2">@_commissionMessage</div>
+                        }
+                    </dd>
+                </dl>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private bool _isSavingManualEmployee;
+    private bool _isSavingCommission;
+    private string? _loadError;
+    private string? _selectedEmployeeKey;
+    private string? _manualEmployeeMessage;
+    private string? _commissionMessage;
+    private decimal? _commissionInput;
+    private ManualEmployeeInput _manualEmployee = new();
+    private IReadOnlyList<EmployeeRow> EmployeeRows = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+
+        try
+        {
+            var teamMembers = await DbContext.SquareTeamMembers.AsNoTracking().ToListAsync();
+            var manualEmployees = await DbContext.EmployeeRosterEntries.AsNoTracking().ToListAsync();
+            var sales = await DbContext.SquareSales.AsNoTracking().ToListAsync();
+            var lineItems = await DbContext.SquareSaleLineItems.AsNoTracking().ToListAsync();
+
+            var grossByOrderId = lineItems
+                .GroupBy(lineItem => lineItem.SquareOrderId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Sum(lineItem => lineItem.GrossAmountCents),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var salesByTeamMemberId = sales
+                .Where(sale => !string.IsNullOrWhiteSpace(sale.TeamMemberId))
+                .GroupBy(sale => sale.TeamMemberId!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => new EmployeeSalesTotals(
+                        group.Sum(sale => sale.AmountCents + sale.TipCents),
+                        group.Sum(sale =>
+                            !string.IsNullOrWhiteSpace(sale.OrderId) && grossByOrderId.TryGetValue(sale.OrderId, out var grossCents)
+                                ? grossCents
+                                : sale.AmountCents + sale.TipCents)),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var squareRows = teamMembers
+                .OrderBy(member => member.DisplayName ?? member.GivenName ?? member.FamilyName ?? member.SquareTeamMemberId)
+                .Select(member =>
+                {
+                    salesByTeamMemberId.TryGetValue(member.SquareTeamMemberId, out var totals);
+                    return new EmployeeRow(
+                        $"square:{member.SquareTeamMemberId}",
+                        member.SquareTeamMemberId,
+                        GetDisplayName(member),
+                        GetContact(member),
+                        member.Status ?? "Unknown",
+                        member.LocationAssignmentType ?? "Unassigned",
+                        true,
+                        member.CommissionPercentage,
+                        totals?.NetCents ?? 0,
+                        totals?.GrossCents ?? 0);
+                });
+
+            var manualRows = manualEmployees
+                .Select(employee => new EmployeeRow(
+                    $"manual:{employee.Id}",
+                    employee.Id.ToString(),
+                    employee.Name,
+                    FirstConfigured(employee.EmailAddress, employee.PhoneNumber) ?? "No contact saved",
+                    employee.Status,
+                    FirstConfigured(employee.Role, employee.Department) ?? "Manual roster",
+                    false,
+                    employee.CommissionPercentage,
+                    0,
+                    0));
+
+            EmployeeRows = squareRows
+                .Concat(manualRows)
+                .Where(employee => IsActiveStatus(employee.Status))
+                .OrderByDescending(employee => employee.NetCents)
+                .ThenBy(employee => employee.Name)
+                .ToList();
+
+            _selectedEmployeeKey = EmployeeRows.Any(employee => employee.Key == _selectedEmployeeKey)
+                ? _selectedEmployeeKey
+                : EmployeeRows.FirstOrDefault()?.Key;
+
+            SyncCommissionInputFromSelection();
+            _loadError = null;
+        }
+        catch
+        {
+            EmployeeRows = [];
+            _loadError = "Square employee data could not be loaded right now. PostgreSQL did not respond in time.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private decimal TotalNet => EmployeeRows.Sum(employee => employee.NetCents) / 100m;
+
+    private decimal TotalGross => EmployeeRows.Sum(employee => employee.GrossCents) / 100m;
+
+    private int SquareEmployeeCount => EmployeeRows.Count(employee => employee.IsSquareEmployee);
+
+    private int ManualEmployeeCount => EmployeeRows.Count(employee => !employee.IsSquareEmployee);
+
+    private EmployeeRow? SelectedEmployee =>
+        EmployeeRows.FirstOrDefault(employee => employee.Key == _selectedEmployeeKey);
+
+    private void SelectEmployee(string key)
+    {
+        _selectedEmployeeKey = key;
+        SyncCommissionInputFromSelection();
+    }
+
+    private async Task SaveCommissionAsync()
+    {
+        if (SelectedEmployee is null)
+        {
+            return;
+        }
+
+        _commissionMessage = null;
+
+        if (_commissionInput is < 0 or > 100)
+        {
+            _commissionMessage = "Commission must be between 0 and 100.";
+            return;
+        }
+
+        _isSavingCommission = true;
+
+        try
+        {
+            if (SelectedEmployee.IsSquareEmployee)
+            {
+                var teamMember = await DbContext.SquareTeamMembers.FindAsync(SelectedEmployee.ExternalId);
+                if (teamMember is null)
+                {
+                    throw new InvalidOperationException("The selected Square employee could not be found.");
+                }
+
+                teamMember.CommissionPercentage = _commissionInput;
+            }
+            else if (Guid.TryParse(SelectedEmployee.ExternalId, out var employeeId))
+            {
+                var employee = await DbContext.EmployeeRosterEntries.FindAsync(employeeId);
+                if (employee is null)
+                {
+                    throw new InvalidOperationException("The selected team member could not be found.");
+                }
+
+                employee.CommissionPercentage = _commissionInput;
+            }
+            else
+            {
+                throw new InvalidOperationException("The selected employee could not be updated.");
+            }
+
+            await DbContext.SaveChangesAsync();
+            _commissionMessage = $"Commission saved at {_commissionInput:0.##}%.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _commissionMessage = $"Commission could not be saved. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingCommission = false;
+        }
+    }
+
+    private void SyncCommissionInputFromSelection()
+    {
+        _commissionInput = SelectedEmployee?.CommissionPercentage;
+        _commissionMessage = null;
+    }
+
+    private async Task AddManualEmployeeAsync()
+    {
+        _manualEmployeeMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_manualEmployee.Name))
+        {
+            _manualEmployeeMessage = "Name is required.";
+            return;
+        }
+
+        _isSavingManualEmployee = true;
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var employee = new EmployeeRosterEntryEntity
+            {
+                Name = _manualEmployee.Name.Trim(),
+                Role = NormalizeInput(_manualEmployee.Role),
+                Department = NormalizeInput(_manualEmployee.Department),
+                EmailAddress = NormalizeInput(_manualEmployee.EmailAddress),
+                PhoneNumber = NormalizeInput(_manualEmployee.PhoneNumber),
+                Status = "ACTIVE",
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+
+            DbContext.EmployeeRosterEntries.Add(employee);
+            await DbContext.SaveChangesAsync();
+
+            _selectedEmployeeKey = $"manual:{employee.Id}";
+            _manualEmployee = new ManualEmployeeInput();
+            _manualEmployeeMessage = "Employee added.";
+
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _manualEmployeeMessage = $"Employee could not be added. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingManualEmployee = false;
+        }
+    }
+
+    private static string GetDisplayName(SquareTeamMemberEntity member)
+    {
+        if (!string.IsNullOrWhiteSpace(member.DisplayName))
+        {
+            return member.DisplayName;
+        }
+
+        var name = string.Join(" ", new[] { member.GivenName, member.FamilyName }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        return string.IsNullOrWhiteSpace(name) ? member.SquareTeamMemberId : name;
+    }
+
+    private static string GetContact(SquareTeamMemberEntity member) =>
+        FirstConfigured(member.EmailAddress, member.PhoneNumber) ?? "No contact saved";
+
+    private static string? FirstConfigured(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+    private static string? NormalizeInput(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static bool IsActiveStatus(string status) =>
+        string.Equals(status, "ACTIVE", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetStatusClass(string status) => status.ToUpperInvariant() switch
+    {
+        "ACTIVE" => "employees-badge-success",
+        "INACTIVE" => "employees-badge-muted",
+        _ => "employees-badge-primary",
+    };
+
+    private static string GetSourceClass(bool isSquareEmployee) =>
+        isSquareEmployee ? "employees-badge-primary" : "employees-badge-warning";
+
+    private sealed record EmployeeSalesTotals(long NetCents, long GrossCents);
+
+    private sealed record EmployeeRow(
+        string Key,
+        string ExternalId,
+        string Name,
+        string Contact,
+        string Status,
+        string Assignment,
+        bool IsSquareEmployee,
+        decimal? CommissionPercentage,
+        long NetCents,
+        long GrossCents)
+    {
+        public string Source => IsSquareEmployee ? "Square" : "Non-Square";
+
+        public decimal NetTotal => NetCents / 100m;
+
+        public string CommissionLabel => CommissionPercentage is null ? "—" : $"{CommissionPercentage.Value:0.##}%";
+
+        public decimal GrossTotal => GrossCents / 100m;
+    }
+
+    private sealed class ManualEmployeeInput
+    {
+        public string? Name { get; set; }
+
+        public string? Role { get; set; }
+
+        public string? Department { get; set; }
+
+        public string? EmailAddress { get; set; }
+
+        public string? PhoneNumber { get; set; }
+    }
+}

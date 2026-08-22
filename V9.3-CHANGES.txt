@@ -1,0 +1,8 @@
+Mustaine-AI v9.3 — Production reads local sales only
+
+- Production no longer calls Square when the page opens.
+- Square Sales remains the single owner of Square synchronization.
+- Production reads sales already stored in PostgreSQL and builds the make list from those records.
+- Removes the Entity Framework duplicate-tracking failure caused by Production re-syncing sales immediately after Square Sales synced them.
+- Production now shows the latest stored sale timestamp as "Sales Loaded Through".
+- Permanent database, login, and integration settings remain under ~/.mustaine-ai.

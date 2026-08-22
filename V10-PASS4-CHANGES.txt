@@ -1,0 +1,7 @@
+V10 Pass 4 - Shared Fulfillment Backbone
+- Added source-agnostic FulfillmentOrderLines data model for Square Show Orders, WooCommerce, and future order sources.
+- Added customer/contact, shipping address, product, quantity, order notes/selections, production state, fulfillment state, carrier/tracking, and timestamps.
+- Added startup-safe schema creation so existing databases gain the shared fulfillment table without replacing or disturbing current tables.
+- Existing ShowOrderFulfillments and Show Orders UI remain unchanged in this pass.
+- Existing Show Order fulfillment states are copied once into the shared backbone as seed records; no current workflow is removed.
+- WooCommerce order intake and fulfillment UI are intentionally NOT connected yet; those are subsequent passes after this foundation is tested.

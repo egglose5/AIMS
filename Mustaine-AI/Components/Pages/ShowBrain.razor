@@ -1,0 +1,372 @@
+@page "/show-brain"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject IBrainReasoningService Reasoning
+@inject ApplicationDbContext Db
+@inject IBrainMemoryService Memory
+
+<PageTitle>Show Brain</PageTitle>
+
+<div class="shows-hero">
+    <p class="shows-eyebrow">Ancient Innovations Brain</p>
+    <h1>Show Brain</h1>
+    <p>Ask the Brain, read the recommendation, and decide. Everything else stays out of the way until you open it.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_loading)
+{
+    <p>Loading Show Brain…</p>
+}
+else
+{
+    <details class="shows-card mt-3" data-b10="SYSTEM_STATUS">
+        <summary><strong>System status</strong> <span class="text-body-secondary">Provider, model and counts</span></summary>
+        <div class="mt-3">
+    <div class="shows-metrics">
+        <div class="shows-card"><span>Reasoning router</span><strong>@(_model.Configured ? "LIVE" : "READY")</strong></div>
+        <div class="shows-card"><span>Provider</span><strong>@_model.ProviderKey</strong></div>
+        <div class="shows-card"><span>Model</span><strong>@(_model.ModelName ?? "Not configured")</strong></div>
+        <div class="shows-card"><span>Reasoning runs</span><strong>@_dashboard.TotalRuns</strong></div>
+        <div class="shows-card"><span>Real shows available</span><strong>@_showCount</strong></div>
+        <div class="shows-card"><span>Historical results</span><strong>@_resultCount</strong></div>
+    </div>
+        </div>
+    </details>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="alert @(_lastResult?.Succeeded == false ? "alert-warning" : "alert-success") mt-3">@_message</div>
+    }
+
+    <details class="shows-card mt-3" data-b10="EMAIL_ARCHITECTURE">
+        <summary><strong>Brain Email</strong></summary>
+        <div class="mt-3">
+    <section class="shows-card mt-3 border-primary">
+        <div class="shows-card-head">
+            <div><h2>Brain Email — two-part system</h2><p>Email lives at Brain level. The Brain owns communication intelligence; the Arms own operational truth.</p></div>
+            <span class="badge text-bg-primary">B9 EMAIL DECISION LOOP</span>
+        </div>
+        <div class="showarm-evidence-list mb-3">
+            <div class="showarm-evidence-item"><strong>Part 1 — AI Brain direct intake</strong><span>Deliberate system/vendor mail sent to the Brain address is imported for classification and routing.</span></div>
+            <div class="showarm-evidence-item"><strong>Part 2 — Business inbox feed</strong><span>Configured business inboxes are scanned for useful information while Gmail remains untouched as the source record.</span></div>
+            <div class="showarm-evidence-item"><strong>Show routing</strong><span>Show-related emails, attachments, maps, packets, instructions and deadlines become governed Show Arm evidence; they do not become a competing email database.</span></div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap"><a class="btn btn-primary" href="/brain-communications">Open Brain Communications</a><a class="btn btn-outline-secondary" href="/email-hub">Open Email Hub</a></div>
+    </section>
+        </div>
+    </details>
+
+    <details class="shows-card mt-3" data-b10="DIAGNOSTICS">
+        <summary><strong>Diagnostics & self-tests</strong></summary>
+        <div class="mt-3">
+    <section class="shows-card mt-3">
+        <div class="shows-card-head">
+            <div><h2>B5 live reasoning connection</h2><p>The provider is replaceable. It receives only the question and governed context that Brain Core deliberately supplies.</p></div>
+            <span class="badge @(_model.Configured ? "text-bg-success" : "text-bg-warning")">@(_model.Configured ? "Provider configured" : "Provider not configured")</span>
+        </div>
+        <div class="showarm-evidence-list mb-3">
+            <div class="showarm-evidence-item"><strong>Provider status</strong><span>@_model.Detail</span></div>
+            <div class="showarm-evidence-item"><strong>Boundary</strong><span>No model receives database credentials. Show context must cross governed Brain services/tools.</span></div>
+            <div class="showarm-evidence-item"><strong>Authority</strong><span>Reasoning is advisory. Applications, spending and vendor/backer assignment remain outside model authority.</span></div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap"><button class="btn btn-outline-secondary btn-sm" @onclick="RunContractTestAsync" disabled="@_busy">Run B4 contract self-test</button><button class="btn btn-primary btn-sm" @onclick="RunLiveTestAsync" disabled="@(_busy || !_model.Configured)">Run B5 live reasoning self-test</button></div>
+    </section>
+        </div>
+    </details>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>Ask the Show Brain</h2><p>Ask the question. The Brain will pull the relevant Ancient Innovations evidence.</p></div><span class="badge text-bg-success">READY</span></div>
+        <label class="form-label">Question / decision to reason about</label>
+        <textarea class="form-control" rows="5" @bind="_question" @bind:event="oninput" placeholder="Example: What assumptions should we challenge before deciding whether this show deserves deeper research?"></textarea>
+        <div class="d-flex gap-2 flex-wrap mt-3">
+            <button class="btn btn-primary" @onclick="ReasonAsync" disabled="@_busy">@(_busy ? "Thinking…" : "Ask Brain")</button>
+        </div>
+        <details class="mt-3" data-b10="QUESTION_OPTIONS">
+            <summary class="text-body-secondary">Question options</summary>
+            <div class="row g-2 mt-2">
+                <div class="col-md-6"><label class="form-label">Subject type</label><input class="form-control" @bind="_subjectType" placeholder="SHOW / VENDOR / TOUR / GENERAL" /></div>
+                <div class="col-md-6"><label class="form-label">Subject key</label><input class="form-control" @bind="_subjectKey" placeholder="Known ID or name" /></div>
+            </div>
+        </details>
+
+        @if (!string.IsNullOrWhiteSpace(_lastResult?.OutputText))
+        {
+            var digest = BuildDigest(_lastResult.OutputText);
+            <div class="border rounded p-3 mt-3">
+                <div class="d-flex justify-content-between gap-2 flex-wrap align-items-start">
+                    <div><h3 class="h4 mb-1">🧠 Brain Recommendation</h3><div class="fs-5">@digest.Recommendation</div></div>
+                    <span class="badge text-bg-primary">@digest.Confidence</span>
+                </div>
+
+                @if (digest.Why.Count > 0)
+                {
+                    <h4 class="h6 mt-4">🔑 Why</h4>
+                    <div class="d-flex gap-2 flex-wrap">
+                        @foreach (var item in digest.Why.Take(6)) { <span class="badge rounded-pill text-bg-light border">@item</span> }
+                    </div>
+                }
+
+                @if (digest.Scout.Count > 0)
+                {
+                    <h4 class="h6 mt-4">🔎 What Scout should look for</h4>
+                    <ul class="mb-0">@foreach (var item in digest.Scout.Take(8)) { <li>@item</li> }</ul>
+                }
+
+                @if (digest.Cautions.Count > 0)
+                {
+                    <h4 class="h6 mt-4">⚠️ Don't assume</h4>
+                    <ul class="mb-0">@foreach (var item in digest.Cautions.Take(6)) { <li>@item</li> }</ul>
+                }
+
+                @if (digest.DataHoles.Count > 0)
+                {
+                    <div class="alert alert-warning mt-4 mb-0">
+                        <strong>🕳️ Brain found a data hole</strong>
+                        <ul class="mb-0 mt-2">@foreach (var item in digest.DataHoles.Take(6)) { <li>@item</li> }</ul>
+                    </div>
+                }
+
+                <details class="mt-4">
+                    <summary class="btn btn-outline-secondary btn-sm">Show evidence & full reasoning</summary>
+                    <div class="mt-3 p-3 border rounded bg-body-tertiary" style="white-space: pre-wrap">@_lastResult.OutputText</div>
+                </details>
+            </div>
+        }
+
+        @if (_pendingDecision is not null)
+        {
+            <div class="border border-primary rounded p-3 mt-3">
+                <div class="d-flex justify-content-between gap-2 flex-wrap"><div><h3 class="h5 mb-1">Your decision</h3><p class="text-body-secondary mb-0">Follow it, or choose differently and tell the Brain why.</p></div><span class="badge text-bg-primary">AWAITING OWNER</span></div>
+                <details class="mt-3">
+                    <summary class="btn btn-outline-secondary btn-sm">Show evidence used for this decision</summary>
+                    <div class="mt-3 p-3 border rounded bg-body-tertiary" style="white-space: pre-wrap">@(_pendingDecision.RecommendationReasoning ?? "No reasoning text was stored for this decision.")</div>
+                </details>
+                <div class="alert alert-light mt-3 mb-2"><strong>Brain recommends:</strong> @_pendingDecision.Recommendation</div>
+                <label class="form-label">If you are choosing something different, what are you choosing?</label>
+                <input class="form-control" @bind="_humanDecision" placeholder="Example: Pass on this show / Apply / Research further" />
+                <label class="form-label mt-2">Why? <span class="text-body-secondary">Required for an override so the Brain can learn your reasoning, not merely memorize yes/no.</span></label>
+                <textarea class="form-control" rows="3" @bind="_humanReason" placeholder="What do you see that matters to this decision?"></textarea>
+                <div class="d-flex gap-2 flex-wrap mt-3">
+                    <button class="btn btn-success" @onclick="FollowRecommendationAsync" disabled="@_busy">Follow recommendation</button>
+                    <button class="btn btn-outline-primary" @onclick="RecordOverrideAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_humanDecision) || string.IsNullOrWhiteSpace(_humanReason))">Record different decision</button>
+                </div>
+            </div>
+        }
+    </section>
+
+    <details class="shows-card mt-3" data-b10="REASONING_HISTORY">
+        <summary><strong>Reasoning history</strong></summary>
+        <div class="mt-3">
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>Recent reasoning ledger</h2><p>Provider/model, question, state and output remain in Ancient Innovations-owned audit data.</p></div><span class="badge text-bg-light">@_runs.Count shown</span></div>
+        @if (_runs.Count == 0)
+        {
+            <p class="mb-0">No reasoning runs yet.</p>
+        }
+        else
+        {
+            <div class="showarm-evidence-list">
+                @foreach (var run in _runs.Take(15))
+                {
+                    <div class="showarm-evidence-item">
+                        <div class="d-flex justify-content-between gap-2 flex-wrap"><strong>@run.TaskType</strong><span class="badge @(run.State == "COMPLETED" ? "text-bg-success" : run.State == "REQUESTED" ? "text-bg-warning" : "text-bg-secondary")">@run.State</span></div>
+                        <span>@run.UserQuestion</span>
+                        <small>@run.ProviderKey · @(run.ModelName ?? "no model") · @run.StartedAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</small>
+                        @if (!string.IsNullOrWhiteSpace(run.ErrorMessage)) { <small><strong>Note:</strong> @run.ErrorMessage</small> }
+                    </div>
+                }
+            </div>
+        }
+    </section>
+        </div>
+    </details>
+
+    <details class="shows-card mt-3" data-b10="GOVERNANCE">
+        <summary><strong>Governance & boundaries</strong></summary>
+        <div class="mt-3">
+    <section class="shows-card mt-3">
+        <div class="shows-card-head"><div><h2>What B9 deliberately does not do</h2></div></div>
+        <p class="mb-0">B9 does not give the model raw database access, auto-promote model output into durable memory, submit applications, spend money, or assign vendors/backers. Your decisions and outcomes are evidence; any model-generated lesson remains staged until reviewed. Operational evidence crosses a bounded read-only Brain gateway tool; the live provider remains advisory and replaceable.</p>
+    </section>
+        </div>
+    </details>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _message;
+    private string _question = "";
+    private string _subjectType = "GENERAL";
+    private string _subjectKey = "";
+    private BrainModelStatus _model = new("UNCONFIGURED", false, null, "", "");
+    private BrainReasoningDashboard _dashboard = new(0, 0, 0, null);
+    private IReadOnlyList<BrainReasoningRunEntity> _runs = Array.Empty<BrainReasoningRunEntity>();
+    private BrainReasoningResult? _lastResult;
+    private int _showCount;
+    private int _resultCount;
+    private IReadOnlyList<BrainDecisionRecordEntity> _decisions = Array.Empty<BrainDecisionRecordEntity>();
+    private BrainDecisionRecordEntity? _pendingDecision;
+    private string _humanDecision = "";
+    private string _humanReason = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await ReloadAsync(); }
+        catch (Exception ex) { _error = $"Show Brain could not initialize: {ex.Message}"; }
+        finally { _loading = false; }
+    }
+
+    private async Task ReloadAsync()
+    {
+        _model = Reasoning.GetModelStatus();
+        _dashboard = await Reasoning.GetDashboardAsync();
+        _runs = await Reasoning.GetRecentRunsAsync();
+        _showCount = await Db.ShowEvents.CountAsync();
+        _resultCount = await Db.ShowResults.CountAsync();
+        _decisions = await Memory.GetRecentDecisionsAsync(50);
+        _pendingDecision = _decisions.FirstOrDefault(x => x.AgentKey == "SHOW_BRAIN" && x.HumanDecision == null);
+    }
+
+    private async Task RunContractTestAsync()
+    {
+        _busy = true;
+        try { _message = await Reasoning.RunContractSelfTestAsync(); await ReloadAsync(); }
+        catch (Exception ex) { _message = $"B4 contract test failed: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private async Task RunLiveTestAsync()
+    {
+        _busy = true;
+        try
+        {
+            _lastResult = await Reasoning.RunLiveProviderSelfTestAsync();
+            _message = _lastResult.Succeeded
+                ? $"B5 PASS — live reasoning completed through {_lastResult.ProviderKey} / {_lastResult.ModelName}."
+                : $"B5 live self-test did not run: {_lastResult.Message}";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"B5 live self-test failed: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+
+    private async Task RunB6RealDataTestAsync()
+    {
+        _busy = true;
+        try
+        {
+            _question = "Using only the Ancient Innovations evidence you were given, tell me what our historical Show Arm data actually says about our strongest and weakest show patterns. Cite concrete show/result evidence when available. Separate facts from inference, identify missing data, and give me one recommendation I could act on next. Do not invent numbers or show names.";
+            _subjectType = "GENERAL";
+            _subjectKey = "B6_REAL_DATA_TEST";
+            _lastResult = await Reasoning.ReasonForShowArmAsync(_question, _subjectType, _subjectKey);
+            _message = _lastResult.Succeeded ? "B6 REAL-DATA TEST COMPLETED — read the answer below and judge whether it is actually grounded in Ancient Innovations evidence." : _lastResult.Message;
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"B6 real-data test failed: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private async Task ReasonAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_question)) { _message = "Enter a question for Show Brain first."; return; }
+        _busy = true;
+        try
+        {
+            _lastResult = await Reasoning.ReasonForShowArmAsync(_question, _subjectType, _subjectKey);
+            _message = _lastResult.Message;
+            _humanDecision = ""; _humanReason = "";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"Reasoning failed: {ex.GetBaseException().Message}"; }
+        finally { _busy = false; }
+    }
+
+    private async Task FollowRecommendationAsync()
+    {
+        if (_pendingDecision is null) return;
+        _busy = true;
+        try
+        {
+            await Memory.RecordHumanDecisionAsync(_pendingDecision.Id, "FOLLOW_RECOMMENDATION", "Owner accepted the Brain recommendation as presented.");
+            _message = "Owner decision recorded. This decision now waits for an outcome before learning is proposed.";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"Decision was not recorded: {ex.GetBaseException().Message}"; }
+        finally { _busy = false; }
+    }
+
+    private async Task RecordOverrideAsync()
+    {
+        if (_pendingDecision is null) return;
+        _busy = true;
+        try
+        {
+            await Memory.RecordHumanDecisionAsync(_pendingDecision.Id, _humanDecision, _humanReason);
+            _message = "Different owner decision recorded with your reasoning. The Brain will compare it with the eventual outcome rather than treating disagreement as a rule.";
+            _humanDecision = ""; _humanReason = "";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"Decision was not recorded: {ex.GetBaseException().Message}"; }
+        finally { _busy = false; }
+    }
+    private sealed record BrainDigest(string Recommendation, string Confidence, List<string> Why, List<string> Scout, List<string> Cautions, List<string> DataHoles);
+
+    private static BrainDigest BuildDigest(string text)
+    {
+        static string Clean(string value) => value.Trim().TrimStart('-', '*', ' ', '#').Replace("**", "").Replace("`", "");
+        static List<string> Section(string source, params string[] headings)
+        {
+            var lines = source.Replace("\r", "").Split('\n');
+            var result = new List<string>();
+            var active = false;
+            foreach (var raw in lines)
+            {
+                var line = raw.Trim();
+                var heading = line.TrimStart('#', ' ').Trim();
+                if (headings.Any(h => heading.StartsWith(h, StringComparison.OrdinalIgnoreCase))) { active = true; continue; }
+                if (active && line.StartsWith("#")) break;
+                if (active && (line.StartsWith("-") || System.Text.RegularExpressions.Regex.IsMatch(line, @"^\d+\.")))
+                {
+                    var cleaned = Clean(System.Text.RegularExpressions.Regex.Replace(line, @"^\d+\.\s*", ""));
+                    if (!string.IsNullOrWhiteSpace(cleaned)) result.Add(cleaned);
+                }
+            }
+            return result;
+        }
+
+        var recommendation = Section(text, "Recommendation").FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(recommendation))
+        {
+            var lines = text.Replace("\r", "").Split('\n');
+            var idx = Array.FindIndex(lines, x => x.Trim().TrimStart('#', ' ').StartsWith("Recommendation", StringComparison.OrdinalIgnoreCase));
+            if (idx >= 0)
+            {
+                recommendation = lines.Skip(idx + 1).Select(Clean).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+            }
+        }
+        recommendation ??= "Read the evidence before deciding.";
+
+        var confidenceLine = text.Replace("\r", "").Split('\n')
+            .Select(Clean).FirstOrDefault(x => x.StartsWith("Moderate confidence", StringComparison.OrdinalIgnoreCase)
+                                           || x.StartsWith("High confidence", StringComparison.OrdinalIgnoreCase)
+                                           || x.StartsWith("Low confidence", StringComparison.OrdinalIgnoreCase));
+        var confidence = confidenceLine?.Split(' ').FirstOrDefault()?.ToUpperInvariant() ?? "CONFIDENCE NOT STATED";
+
+        var why = Section(text, "Why these characteristics matter", "Why");
+        var scout = Section(text, "What Scout should look for", "Scout should look for");
+        var cautions = Section(text, "Characteristics that may be coincidental", "Don't assume", "Do not assume");
+        var holes = Section(text, "Evidence missing", "Missing evidence", "Data holes");
+
+        return new BrainDigest(recommendation, confidence, why, scout, cautions, holes);
+    }
+
+}

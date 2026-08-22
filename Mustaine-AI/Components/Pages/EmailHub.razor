@@ -1,0 +1,789 @@
+@page "/email-hub"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ShowArmDbContext Db
+@inject IBrainEmailIntakeService BrainEmail
+@inject IConfiguration Config
+@inject ApplicationDbContext BrainDb
+<PageTitle>Email Hub</PageTitle>
+
+<div class="shows-hero">
+    <p class="shows-eyebrow">Ancient Innovations Brain</p>
+    <h1>Email Hub</h1>
+    <p>If Jaime doesn't need to make a decision, the Brain should not create work. Gmail remains the source record; Gmail remains untouched as the source record; B7 lets you resolve the Brain's internal routing/review queue.</p>
+    <small class="text-muted">Current Email Brain triage v9.10.1 — informational mail is handled quietly; stored current mail can be reprocessed whenever routing improves.</small>
+</div>
+@if(_tab=="history")
+{
+    <small class="text-muted d-block mt-2">Historical consolidation v9.8.6 — review one show identity at a time; duplicate emails and years are grouped into one decision.</small>
+}
+
+<details class="shows-card mt-3" data-b10="EMAIL_SYSTEM_TOOLS">
+    <summary><strong>Email system & imports</strong> <span class="text-body-secondary">Direct intake, inbox scan, historical archives</span></summary>
+    <div class="mt-3">
+<section class="shows-card mt-3">
+    <div class="shows-card-head">
+        <div>
+            <h2>AI Brain direct intake</h2>
+            <p><strong>@IntakeAddress</strong> is the deliberate system/vendor address. This check imports only messages actually delivered to that address.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="ImportDirectAsync" disabled="@_busy">@(_busyScope=="direct"?"Checking AI Brain…":"Check AI Brain Address")</button>
+    </div>
+</section>
+
+<section class="shows-card mt-3">
+    <div class="shows-card-head">
+        <div>
+            <h2>Business inbox feed</h2>
+            <p>Scans your configured business inboxes, routes useful information, and leaves Gmail untouched. Use this when you want the Brain to process your normal business email.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap justify-content-end">
+            <button class="btn btn-outline-dark" @onclick="BackfillAttachmentsAsync" disabled="@_busy">@(_busyScope=="attachments"?"Backfilling attachments…":"Backfill Attachments")</button>
+            <button class="btn btn-outline-dark" @onclick="ReprocessCurrentAsync" disabled="@_busy">@(_busyScope=="reprocess"?"Reprocessing…":"Reprocess Current Mail")</button>
+            <button class="btn btn-dark" @onclick="ImportBusinessAsync" disabled="@_busy">@(_busyScope=="business"?"Reading inboxes…":"Check Business Inboxes")</button>
+        </div>
+    </div>
+    @if(!string.IsNullOrWhiteSpace(_message)){<div class="alert alert-secondary mt-2">@_message</div>}
+</section>
+
+<section class="shows-card mt-3">
+    <div class="shows-card-head">
+        <div>
+            <h2>Historical email intelligence</h2>
+            <p>The TS Artisans archive and pre-Gmail Ancient Innovations archive are bundled with this pass. Preview first; historical mail becomes business memory and show evidence, not thousands of new daily tasks.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-dark" @onclick="PreviewHistoryAsync" disabled="@_busy">@(_busyScope=="history-preview"?"Analyzing history…":"Preview Historical Archives")</button>
+            <button class="btn btn-dark" @onclick="ImportHistoryAsync" disabled="@(_busy || _historyPreview is null)">@(_busyScope=="history-import"?"Importing intelligence…":"Import Historical Intelligence")</button>
+        </div>
+    </div>
+    @if(_historyPreview is not null)
+    {
+        <div class="row g-2 mt-2">
+            <div class="col"><div class="shows-card"><strong>@_historyPreview.Total</strong><span>Historical emails</span></div></div>
+            <div class="col"><div class="shows-card"><strong>@_historyPreview.ShowRelated</strong><span>Show-related</span></div></div>
+            <div class="col"><div class="shows-card"><strong>@_historyPreview.ShowMatched</strong><span>Show/year matched</span></div></div>
+            <div class="col"><div class="shows-card"><strong>@_historyPreview.Uncertain</strong><span>Historical match review</span></div></div>
+            <div class="col"><div class="shows-card"><strong>@_historyPreview.Financial</strong><span>Financial</span></div></div>
+            <div class="col"><div class="shows-card"><strong>@_historyPreview.Junk</strong><span>Low-value/junk</span></div></div>
+        </div>
+        <div class="alert alert-secondary mt-2 mb-0">@_historyPreview.Message</div>
+    }
+</section>
+
+
+    </div>
+</details>
+
+<div class="row g-3 mt-1">
+    <div class="col"><div class="shows-card"><strong>@DirectCount</strong><span>Direct AI Brain</span></div></div>
+    <div class="col"><div class="shows-card"><strong>@Count("NEEDS_YOU")</strong><span>Need You</span></div></div>
+    <div class="col"><div class="shows-card"><strong>@Count("NEEDS_REVIEW")</strong><span>Needs Review</span></div></div>
+    <div class="col"><div class="shows-card"><strong>@Count("BRAIN_HANDLED")</strong><span>Brain Handled</span></div></div>
+    <div class="col"><div class="shows-card"><strong>@Count("IGNORED")</strong><span>Ignored</span></div></div>
+    <div class="col"><div class="shows-card"><strong>@_items.Count(x=>x.UnsubscribeRecommended)</strong><span>Unsubscribe Suggestions</span></div></div>
+</div>
+
+<div class="shows-tabs mt-3">
+    <button class="@Tab("direct")" @onclick='()=>_tab="direct"'>AI Brain Direct</button>
+    <button class="@Tab("needs")" @onclick='()=>_tab="needs"'>Needs You</button>
+    <button class="@Tab("review")" @onclick='()=>_tab="review"'>Needs Review</button>
+    <button class="@Tab("handled")" @onclick='()=>_tab="handled"'>Brain Handled</button>
+    <button class="@Tab("junk")" @onclick='()=>_tab="junk"'>Ignored</button>
+    <button data-b92="UNSUBSCRIBE_TAB" class="@Tab("unsubscribe")" @onclick='()=>_tab="unsubscribe"'>Unsubscribe Suggestions</button>
+    <button class="@Tab("history")" @onclick='()=>_tab="history"'>Historical Match Review</button>
+    <button class="@Tab("all")" @onclick='()=>_tab="all"'>All</button>
+</div>
+
+<section class="shows-card mt-3">
+    @if(_tab=="history")
+    {
+        @if(HistoricalGroups.Count==0)
+        {
+            <div class="showarm-empty"><strong>Nothing in Historical Match Review.</strong><span>The Brain has no unresolved historical show identities waiting for a decision.</span></div>
+        }
+        else
+        {
+            <div class="alert alert-info mb-3">
+                <strong>@HistoricalReviewCount historical emails consolidated into @HistoricalGroups.Count proposed shows.</strong>
+                Review one show identity once; the Brain will attach all matching historical emails to the correct year editions together.
+            </div>
+            @foreach(var g in HistoricalGroups)
+            {
+                <div class="showarm-evidence-item mb-4">
+                    <div class="d-flex justify-content-between gap-3 align-items-start">
+                        <div>
+                            <strong class="d-block">@g.ProposedName</strong>
+                            <small>@g.Items.Count email@(g.Items.Count==1?"":"s") · years @string.Join(", ",g.Years) · @g.Mailboxes.Count source mailbox@(g.Mailboxes.Count==1?"":"es")</small>
+                        </div>
+                        <span class="badge text-bg-light">HISTORICAL SHOW GROUP</span>
+                    </div>
+
+                    @if(!string.IsNullOrWhiteSpace(g.ExistingShowName))
+                    {
+                        <div class="alert alert-secondary py-2 mt-2 mb-1"><strong>Possible existing show:</strong> @g.ExistingShowName</div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-info py-2 mt-2 mb-1"><strong>Proposed historical show:</strong> @g.ProposedName</div>
+                    }
+
+                    <div class="row g-2 mt-1">
+                        <div class="col-md-4"><div class="border rounded p-2 h-100"><small class="text-muted d-block">YEARS FOUND</small><strong>@string.Join(", ",g.Years)</strong></div></div>
+                        <div class="col-md-4"><div class="border rounded p-2 h-100"><small class="text-muted d-block">RELATIONSHIP EVIDENCE</small><strong>@g.RelationshipSummary</strong></div></div>
+                        <div class="col-md-4"><div class="border rounded p-2 h-100"><small class="text-muted d-block">SENDERS / ORGANIZERS</small><strong>@g.SenderSummary</strong></div></div>
+                    </div>
+
+                    <div class="row g-2 mt-2 align-items-end">
+                        <div class="col-md-5">
+                            <label class="form-label mb-1">Use an existing show instead</label>
+                            <select class="form-select" value="@SelectedGroupEvent(g)" @onchange="e=>SetSelectedGroupEvent(g,e.Value?.ToString())">
+                                <option value="">No existing show selected</option>
+                                @foreach(var ev in ExistingShowEvents)
+                                {<option value="@ev.Id">@ev.Name</option>}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label mb-1">Relationship handling</label>
+                            <select class="form-select" value="@SelectedGroupRelationship(g)" @onchange="e=>SetGroupRelationship(g,e.Value?.ToString())">
+                                <option value="Brain infer per email">Brain infer per email</option>
+                                @foreach(var r in Relationships){<option value="@r">@r for all</option>}
+                            </select>
+                        </div>
+                        <div class="col-md-4 d-flex gap-2 flex-wrap">
+                            <button class="btn btn-dark" disabled="@_busy" @onclick="()=>ConsolidateHistoricalGroupAsync(g,false)">Create / consolidate show</button>
+                            <button class="btn btn-outline-dark" disabled="@(_busy || SelectedGroupEvent(g) is null)" @onclick="()=>ConsolidateHistoricalGroupAsync(g,true)">Use existing show</button>
+                            <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="()=>NotOurHistoricalGroupAsync(g)">Not our show</button>
+                        </div>
+                    </div>
+
+                    <details class="mt-3">
+                        <summary><strong>Review @g.Items.Count source email@(g.Items.Count==1?"":"s")</strong></summary>
+                        <div class="mt-2">
+                            @foreach(var x in g.Items.OrderBy(x=>x.MessageDate??x.ReceivedAt))
+                            {
+                                <div class="border-top py-2">
+                                    <strong>@(x.Subject??"(no subject)")</strong>
+                                    <small class="d-block">@((x.MessageDate??x.ReceivedAt).LocalDateTime.ToString("g")) · @x.FromAddress · @InferHistoricalRelationship(x)</small>
+                                    @if(!string.IsNullOrWhiteSpace(x.BrainSummary)){<span class="d-block">@x.BrainSummary</span>}
+                                </div>
+                            }
+                        </div>
+                    </details>
+                </div>
+            }
+        }
+    }
+    else
+    {
+        @if(Visible.Count==0)
+        {
+            <div class="showarm-empty"><strong>Nothing in this view.</strong><span>@EmptyMessage</span></div>
+        }
+        @foreach(var x in Visible)
+        {
+            <div class="showarm-evidence-item mb-3">
+                <div class="d-flex justify-content-between gap-3">
+                    <strong>@(x.Subject??"(no subject)")</strong>
+                    <div class="text-end"><span class="badge text-bg-light">@x.Route</span><small class="d-block text-muted mt-1">@RouteDestination(x.Route)</small></div>
+                </div>
+                <small>From @x.FromAddress · via @x.MailboxAddress · @(x.MessageDate?.LocalDateTime.ToString("g")??x.ReceivedAt.LocalDateTime.ToString("g"))</small>
+                @if(!string.IsNullOrWhiteSpace(x.BrainSummary)){<span>@x.BrainSummary</span>}
+                @if(!string.IsNullOrWhiteSpace(x.ActionSummary)){<div class="alert alert-warning py-1 mt-2 mb-1">@x.ActionSummary</div>}
+                @if(!string.IsNullOrWhiteSpace(x.AttachmentSummary)){<small><strong>Attachments:</strong> @x.AttachmentSummary</small>}
+                @if(x.UnsubscribeRecommended)
+                {
+                    <div class="alert alert-light py-2 mt-2 mb-0">
+                        <strong>Unsubscribe suggested.</strong> The Brain has NOT unsubscribed or changed Gmail.
+                        @if(x.IsProtectedSender){<span> Protected sender — automatic unsubscribe prohibited.</span>}else{<span> Review this recommendation before any future action.</span>}
+                    </div>
+                }
+                @if(true) // S12_EMAIL_ACTIONS_ALL_QUEUES
+                {
+                    <div class="border rounded p-3 mt-2 bg-body-tertiary" data-b93="EMAIL_SNIPPET">
+                        @if(!string.IsNullOrWhiteSpace(x.BrainSummary))
+                        {
+                            <div class="mb-2"><strong>Brain summary:</strong> @x.BrainSummary</div>
+                        }
+                        <div><strong>Email excerpt:</strong> @EmailExcerpt(x.BodyText)</div>
+                        @if(!string.IsNullOrWhiteSpace(x.BodyText))
+                        {
+                            <details class="mt-2">
+                                <summary class="text-body-secondary">Show full email</summary>
+                                <div class="mt-2 small" style="white-space: pre-wrap">@x.BodyText</div>
+                            </details>
+                        }
+                    </div>
+                    <div class="border rounded p-2 mt-2" data-b7="B7_EMAIL_ACTIONS">
+                        <div class="fw-semibold mb-2">What should the Brain do?</div>
+                        <small class="text-muted d-block mb-2"><strong>Your decision clears this queue item.</strong> Gmail is not changed. The choice is recorded in the Brain decision ledger as evidence.</small>
+                        <div class="d-flex gap-2 flex-wrap" data-s12="EMAIL_ACTIONS_ALL_QUEUES">
+                            @if(x.Status == "IGNORED")
+                            {
+                                <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick='()=>ResolveEmailAsync(x,"RESTORE")'>Restore to Needs Review</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-success" disabled="@_busy" @onclick='()=>ResolveEmailAsync(x,"BRAIN_HANDLED")'>Brain handle</button>
+                                <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick='()=>ResolveEmailAsync(x,"SHOW")'>Send to Show Arm</button>
+                                <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick='()=>ResolveEmailAsync(x,"IGNORED")'>Ignore / no action</button>
+                            }
+                            @if(x.UnsubscribeRecommended)
+                            {
+                                <button class="btn btn-sm btn-outline-primary" disabled="@_busy" @onclick='()=>ResolveEmailAsync(x,"KEEP_SUBSCRIBED")'>Keep sender</button>
+                            }
+                            else if(!x.IsProtectedSender)
+                            {
+                                <button class="btn btn-sm btn-outline-dark" disabled="@_busy" @onclick='()=>ResolveEmailAsync(x,"UNSUBSCRIBE_CANDIDATE")'>Mark unsubscribe candidate</button>
+                            }
+                            @if(x.Status == "BRAIN_HANDLED")
+                            {
+                                <button class="btn btn-sm btn-outline-primary" disabled="@_busy" @onclick='()=>ResolveEmailAsync(x,"RESTORE")'>Reopen for review</button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</section>
+
+@code {
+    List<ShowEmailIntakeEntity> _items=[];
+    List<ShowEditionEntity> _editions=[];
+    readonly Dictionary<long,long?> _selectedEditions=[];
+    readonly Dictionary<long,string> _relationships=[];
+    readonly Dictionary<string,long?> _selectedGroupEvents=[];
+    readonly Dictionary<string,string> _groupRelationships=[];
+    static readonly string[] Relationships=["Unknown","Considering","Applied","Accepted","Rejected","Waitlisted","Attended","Solicitation Only"];
+    string _tab="direct", _message="", _busyScope="";
+    bool _busy;
+    HistoricalEmailPreviewResult? _historyPreview;
+
+    string IntakeAddress => Config["BrainEmail:IntakeAddress"] ?? Environment.GetEnvironmentVariable("BRAIN_EMAIL_INTAKE_ADDRESS") ?? "ai-brain@ancient-innovations.com";
+    int DirectCount => _items.Count(IsDirect);
+    int Count(string status)=>_items.Count(x=>x.Status==status);
+    static string RouteDestination(string route)=>route switch
+    {
+        "SHOW" => "→ Show Arm",
+        "CUSTOMER" => "→ Customer decision",
+        "OPERATIONS" => "→ Operations memory",
+        "STORE" => "→ Store / wholesale",
+        "TAX_FINANCIAL" => "→ Financial memory",
+        "MARKETING" => "→ Marketing review",
+        "SYSTEM_FYI" => "→ Brain handled",
+        "IGNORE" => "→ No work created",
+        _ => "→ Needs classification"
+    };
+
+    List<ShowEmailIntakeEntity> Visible => _tab switch
+    {
+        "direct" => _items.Where(IsDirect).ToList(),
+        "needs" => _items.Where(x=>x.Status=="NEEDS_YOU").ToList(),
+        "review" => _items.Where(x=>x.Status=="NEEDS_REVIEW").ToList(),
+        "handled" => _items.Where(x=>x.Status=="BRAIN_HANDLED").ToList(),
+        "junk" => _items.Where(x=>x.Status=="IGNORED").ToList(),
+        "unsubscribe" => _items.Where(x=>x.UnsubscribeRecommended).ToList(), // B92_UNSUBSCRIBE_FILTER
+        "history" => _items.Where(x=>x.Status=="HISTORICAL_REVIEW").ToList(),
+        _ => _items.Where(x=>x.Status!="HISTORICAL").ToList()
+    };
+
+    string EmptyMessage => _tab=="direct"
+        ? $"Click Check AI Brain Address to import only mail delivered to {IntakeAddress}."
+        : "The Brain will put exceptions here as it reads your business inboxes.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _editions=await Db.ShowEditions.AsNoTracking().Include(x=>x.ShowEvent).ToListAsync();
+        await Load();
+        await AutoResolveHighConfidenceAsync();
+    }
+
+    async Task Load()
+    {
+        var recent=await Db.ShowEmailIntakes.AsNoTracking().OrderByDescending(x=>x.MessageDate??x.ReceivedAt).Take(1000).ToListAsync();
+        var history=await Db.ShowEmailIntakes.AsNoTracking().Where(x=>x.Status=="HISTORICAL_REVIEW").OrderByDescending(x=>x.MessageDate??x.ReceivedAt).ToListAsync();
+        _items=recent.Concat(history).GroupBy(x=>x.Id).Select(g=>g.First()).OrderByDescending(x=>x.MessageDate??x.ReceivedAt).ToList();
+    }
+
+    async Task ImportDirectAsync()=>await ImportAsync(BrainEmailImportScope.DirectBrainAddress,"direct");
+    async Task ImportBusinessAsync()=>await ImportAsync(BrainEmailImportScope.BusinessInboxes,"business");
+
+    async Task ReprocessCurrentAsync()
+    {
+        _busy=true; _busyScope="reprocess";
+        try
+        {
+            var r=await BrainEmail.ReprocessCurrentAsync();
+            _message=r.Message;
+            await Load();
+        }
+        catch(Exception ex){_message="Current-mail reprocess failed: "+ex.Message;}
+        finally{_busy=false;_busyScope="";}
+    }
+
+    async Task BackfillAttachmentsAsync()
+    {
+        _busy=true; _busyScope="attachments";
+        try
+        {
+            var r=await BrainEmail.BackfillCurrentAttachmentsAsync();
+            _message=r.Message;
+            await Load();
+        }
+        catch(Exception ex){_message="Attachment backfill failed: "+ex.Message;}
+        finally{_busy=false;_busyScope="";}
+    }
+
+    async Task ImportAsync(BrainEmailImportScope scope,string busyScope)
+    {
+        _busy=true; _busyScope=busyScope;
+        try
+        {
+            var r=await BrainEmail.ImportAsync(scope);
+            _message=r.Message;
+            await Load();
+            _tab=scope==BrainEmailImportScope.DirectBrainAddress?"direct":_tab;
+        }
+        catch(Exception ex){_message="Email check failed: "+ex.Message;}
+        finally{_busy=false;_busyScope="";}
+    }
+
+
+    async Task PreviewHistoryAsync()
+    {
+        _busy=true; _busyScope="history-preview";
+        try { _historyPreview=await BrainEmail.PreviewHistoricalAsync(); _message=_historyPreview.Message; }
+        catch(Exception ex){_message="Historical preview failed: "+ex.Message;}
+        finally{_busy=false;_busyScope="";}
+    }
+
+    async Task ImportHistoryAsync()
+    {
+        _busy=true; _busyScope="history-import";
+        try { var r=await BrainEmail.ImportHistoricalAsync(); _message=r.Message; await Load(); await AutoResolveHighConfidenceAsync(); _tab="history"; }
+        catch(Exception ex){_message="Historical import failed: "+ex.Message;}
+        finally{_busy=false;_busyScope="";}
+    }
+
+    sealed record HistoricalShowGroup(string Key,string ProposedName,List<ShowEmailIntakeEntity> Items,List<int> Years,List<string> Mailboxes,string RelationshipSummary,string SenderSummary,string? ExistingShowName,long? ExistingShowEventId);
+
+    int HistoricalReviewCount => _items.Count(x=>x.Status=="HISTORICAL_REVIEW");
+    List<ShowEventEntity> ExistingShowEvents => _editions.GroupBy(e=>e.ShowEventId).Select(g=>g.First().ShowEvent).OrderBy(e=>e.Name).ToList();
+
+    List<HistoricalShowGroup> HistoricalGroups
+    {
+        get
+        {
+            var source=_items.Where(x=>x.Status=="HISTORICAL_REVIEW").ToList();
+            return source
+                .Select(x=>new { Item=x, Name=InferShowName(x.Subject) ?? FallbackHistoricalShowName(x), Year=HistoricalYear(x) })
+                .Where(z=>!string.IsNullOrWhiteSpace(z.Name))
+                .GroupBy(z=>Normalize(z.Name))
+                .Select(g=>BuildHistoricalGroup(g.Key,g.Select(z=>z.Item).ToList(),g.Select(z=>z.Name!).ToList(),g.Select(z=>z.Year).ToList()))
+                .OrderByDescending(g=>g.Items.Count)
+                .ThenBy(g=>g.ProposedName)
+                .ToList();
+        }
+    }
+
+    HistoricalShowGroup BuildHistoricalGroup(string key,List<ShowEmailIntakeEntity> items,List<string> names,List<int> years)
+    {
+        var proposed=names.Where(n=>!string.IsNullOrWhiteSpace(n)).GroupBy(n=>Normalize(n)).OrderByDescending(g=>g.Count()).ThenByDescending(g=>g.Key.Length).First().First();
+        var cleanYears=years.Where(y=>y>=2000&&y<=2100).Distinct().OrderBy(y=>y).ToList();
+        if(cleanYears.Count==0) cleanYears.Add(items.Select(HistoricalYear).FirstOrDefault(y=>y>0));
+        var mailboxes=items.Select(x=>x.MailboxAddress??"Unknown").Where(x=>!string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x=>x).ToList();
+        var rels=items.Select(InferHistoricalRelationship).GroupBy(x=>x).OrderByDescending(g=>g.Count()).Select(g=>$"{g.Key} {g.Count()}").ToList();
+        var senders=items.Select(x=>SenderLabel(x.FromAddress)).Where(x=>!string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).Take(4).ToList();
+
+        var eventScores=ExistingShowEvents.Select(ev=>new { Event=ev, Score=GroupEventIdentityScore(ev,items,proposed) }).Where(x=>x.Score>=18).OrderByDescending(x=>x.Score).ToList();
+        var best=eventScores.FirstOrDefault();
+        var second=eventScores.Skip(1).FirstOrDefault();
+        var confident=best is not null && (second is null || best.Score-second.Score>=5);
+        return new HistoricalShowGroup(key,proposed,items,cleanYears,mailboxes,string.Join(" · ",rels),senders.Count==0?"Unknown":string.Join(", ",senders),confident?best!.Event.Name:null,confident?best!.Event.Id:null);
+    }
+
+    int GroupEventIdentityScore(ShowEventEntity ev,List<ShowEmailIntakeEntity> items,string proposed)
+    {
+        var name=Normalize(ev.Name); var proposal=Normalize(proposed); if(string.IsNullOrWhiteSpace(name)||string.IsNullOrWhiteSpace(proposal))return 0;
+        if(name==proposal) return 50;
+        if(ContainsPhrase(name,proposal)||ContainsPhrase(proposal,name)) return 40;
+        var eventWords=MeaningfulWords(name).ToHashSet(); var proposalWords=MeaningfulWords(proposal).ToHashSet();
+        var overlap=eventWords.Intersect(proposalWords).Count(); var score=overlap>=2?22+overlap*2:overlap==1&&eventWords.Count==1?20:0;
+        if(score>0)
+        {
+            var text=Normalize(string.Join(" ",items.Select(x=>$"{x.Subject} {x.BodyText} {x.FromAddress}")));
+            if(!string.IsNullOrWhiteSpace(ev.PromoterName)&&ContainsPhrase(text,Normalize(ev.PromoterName)))score+=5;
+            if(!string.IsNullOrWhiteSpace(ev.City)&&ContainsWord(text,Normalize(ev.City)))score+=3;
+            if(!string.IsNullOrWhiteSpace(ev.State)&&ContainsWord(text,Normalize(ev.State)))score+=1;
+        }
+        return score;
+    }
+
+    static int HistoricalYear(ShowEmailIntakeEntity x)=>ExtractExplicitYear(x.Subject) ?? ExtractExplicitYear(x.BodyText) ?? x.MessageDate?.Year ?? x.ReceivedAt.Year;
+    static string FallbackHistoricalShowName(ShowEmailIntakeEntity x)
+    {
+        var subject=x.Subject??"Historical show";
+        subject=System.Text.RegularExpressions.Regex.Replace(subject,@"^(re|fw|fwd)\s*:\s*","",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        subject=System.Text.RegularExpressions.Regex.Replace(subject,@"\b20\d{2}\b"," ");
+        subject=System.Text.RegularExpressions.Regex.Replace(subject,@"\s+"," ").Trim(' ','-','·',':');
+        return subject.Length>100?subject[..100]:subject;
+    }
+    static string SenderLabel(string? address)
+    {
+        if(string.IsNullOrWhiteSpace(address))return "";
+        var at=address.LastIndexOf('@'); return at>=0&&at<address.Length-1?address[(at+1)..].Trim('>',' '):address;
+    }
+
+    static string InferHistoricalRelationship(ShowEmailIntakeEntity x)
+    {
+        var text=Normalize($"{x.Subject} {x.BodyText}");
+        if(text.Contains(" waitlist")||text.Contains(" wait list")) return "Waitlisted";
+        if(text.Contains(" not accepted")||text.Contains(" regret to inform")||text.Contains(" declined")||text.Contains(" rejected")) return "Rejected";
+        if(text.Contains(" congratulations")||text.Contains(" accepted")||text.Contains(" acceptance")) return "Accepted";
+        if(text.Contains(" booth assignment")||text.Contains(" load in")||text.Contains(" setup instructions")||text.Contains(" pre festival info")||text.Contains(" vendor packet")) return "Attended";
+        if(text.Contains(" application received")||text.Contains(" application submitted")||text.Contains(" thank you for applying")||text.Contains(" vendor application")) return "Applied";
+        if(text.Contains(" invitation to apply")||text.Contains(" apply now")||text.Contains(" reminder to register")||text.Contains(" vendor opportunity")) return "Considering";
+        if(text.Contains(" this weekend")||text.Contains(" join us")||text.Contains(" art lovers unite")) return "Solicitation Only";
+        return "Unknown";
+    }
+
+    long? SelectedGroupEvent(HistoricalShowGroup g)
+    {
+        if(_selectedGroupEvents.TryGetValue(g.Key,out var id))return id;
+        return g.ExistingShowEventId;
+    }
+    void SetSelectedGroupEvent(HistoricalShowGroup g,string? value)=>_selectedGroupEvents[g.Key]=long.TryParse(value,out var id)?id:null;
+    string SelectedGroupRelationship(HistoricalShowGroup g)=>_groupRelationships.TryGetValue(g.Key,out var r)?r:"Brain infer per email";
+    void SetGroupRelationship(HistoricalShowGroup g,string? value)=>_groupRelationships[g.Key]=string.IsNullOrWhiteSpace(value)?"Brain infer per email":value;
+
+    async Task ConsolidateHistoricalGroupAsync(HistoricalShowGroup g,bool requireExisting)
+    {
+        _busy=true; _busyScope="history-consolidate";
+        try
+        {
+            ShowEventEntity show;
+            var selectedId=SelectedGroupEvent(g);
+            if(requireExisting)
+            {
+                if(selectedId is null){_message="Choose an existing show first.";return;}
+                show=ExistingShowEvents.First(e=>e.Id==selectedId.Value);
+            }
+            else if(selectedId is not null)
+            {
+                show=ExistingShowEvents.First(e=>e.Id==selectedId.Value);
+            }
+            else
+            {
+                var exact=ExistingShowEvents.FirstOrDefault(e=>Normalize(e.Name)==Normalize(g.ProposedName));
+                if(exact is not null) show=exact;
+                else
+                {
+                    show=new ShowEventEntity { Name=g.ProposedName, EventType="Historical/Unknown", Notes=$"Created from {g.Items.Count} consolidated historical email records." };
+                    Db.ShowEvents.Add(show); await Db.SaveChangesAsync();
+                }
+            }
+
+            var overrideRelationship=SelectedGroupRelationship(g);
+            var attached=0; var editionsCreated=0;
+            foreach(var item in g.Items)
+            {
+                var year=HistoricalYear(item); if(year<2000||year>2100)continue;
+                var edition=await Db.ShowEditions.FirstOrDefaultAsync(e=>e.ShowEventId==show.Id&&e.Year==year);
+                if(edition is null)
+                {
+                    edition=new ShowEditionEntity { ShowEventId=show.Id, Year=year, Status="RESEARCHING", LeadSource="HISTORICAL_EMAIL", ResearchStatus="NEEDS_RESEARCH", Recommendation="UNDECIDED", LeadNote=$"Created by historical email consolidation for {g.ProposedName}." };
+                    Db.ShowEditions.Add(edition); await Db.SaveChangesAsync(); editionsCreated++;
+                }
+                var row=await Db.ShowEmailIntakes.FindAsync(item.Id); if(row is null)continue;
+                var relationship=overrideRelationship=="Brain infer per email"?InferHistoricalRelationship(item):overrideRelationship;
+                row.ShowEditionId=edition.Id; row.Status="HISTORICAL"; row.MatchNotes=$"Historical consolidation: {g.ProposedName} → {show.Name} · {year}. Group contained {g.Items.Count} source emails."; row.ActionSummary=$"Historical relationship: {relationship}"; attached++;
+            }
+            await Db.SaveChangesAsync();
+            _editions=await Db.ShowEditions.AsNoTracking().Include(x=>x.ShowEvent).ToListAsync();
+            await Load();
+            _message=$"Consolidated {attached} historical emails into {show.Name}; {editionsCreated} year edition(s) created.";
+        }
+        catch(Exception ex){_message="Historical consolidation failed: "+ex.Message;}
+        finally{_busy=false;_busyScope="";}
+    }
+
+    async Task NotOurHistoricalGroupAsync(HistoricalShowGroup g)
+    {
+        _busy=true; _busyScope="history-not-ours";
+        try
+        {
+            foreach(var item in g.Items)
+            {
+                var row=await Db.ShowEmailIntakes.FindAsync(item.Id); if(row is null)continue;
+                row.ShowEditionId=null; row.Status="HISTORICAL"; row.MatchNotes=$"Historical consolidation: {g.ProposedName} confirmed not one of our shows."; row.ActionSummary="Historical relationship: Solicitation Only";
+            }
+            await Db.SaveChangesAsync(); await Load(); _message=$"Marked {g.Items.Count} {g.ProposedName} email(s) as not our show.";
+        }
+        catch(Exception ex){_message="Historical consolidation failed: "+ex.Message;}
+        finally{_busy=false;_busyScope="";}
+    }
+
+    sealed record MatchSuggestion(ShowEditionEntity? Edition,int Score,string Confidence,string Reason,string? PossibleNewShow,int SuggestedYear);
+
+    MatchSuggestion Suggest(ShowEmailIntakeEntity x)
+    {
+        var subject=Normalize(x.Subject);
+        var body=Normalize(x.BodyText);
+        var combined=$" {subject} {body} ";
+        var messageYear=x.MessageDate?.Year ?? 0;
+        var explicitYear=ExtractExplicitYear(x.Subject) ?? ExtractExplicitYear(x.BodyText);
+        var inferredSubjectName=InferShowName(x.Subject);
+        var inferredSubject=Normalize(inferredSubjectName);
+        var subjectIdentityWords=MeaningfulWords(inferredSubject).ToList();
+        var subjectNamesAShow=!string.IsNullOrWhiteSpace(inferredSubjectName) && subjectIdentityWords.Count>0;
+
+        // If the subject itself names a show, it is the identity anchor.  An unrelated show
+        // mentioned later in a newsletter/body must never steal the match.
+        var eventCandidates=_editions
+            .GroupBy(e=>e.ShowEventId)
+            .Select(g=>
+            {
+                var sample=g.First();
+                var identity=IdentityScore(sample.ShowEvent,subject,combined,subjectNamesAShow);
+                return new { Event=sample.ShowEvent, Identity=identity, Editions=g.ToList() };
+            })
+            .Where(z=>z.Identity.Score>0)
+            .OrderByDescending(z=>z.Identity.Score)
+            .ToList();
+
+        if(eventCandidates.Count==0 || eventCandidates[0].Identity.Score<8)
+        {
+            var why=subjectNamesAShow
+                ? $"Subject identifies ‘{inferredSubjectName}’, but no existing show has enough matching name evidence. Body mentions and year were ignored for show identity."
+                : "No existing show has enough name, organizer, or location identity evidence.";
+            return NewShowSuggestion(x,messageYear,why);
+        }
+
+        var best=eventCandidates[0];
+        var second=eventCandidates.Skip(1).FirstOrDefault();
+        var identityGap=second is null?best.Identity.Score:best.Identity.Score-second.Identity.Score;
+        if(identityGap<4 && best.Identity.Score<24)
+            return NewShowSuggestion(x,messageYear,$"Existing-show identity is ambiguous: best identity score {best.Identity.Score}, next-best gap {identityGap}.");
+
+        // Only after the show itself is identified do we choose its year/edition.
+        var targetYear=explicitYear ?? messageYear;
+        var edition=best.Editions.FirstOrDefault(e=>e.Year==targetYear)
+            ?? best.Editions.OrderBy(e=>Math.Abs(e.Year-targetYear)).FirstOrDefault();
+        if(edition is null)
+            return NewShowSuggestion(x,messageYear,"The show identity looks plausible, but there is no edition record to attach.");
+
+        var yearEvidence=edition.Year==explicitYear?5:edition.Year==messageYear?2:0;
+        var total=best.Identity.Score+yearEvidence;
+        var confidence=best.Identity.Score>=24 && identityGap>=6?"HIGH":best.Identity.Score>=14 && identityGap>=4?"MEDIUM":"LOW";
+        var reason=$"Show identity from {best.Identity.Reason}; identity score {best.Identity.Score}, next-best gap {identityGap}. " +
+                   (yearEvidence>0?$"Year selected after identity ({edition.Year}).":"Year was not used to identify the show.");
+        return new(edition,total,confidence,reason,null,edition.Year);
+    }
+
+    sealed record IdentityEvidence(int Score,string Reason);
+
+    IdentityEvidence IdentityScore(ShowEventEntity show,string subject,string combined,bool subjectNamesAShow)
+    {
+        var name=Normalize(show.Name);
+        if(string.IsNullOrWhiteSpace(name)) return new(0,"no event name");
+        if(ContainsPhrase(subject,name)) return new(34,"exact show name in subject");
+
+        var words=MeaningfulWords(name).ToList();
+        var subjectHits=words.Count(w=>ContainsWord(subject,w));
+        var bodyHits=words.Count(w=>ContainsWord(combined,w));
+        var score=0; var reasons=new List<string>();
+        if(subjectHits>=2){score+=22+Math.Min(subjectHits,4); reasons.Add($"{subjectHits} distinctive show-name words in subject");}
+        else if(subjectHits==1 && words.Count==1){score+=18; reasons.Add("unique show-name word in subject");}
+        else if(subjectHits==1){score+=9; reasons.Add("one distinctive show-name word in subject");}
+
+        // When the subject names a show, body-only name hits cannot identify a different event.
+        // The body may only strengthen an event already supported by the subject.
+        if(!subjectNamesAShow && score==0)
+        {
+            if(ContainsPhrase(combined,name)){score=26; reasons.Add("exact show name in message");}
+            else if(bodyHits>=2){score=12+Math.Min(bodyHits,3); reasons.Add($"{bodyHits} distinctive show-name words in message");}
+            else if(bodyHits==1 && words.Count==1){score=10; reasons.Add("unique show-name word in message");}
+        }
+
+        var promoter=Normalize(show.PromoterName);
+        if(score>=7 && !string.IsNullOrWhiteSpace(promoter)&&ContainsPhrase(combined,promoter)){score+=5; reasons.Add("organizer/promoter");}
+        var city=Normalize(show.City);
+        if(score>=7 && !string.IsNullOrWhiteSpace(city)&&ContainsWord(combined,city)){score+=3; reasons.Add("city");}
+        var state=Normalize(show.State);
+        if(score>=7 && !string.IsNullOrWhiteSpace(state)&&ContainsWord(combined,state)){score+=1; reasons.Add("state");}
+
+        // City/state/promoter and year never create identity by themselves.
+        return new(score,reasons.Count==0?"no meaningful show identity":string.Join(", ",reasons));
+    }
+
+    MatchSuggestion NewShowSuggestion(ShowEmailIntakeEntity x,int messageYear,string reason)
+    {
+        var proposed=InferShowName(x.Subject);
+        var year=ExtractExplicitYear(x.Subject) ?? ExtractExplicitYear(x.BodyText) ?? messageYear;
+        return new(null,0,"NO MATCH",reason,string.IsNullOrWhiteSpace(proposed)?null:proposed,year);
+    }
+
+    static IEnumerable<string> MeaningfulWords(string name)
+    {
+        var stop=new HashSet<string>(["festival","market","craft","show","fair","arts","art","the","and","of","at","annual","vendor","event"]);
+        return name.Split(' ',StringSplitOptions.RemoveEmptyEntries)
+            .Where(w=>w.Length>=4&&!stop.Contains(w)).Distinct();
+    }
+    static bool ContainsPhrase(string haystack,string phrase)=>!string.IsNullOrWhiteSpace(phrase) && $" {haystack} ".Contains($" {phrase} ");
+    static bool ContainsWord(string haystack,string word)=>!string.IsNullOrWhiteSpace(word) && $" {haystack} ".Contains($" {word} ");
+    static int? ExtractExplicitYear(string? value)
+    {
+        if(string.IsNullOrWhiteSpace(value)) return null;
+        var m=System.Text.RegularExpressions.Regex.Match(value,@"\b(20\d{2})\b");
+        return m.Success&&int.TryParse(m.Groups[1].Value,out var y)?y:null;
+    }
+    static string? InferShowName(string? subject)
+    {
+        if(string.IsNullOrWhiteSpace(subject)) return null;
+        var s=System.Net.WebUtility.HtmlDecode(subject).Trim();
+        s=System.Text.RegularExpressions.Regex.Replace(s,@"^(re|fw|fwd)\s*:\s*","",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        s=System.Text.RegularExpressions.Regex.Replace(s,@"^20\d{2}\s+","",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if(s.Contains(':'))
+        {
+            var parts=s.Split(':',2);
+            if(parts[0].Contains("reminder",StringComparison.OrdinalIgnoreCase)||parts[0].Contains("art lovers",StringComparison.OrdinalIgnoreCase)||parts[0].Contains("invitation",StringComparison.OrdinalIgnoreCase)) s=parts[1].Trim();
+        }
+        s=System.Text.RegularExpressions.Regex.Replace(s,@"\s*[·|-]\s*(reminder.*|pre[- ]?festival.*|vendor information.*|application information.*)$","",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        s=System.Text.RegularExpressions.Regex.Replace(s,@",?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)?\s*\d{1,2}/\d{1,2}/20\d{2}.*$","",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        s=System.Text.RegularExpressions.Regex.Replace(s,@"\s+(vendor\s+application|application|reminder to register|this weekend!?|registration reminder)\s*$","",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        s=System.Text.RegularExpressions.Regex.Replace(s,@"[^\p{L}\p{N}&'’ -]+"," ");
+        s=System.Text.RegularExpressions.Regex.Replace(s,@"\s+"," ").Trim(' ','-');
+        return s.Length is >=4 and <=120?s:null;
+    }
+    static string Normalize(string? s)
+    {
+        var chars=(s??"").ToLowerInvariant().Select(c=>char.IsLetterOrDigit(c)?c:' ').ToArray();
+        return string.Join(' ',new string(chars).Split(' ',StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    long? SelectedEdition(ShowEmailIntakeEntity x)=>_selectedEditions.TryGetValue(x.Id,out var id)?id:Suggest(x).Edition?.Id;
+    void SetSelectedEdition(ShowEmailIntakeEntity x,string? value)=>_selectedEditions[x.Id]=long.TryParse(value,out var id)?id:null;
+    string SelectedRelationship(ShowEmailIntakeEntity x)=>_relationships.TryGetValue(x.Id,out var r)?r:"Unknown";
+    void SetRelationship(ShowEmailIntakeEntity x,string? value)=>_relationships[x.Id]=string.IsNullOrWhiteSpace(value)?"Unknown":value;
+
+    async Task AcceptHistoricalAsync(ShowEmailIntakeEntity x,MatchSuggestion suggestion)
+    {
+        var editionId=SelectedEdition(x); if(editionId is null){_message="Choose a show/year before accepting this historical email.";return;}
+        var e=_editions.First(z=>z.Id==editionId.Value); var row=await Db.ShowEmailIntakes.FindAsync(x.Id); if(row is null)return;
+        row.ShowEditionId=e.Id; row.Status="HISTORICAL"; row.MatchNotes=$"Historical evidence confirmed to {e.ShowEvent.Name} · {e.Year}. Confidence: {(suggestion.Edition?.Id==e.Id?suggestion.Confidence:"OWNER_SELECTED")}."; row.ActionSummary=$"Historical relationship: {SelectedRelationship(x)}";
+        await Db.SaveChangesAsync(); _message=$"Matched {x.Subject} to {e.ShowEvent.Name} · {e.Year}."; await Load();
+    }
+    async Task CreateHistoricalShowAsync(ShowEmailIntakeEntity x,MatchSuggestion suggestion)
+    {
+        if(string.IsNullOrWhiteSpace(suggestion.PossibleNewShow)){_message="The Brain could not infer a safe show name from this email.";return;}
+        var year=suggestion.SuggestedYear>1900?suggestion.SuggestedYear:(x.MessageDate?.Year??DateTime.UtcNow.Year);
+        var normalized=Normalize(suggestion.PossibleNewShow);
+        var existing=_editions.FirstOrDefault(e=>e.Year==year && Normalize(e.ShowEvent.Name)==normalized);
+        ShowEditionEntity edition;
+        if(existing is not null) edition=existing;
+        else
+        {
+            var show=new ShowEventEntity { Name=suggestion.PossibleNewShow, EventType="Historical/Unknown", Notes=$"Created from historical email evidence: {x.Subject}" };
+            edition=new ShowEditionEntity { ShowEvent=show, Year=year, Status="RESEARCHING", LeadSource="HISTORICAL_EMAIL", ResearchStatus="NEEDS_RESEARCH", Recommendation="UNDECIDED", LeadNote=$"Historical email evidence from {x.MailboxAddress}: {x.Subject}" };
+            Db.ShowEditions.Add(edition);
+            await Db.SaveChangesAsync();
+            _editions.Add(edition);
+        }
+        var row=await Db.ShowEmailIntakes.FindAsync(x.Id); if(row is null)return;
+        row.ShowEditionId=edition.Id; row.Status="HISTORICAL"; row.MatchNotes=$"Historical evidence created/matched to {edition.ShowEvent.Name} · {edition.Year}. Owner confirmed new historical show."; row.ActionSummary=$"Historical relationship: {SelectedRelationship(x)}";
+        await Db.SaveChangesAsync(); _message=$"Created historical show {edition.ShowEvent.Name} · {edition.Year} and attached this email."; await Load();
+    }
+
+    async Task NotOurShowAsync(ShowEmailIntakeEntity x)
+    {
+        var row=await Db.ShowEmailIntakes.FindAsync(x.Id); if(row is null)return; row.ShowEditionId=null; row.Status="HISTORICAL"; row.MatchNotes="Historical review: confirmed not one of our shows."; row.ActionSummary="Historical relationship: Solicitation Only"; await Db.SaveChangesAsync(); _message=$"Marked {x.Subject} as not our show."; await Load();
+    }
+    async Task AutoResolveHighConfidenceAsync()
+    {
+        var reviews=_items.Where(x=>x.Status=="HISTORICAL_REVIEW").ToList(); var changed=0;
+        foreach(var x in reviews){var s=Suggest(x); if(s.Confidence!="HIGH"||s.Edition is null)continue; var row=await Db.ShowEmailIntakes.FindAsync(x.Id); if(row is null)continue; row.ShowEditionId=s.Edition.Id; row.Status="HISTORICAL"; row.MatchNotes=$"Historical evidence auto-matched to {s.Edition.ShowEvent.Name} · {s.Edition.Year}. Confidence: HIGH. {s.Reason}"; changed++;}
+        if(changed>0){await Db.SaveChangesAsync(); _message=$"Brain auto-matched {changed} high-confidence historical show emails. Lower-confidence matches remain for review."; await Load();}
+    }
+
+    bool IsDirect(ShowEmailIntakeEntity x)
+        => (!string.IsNullOrWhiteSpace(x.ToAddress) && x.ToAddress.Contains(IntakeAddress,StringComparison.OrdinalIgnoreCase))
+           || (!string.IsNullOrWhiteSpace(x.MatchNotes) && x.MatchNotes.Contains(IntakeAddress,StringComparison.OrdinalIgnoreCase));
+
+    static string EmailExcerpt(string? body)
+    {
+        if(string.IsNullOrWhiteSpace(body)) return "No useful message text was stored.";
+        var text=System.Net.WebUtility.HtmlDecode(body);
+        text=System.Text.RegularExpressions.Regex.Replace(text, @"https?://\S+", " ");
+        text=System.Text.RegularExpressions.Regex.Replace(text, @"<[^>]+>", " ");
+        text=System.Text.RegularExpressions.Regex.Replace(text, @"(?i)\b(view email in browser|view in browser|unsubscribe|privacy policy)\b", " ");
+        text=System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+        if(string.IsNullOrWhiteSpace(text)) return "No useful message text remains after removing links and boilerplate.";
+        const int max=420;
+        return text.Length<=max ? text : text[..max].TrimEnd()+"…";
+    }
+
+    string Tab(string x)=>"shows-tab "+(_tab==x?"active":"");
+    // B7_EMAIL_ACTIONS — resolves the Brain's internal queue only; Gmail is never modified here.
+    async Task ResolveEmailAsync(ShowEmailIntakeEntity item, string resolution)
+    {
+        _busy=true; _busyScope="email-decision";
+        try
+        {
+            var row=await Db.ShowEmailIntakes.FindAsync(item.Id);
+            if(row is null){_message="Email decision failed: record not found.";return;}
+
+            string decision;
+            switch(resolution)
+            {
+                case "SHOW":
+                    row.Route="SHOW"; row.Status="BRAIN_HANDLED";
+                    row.ActionSummary="Owner decision: route to Show Arm. Gmail unchanged.";
+                    decision="ROUTE_SHOW_ARM";
+                    break;
+                case "IGNORED":
+                    row.Status="IGNORED";
+                    row.ActionSummary="Owner decision: no action needed. Gmail unchanged.";
+                    decision="IGNORE_NO_ACTION";
+                    break;
+                case "UNSUBSCRIBE_CANDIDATE":
+                    row.UnsubscribeRecommended=true; row.Status="IGNORED";
+                    row.ActionSummary="Owner decision: unsubscribe candidate. No unsubscribe was performed; Gmail unchanged.";
+                    decision="UNSUBSCRIBE_CANDIDATE";
+                    break;
+                case "RESTORE":
+                    row.Status="NEEDS_REVIEW";
+                    row.ActionSummary="Owner decision: reopen for review. Gmail unchanged.";
+                    decision="REOPEN_REVIEW";
+                    break;
+                case "KEEP_SUBSCRIBED":
+                    row.UnsubscribeRecommended=false;
+                    if(row.Status=="IGNORED") row.Status="NEEDS_REVIEW";
+                    row.ActionSummary="Owner decision: keep sender; unsubscribe suggestion cleared. Gmail unchanged.";
+                    decision="KEEP_SUBSCRIBED";
+                    break;
+                default:
+                    row.Status="BRAIN_HANDLED";
+                    row.ActionSummary="Owner decision: Brain may handle this informational item. Gmail unchanged.";
+                    decision="BRAIN_HANDLE";
+                    break;
+            }
+
+            BrainDb.BrainDecisionRecords.Add(new BrainDecisionRecordEntity
+            {
+                AgentKey="BRAIN_EMAIL", ArmScope="BRAIN_CORE", SubjectType="EMAIL", SubjectKey=row.Id.ToString(), DecisionType="EMAIL_ROUTING",
+                Recommendation=$"Brain route/status before owner decision: {item.Route} / {item.Status}",
+                RecommendationReasoning=item.BrainSummary, HumanDecision=decision, HumanReasoning=row.ActionSummary, DecidedAt=DateTimeOffset.UtcNow
+            });
+            await Db.SaveChangesAsync();
+            await BrainDb.SaveChangesAsync();
+            await Load();
+            _message=$"Email decision recorded: {decision}. Queue status updated; Gmail was not changed.";
+        }
+        catch(Exception ex){_message="Email decision failed: "+ex.Message;}
+        finally{_busy=false;_busyScope="";}
+    }
+
+}

@@ -1,0 +1,1824 @@
+@page "/finished-goods"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+@inject IWebHostEnvironment Environment
+
+<PageTitle>Finished Goods</PageTitle>
+
+<div class="products-hero">
+    <p class="products-eyebrow">Configuration</p>
+    <h1 class="products-title">Finished Goods</h1>
+    <p class="products-subtitle">
+        Combine linked elements into finished-good definitions and generate the references that production and sales will use downstream.
+    </p>
+</div>
+
+<section class="products-card">
+    <div class="products-card-header">
+        <div>
+            <h2>Finished Good Template</h2>
+            <span class="text-body-secondary">Define the finished good first, then assign elements to generate variations from that template.</span>
+        </div>
+        <span class="products-badge">@(IsTemplateReady ? "Template Ready" : "Template Incomplete")</span>
+    </div>
+
+    <div class="products-form">
+        <div>
+            <label class="form-label" for="template-name">Template Name</label>
+            <InputText id="template-name" class="form-control" @bind-Value="_templateName" @bind-Value:after="OnTemplateChanged" placeholder="Passport Sleeve" />
+        </div>
+        <div>
+            <label class="form-label">Linked Top-Level Categories</label>
+            <div class="d-flex flex-column gap-2">
+                @if (!LinkedTemplateCategories.Any())
+                {
+                    <div class="products-empty">No template categories linked yet.</div>
+                }
+                else
+                {
+                    @foreach (var category in LinkedTemplateCategories)
+                    {
+                        <div class="d-flex gap-2 align-items-center">
+                            <input class="form-control" value="@category.DisplayName" disabled />
+                            <button class="btn btn-outline-danger btn-sm" type="button" @onclick="() => RemoveTemplateCategoryLink(category.Key)">Remove</button>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+        <div>
+            <label class="form-label" for="template-category-link">Add Top-Level Category</label>
+            <div class="d-flex gap-2 align-items-center">
+                <InputSelect id="template-category-link" class="form-select" @bind-Value="_selectedTemplateCategoryToLink">
+                    <option value="">Choose top-level category</option>
+                    @foreach (var group in AvailableElementGroups.Where(group => !_templateLinkedCategoryKeys.Contains(group.Key)))
+                    {
+                        <option value="@group.Key">@group.DisplayName</option>
+                    }
+                </InputSelect>
+                <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="AddTemplateCategoryLink" disabled="@string.IsNullOrWhiteSpace(_selectedTemplateCategoryToLink)">Link category</button>
+            </div>
+        </div>
+        <div>
+            <label class="form-label" for="template-primary-category">Primary Template Category</label>
+            <InputSelect id="template-primary-category" class="form-select" @bind-Value="_selectedPrimaryTemplateCategoryKey" @bind-Value:after="OnPrimaryTemplateCategoryChanged" disabled="@(!LinkedTemplateCategories.Any())">
+                <option value="">Choose primary category</option>
+                @foreach (var category in LinkedTemplateCategories)
+                {
+                    <option value="@category.Key">@category.DisplayName</option>
+                }
+            </InputSelect>
+        </div>
+        <div>
+            <label class="form-label">Categories Included In Permutations</label>
+            @if (!LinkedTemplateCategories.Any())
+            {
+                <div class="products-empty">Link one or more top-level categories first.</div>
+            }
+            else
+            {
+                <div class="d-flex flex-column gap-2">
+                    @foreach (var category in LinkedTemplateCategories)
+                    {
+                        var includeId = $"combine-category-{Slugify(category.Key)}";
+                        <div class="form-check">
+                            <input id="@includeId"
+                                   class="form-check-input"
+                                   type="checkbox"
+                                   checked="@_combinationCategoryKeys.Contains(category.Key)"
+                                   @onchange="eventArgs => SetCombinationCategory(category.Key, eventArgs.Value)" />
+                            <label class="form-check-label" for="@includeId">@category.DisplayName</label>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div>
+            <label class="form-label" for="template-shipping-length">Shipping Length (in)</label>
+            <InputNumber id="template-shipping-length" class="form-control" @bind-Value="_shippingLengthInches" />
+        </div>
+        <div>
+            <label class="form-label" for="template-shipping-width">Shipping Width (in)</label>
+            <InputNumber id="template-shipping-width" class="form-control" @bind-Value="_shippingWidthInches" />
+        </div>
+        <div>
+            <label class="form-label" for="template-shipping-height">Shipping Height (in)</label>
+            <InputNumber id="template-shipping-height" class="form-control" @bind-Value="_shippingHeightInches" />
+        </div>
+        <div>
+            <label class="form-label" for="template-shipping-weight">Shipping Weight (oz)</label>
+            <InputNumber id="template-shipping-weight" class="form-control" @bind-Value="_shippingWeightOunces" />
+        </div>
+        <div>
+            <label class="form-label" for="finished-goods-key">Template Reference</label>
+            <input id="finished-goods-key" class="form-control" value="@GeneratedConfigurationKey" disabled />
+        </div>
+        <div>
+            <label class="form-label" for="finished-goods-status">Coverage</label>
+            <input id="finished-goods-status" class="form-control" value="@CoverageLabel" disabled />
+        </div>
+        <div class="products-form-notes">
+            <label class="form-label" for="finished-goods-summary">Linked summary</label>
+            <input id="finished-goods-summary" class="form-control" value="@LinkedSummary" disabled />
+        </div>
+        <div class="products-form-notes">
+            <label class="form-label" for="template-shipping-summary">Shipping Dimensions</label>
+            <input id="template-shipping-summary" class="form-control" value="@ShippingDimensionsSummary" disabled />
+        </div>
+        <div class="products-actions">
+            <button class="btn btn-outline-secondary" type="button" @onclick="ClearLinkedElements">Clear linked elements</button>
+        </div>
+    </div>
+
+    <div class="products-card mt-3">
+        <div class="products-card-header">
+            <div>
+                <h3>Global SKU Settings</h3>
+                <span class="text-body-secondary">Short SKU format: number only.</span>
+            </div>
+        </div>
+
+        <div class="products-form">
+            <div>
+                <label class="form-label" for="sku-number-digits">Number Digits</label>
+                <InputNumber id="sku-number-digits" class="form-control" @bind-Value="_skuNumberDigits" />
+            </div>
+            <div>
+                <label class="form-label" for="sku-preview">SKU Preview</label>
+                <input id="sku-preview" class="form-control" value="@GetSkuPreview()" disabled />
+            </div>
+        </div>
+    </div>
+
+    <div class="products-card mt-3">
+        <div class="products-card-header">
+            <div>
+                <h3>Production Prompt Options</h3>
+                <span class="text-body-secondary">Saved values are used by Production front-face prompts.</span>
+            </div>
+        </div>
+
+        <div class="products-form">
+            <div>
+                <label class="form-label" for="template-tier-options">Front Face Tier Options</label>
+                <InputText id="template-tier-options" class="form-control" @bind-Value="_frontFaceTierOptionsInput" placeholder="Base, Deluxe" />
+            </div>
+            <div>
+                <label class="form-label" for="template-color-options">Front Face Color Options</label>
+                <InputText id="template-color-options" class="form-control" @bind-Value="_frontFaceColorOptionsInput" placeholder="Black, Brown" />
+            </div>
+            <div class="products-actions">
+                <button class="btn btn-primary" type="button" @onclick="SaveTemplateAsync" disabled="@_isSavingTemplate">
+                    @(_isSavingTemplate ? "Saving..." : "Save Template")
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @if (_isLoadingCatalog)
+    {
+        <div class="products-status">Loading local catalog from process-files...</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(_catalogLoadError))
+    {
+        <div class="products-status products-status-error">@_catalogLoadError</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(_configurationMessage))
+    {
+        <div class="products-status">@_configurationMessage</div>
+    }
+
+    <div class="products-composition-grid mt-3">
+        <section class="products-composition-panel">
+            <h3>Linked Elements</h3>
+            <div class="products-meta">Assign variation labels/codes at the element level for programmatic variation generation.</div>
+
+            @if (!SelectedElements.Any())
+            {
+                <div class="products-empty">No elements linked yet. Pick elements from the groups on the right.</div>
+            }
+            else
+            {
+                var linkedBreakdown = LinkedElementBreakdown;
+                var maxLinkedCount = Math.Max(1, linkedBreakdown.Max(item => item.LinkedCount));
+
+                <div class="finished-goods-spider-web mt-3">
+                    <div class="finished-goods-spider-title">Linked Category Spider View</div>
+                    @foreach (var item in linkedBreakdown)
+                    {
+                        var widthPercent = GetSpiderWidthPercent(item.LinkedCount, maxLinkedCount);
+
+                        <div class="finished-goods-spider-row">
+                            <div class="finished-goods-spider-label">@item.DisplayName</div>
+                            <div class="finished-goods-spider-track" role="img" aria-label="@($"{item.DisplayName}: {item.LinkedCount} linked")">
+                                <div class="finished-goods-spider-core"></div>
+                                <div class="finished-goods-spider-spoke" style="width: @($"{widthPercent}%")"></div>
+                            </div>
+                            <div class="finished-goods-spider-count">@item.LinkedCount</div>
+                        </div>
+                    }
+                </div>
+
+                <div class="products-link-list mt-3">
+                    @foreach (var element in SelectedElements)
+                    {
+                        var assignment = GetAssignment(element);
+
+                        <div class="products-link-row">
+                            <div>
+                                <div class="products-name">@element.Label</div>
+                                <div class="products-meta">@element.GroupDisplayName / @FormatElementLabel(element.ElementType)</div>
+                                <div class="products-meta">@GetElementDescriptor(element)</div>
+                                <div class="finished-goods-assignment-grid mt-2">
+                                    <div>
+                                        <label class="form-label mb-1">Variation Name</label>
+                                        <input class="form-control form-control-sm"
+                                               value="@assignment.VariationName"
+                                               @oninput="eventArgs => UpdateVariationName(element.Key, eventArgs.Value?.ToString())" />
+                                    </div>
+                                    <div>
+                                        <label class="form-label mb-1">Variation Code</label>
+                                        <input class="form-control form-control-sm"
+                                               value="@assignment.VariationCode"
+                                               @oninput="eventArgs => UpdateVariationCode(element.Key, eventArgs.Value?.ToString())" />
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn btn-outline-danger btn-sm" type="button" @onclick="() => RemoveLinkedElement(element.Key)">Remove</button>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="products-composition-panel">
+            <h3>Available Element Groups</h3>
+            <div class="products-meta">Use this page to link the exact elements that define the finished good.</div>
+
+            @if (!AvailableElementGroups.Any())
+            {
+                <div class="products-empty mt-3">No local element groups were found.</div>
+            }
+            else
+            {
+                <div class="products-element-list mt-3">
+                    @foreach (var group in AvailableElementGroups)
+                    {
+                        <section class="products-composition-panel">
+                            <div class="products-card-header">
+                                <div>
+                                    <h3>@group.DisplayName</h3>
+                                    <span class="text-body-secondary">@group.Elements.Count option(s)</span>
+                                </div>
+                                <div class="finished-goods-group-actions">
+                                    <span class="products-badge @(GetLinkedCount(group.Key) > 0 ? "products-badge-success" : "products-badge-muted")">
+                                        @(GetLinkedCount(group.Key) > 0 ? $"{GetLinkedCount(group.Key)} linked" : "Not linked")
+                                    </span>
+                                    <button class="btn btn-sm btn-outline-primary" type="button" @onclick="() => LinkAllElementsInGroup(group)">
+                                        Link All
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="() => ClearGroupLinks(group.Key)" disabled="@(GetLinkedCount(group.Key) == 0)">
+                                        Clear Group
+                                    </button>
+                                </div>
+                            </div>
+
+                            @if (!IsTemplateCategoryLinked(group.Key))
+                            {
+                                <div class="products-meta">Add this top-level category to the template before linking elements.</div>
+                            }
+
+                            <div class="products-link-list">
+                                @foreach (var element in group.Elements)
+                                {
+                                    var isSelected = IsLinkedElement(element);
+
+                                    <div class="products-link-row">
+                                        <div>
+                                            <div class="products-name">@element.Label</div>
+                                            <div class="products-meta">@GetElementDescriptor(element)</div>
+                                        </div>
+                                        <button class="btn btn-sm @(isSelected ? "btn-outline-secondary" : "btn-outline-primary")"
+                                                type="button"
+                                                @onclick="() => LinkElement(element)"
+                                                disabled="@(!CanLinkElement(element) || isSelected)">
+                                            @(isSelected ? "Linked" : "Link")
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </section>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</section>
+
+<section class="products-card mt-3">
+    <div class="products-card-header">
+        <div>
+            <h2>Permutation Count</h2>
+            <span class="text-body-secondary">Generate combinations and review count only. Front-faces still drive Square reporting category derivation.</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-primary" type="button" @onclick="GeneratePermutationsFromTemplate" disabled="@(_isLoadingCatalog || !IsTemplateReady)">
+                Generate permutations
+            </button>
+            <span class="products-badge">@UniqueFinalProducts.Count permutation(s)</span>
+        </div>
+    </div>
+
+    <div class="products-form mt-3">
+        <div>
+            <label class="form-label" for="permutation-shipping-length">Shipping Length (in)</label>
+            <InputNumber id="permutation-shipping-length" class="form-control" @bind-Value="_shippingLengthInches" />
+        </div>
+        <div>
+            <label class="form-label" for="permutation-shipping-width">Shipping Width (in)</label>
+            <InputNumber id="permutation-shipping-width" class="form-control" @bind-Value="_shippingWidthInches" />
+        </div>
+        <div>
+            <label class="form-label" for="permutation-shipping-height">Shipping Height (in)</label>
+            <InputNumber id="permutation-shipping-height" class="form-control" @bind-Value="_shippingHeightInches" />
+        </div>
+        <div>
+            <label class="form-label" for="permutation-shipping-weight">Shipping Weight (oz)</label>
+            <InputNumber id="permutation-shipping-weight" class="form-control" @bind-Value="_shippingWeightOunces" />
+        </div>
+        <div>
+            <label class="form-label" for="permutation-final-cogs">Final Product COGS (applied to each permutation)</label>
+            <InputNumber id="permutation-final-cogs" class="form-control" @bind-Value="_finalProductCogsInput" />
+        </div>
+        <div>
+            <label class="form-label" for="permutation-sell-price">Sell Price (applied to each permutation)</label>
+            <InputNumber id="permutation-sell-price" class="form-control" @bind-Value="_finalSellPriceInput" />
+        </div>
+    </div>
+
+    @if (_permutationsDirty)
+    {
+        <div class="products-empty">Template or element assignments changed. Generate permutations to refresh final products.</div>
+    }
+    else if (!UniqueFinalProducts.Any())
+    {
+        <div class="products-empty">Link elements across one or more selected combination groups to generate permutations.</div>
+    }
+    else
+    {
+        <div class="products-status">Generated @UniqueFinalProducts.Count permutation(s).</div>
+    }
+</section>
+
+<section class="products-card mt-3">
+    <div class="products-card-header">
+        <div>
+            <h2>Finished Goods Catalog</h2>
+            <span class="text-body-secondary">Each generated finished good item with the variation set that defines it.</span>
+        </div>
+        <span class="products-badge">@UniqueFinalProducts.Count item(s)</span>
+    </div>
+
+    @if (!UniqueFinalProducts.Any())
+    {
+        <div class="products-empty">Generate permutations to populate the finished goods catalog.</div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-3">
+            @foreach (var catalogItem in UniqueFinalProducts.Select((product, index) => new { Product = product, Index = index }))
+            {
+                <article class="products-composition-panel">
+                    <div class="products-card-header">
+                        <div>
+                            <h3>@GetDraftName(catalogItem.Product)</h3>
+                            <span class="text-body-secondary">@GetDraftCategory(catalogItem.Product)</span>
+                        </div>
+                        <span class="products-badge">@catalogItem.Product.Elements.Count variation(s)</span>
+                    </div>
+
+                    <div class="products-meta">
+                        SKU @BuildGeneratedSku(catalogItem.Index) • COGS @GetDraftProductCogs(catalogItem.Product).ToString("C") • Sell @GetDraftSellPrice(catalogItem.Product).ToString("C")
+                    </div>
+                    <div class="products-meta mt-1">@catalogItem.Product.ElementsLabel</div>
+
+                    <div class="table-responsive mt-3">
+                        <table class="table align-middle products-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Variation</th>
+                                    <th scope="col">Code</th>
+                                    <th scope="col">Source</th>
+                                    <th scope="col" class="text-end">COGS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var variation in catalogItem.Product.Elements)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="products-name">@GetVariationNameForElement(variation)</div>
+                                            <div class="products-meta">@FormatElementLabel(variation.ElementType)</div>
+                                        </td>
+                                        <td>@GetVariationCodeForElement(variation)</td>
+                                        <td>@variation.GroupDisplayName / @GetElementDescriptor(variation)</td>
+                                        <td class="text-end">@variation.Cogs.ToString("C")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="products-card mt-3">
+    <div class="products-card-header">
+        <div>
+            <h2>Configuration Preview</h2>
+            <span class="text-body-secondary">Review the current finished-good reference and the linked element set that defines it.</span>
+        </div>
+        <span class="products-badge">@GeneratedConfigurationKey</span>
+    </div>
+
+    @if (!SelectedElements.Any())
+    {
+        <div class="products-empty">Link at least one element to preview the finished-good configuration.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle products-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Group</th>
+                        <th scope="col">Element</th>
+                        <th scope="col">Design File</th>
+                        <th scope="col" class="text-end">COGS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var element in SelectedElements)
+                    {
+                        <tr>
+                            <td>@element.GroupDisplayName</td>
+                            <td>
+                                <div class="products-name">@element.Label</div>
+                                <div class="products-meta">@FormatElementLabel(element.ElementType)</div>
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(element.DesignFileName) ? "No design file" : element.DesignFileName)</td>
+                            <td class="text-end">@element.Cogs.ToString("C")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private bool _isLoadingCatalog;
+    private bool _isSavingTemplate;
+    private string? _catalogLoadError;
+    private string? _configurationMessage;
+    private string _templateName = "Finished Good";
+    private string _templateCategory = "Finished Goods";
+    private int _skuNumberDigits = 3;
+    private decimal? _shippingLengthInches;
+    private decimal? _shippingWidthInches;
+    private decimal? _shippingHeightInches;
+    private decimal? _shippingWeightOunces;
+    private decimal? _finalProductCogsInput;
+    private decimal? _finalSellPriceInput;
+    private string _frontFaceTierOptionsInput = "Base, Deluxe";
+    private string _frontFaceColorOptionsInput = "Black, Brown";
+    private IReadOnlyList<ElementGroupOption> AvailableElementGroups = [];
+    private readonly HashSet<string> _linkedElementKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _templateLinkedCategoryKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _combinationCategoryKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ElementVariationAssignment> _elementAssignments = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, FinalProductDraft> _finalProductDrafts = new(StringComparer.Ordinal);
+    private IReadOnlyList<FinalProductRow> _generatedFinalProducts = [];
+    private bool _permutationsDirty = true;
+    private bool _templateCategoriesInitialized;
+    private string? _selectedTemplateCategoryToLink;
+    private string? _selectedPrimaryTemplateCategoryKey;
+    private string? _selectedFinalProductKey;
+    private FinalProductEditor _selectedFinalProductEditor = new();
+    private HashSet<string> _savedTemplateCategoryKeys = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _savedCombinationCategoryKeys = new(StringComparer.OrdinalIgnoreCase);
+    private string? _savedPrimaryTemplateCategoryKey;
+
+    private IReadOnlyList<ElementOption> SelectedElements =>
+        AvailableElementGroups
+            .SelectMany(group => group.Elements)
+            .Where(element => _linkedElementKeys.Contains(element.Key))
+            .OrderBy(element => GetGroupSortOrder(element.SourceGroupKey))
+            .ThenBy(element => element.GroupDisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(element => element.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private string GeneratedConfigurationKey => BuildConfigurationKey();
+    private bool IsTemplateReady =>
+        !string.IsNullOrWhiteSpace(_templateName) &&
+        _templateLinkedCategoryKeys.Count > 0 &&
+        _combinationCategoryKeys.Count > 0;
+    private FinalProductRow? SelectedFinalProduct =>
+        UniqueFinalProducts.FirstOrDefault(product => string.Equals(product.Key, _selectedFinalProductKey, StringComparison.Ordinal));
+
+    private string CoverageLabel =>
+        _templateLinkedCategoryKeys.Count == 0
+            ? "0 template categories linked"
+            : $"{_templateLinkedCategoryKeys.Count} template categor{(_templateLinkedCategoryKeys.Count == 1 ? "y" : "ies")} linked";
+
+    private string LinkedSummary =>
+        !SelectedElements.Any()
+            ? "No linked elements yet"
+            : string.Join(" • ", SelectedElements.Select(element => $"{element.GroupDisplayName}: {element.Label}"));
+
+    private string ShippingDimensionsSummary =>
+        _shippingLengthInches is null && _shippingWidthInches is null && _shippingHeightInches is null && _shippingWeightOunces is null
+            ? "Not set"
+            : $"{FormatDimension(_shippingLengthInches)} x {FormatDimension(_shippingWidthInches)} x {FormatDimension(_shippingHeightInches)} in • {FormatWeight(_shippingWeightOunces)} oz";
+
+    private IReadOnlyList<FinalProductRow> UniqueFinalProducts => _generatedFinalProducts;
+    private IReadOnlyList<ElementGroupOption> LinkedTemplateCategories =>
+        AvailableElementGroups
+            .Where(group => _templateLinkedCategoryKeys.Contains(group.Key))
+            .OrderBy(group => GetGroupSortOrder(group.Key))
+            .ThenBy(group => group.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSavedTemplateAsync();
+        await LoadAvailableElementsAsync();
+    }
+
+    private async Task LoadSavedTemplateAsync()
+    {
+        try
+        {
+            var template = await DbContext.FinishedGoodsTemplates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(entity => entity.Id == FinishedGoodsTemplateEntity.DefaultId);
+
+            if (template is null)
+            {
+                return;
+            }
+
+            _templateName = string.IsNullOrWhiteSpace(template.TemplateName) ? _templateName : template.TemplateName;
+            _templateCategory = string.IsNullOrWhiteSpace(template.TemplateCategory) ? _templateCategory : template.TemplateCategory;
+            _skuNumberDigits = template.SkuNumberDigits <= 0 ? _skuNumberDigits : template.SkuNumberDigits;
+            _frontFaceTierOptionsInput = string.IsNullOrWhiteSpace(template.FrontFaceTierOptionsCsv)
+                ? _frontFaceTierOptionsInput
+                : template.FrontFaceTierOptionsCsv;
+            _frontFaceColorOptionsInput = string.IsNullOrWhiteSpace(template.FrontFaceColorOptionsCsv)
+                ? _frontFaceColorOptionsInput
+                : template.FrontFaceColorOptionsCsv;
+            _shippingLengthInches = template.ShippingLengthInches;
+            _shippingWidthInches = template.ShippingWidthInches;
+            _shippingHeightInches = template.ShippingHeightInches;
+            _shippingWeightOunces = template.ShippingWeightOunces;
+
+            _savedTemplateCategoryKeys = ParseCsvValues(template.LinkedCategoryKeysCsv)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _savedCombinationCategoryKeys = ParseCsvValues(template.CombinationCategoryKeysCsv)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _savedPrimaryTemplateCategoryKey = template.PrimaryCategoryKey;
+        }
+        catch
+        {
+            // Keep defaults if the saved template cannot be loaded.
+        }
+    }
+
+    private async Task SaveTemplateAsync()
+    {
+        _isSavingTemplate = true;
+        _configurationMessage = null;
+
+        try
+        {
+            var template = await DbContext.FinishedGoodsTemplates
+                .FirstOrDefaultAsync(entity => entity.Id == FinishedGoodsTemplateEntity.DefaultId);
+
+            if (template is null)
+            {
+                template = new FinishedGoodsTemplateEntity
+                {
+                    Id = FinishedGoodsTemplateEntity.DefaultId,
+                };
+
+                DbContext.FinishedGoodsTemplates.Add(template);
+            }
+
+            template.TemplateName = _templateName.Trim();
+            template.TemplateCategory = _templateCategory.Trim();
+            template.SkuCategoryLetter = string.Empty;
+            template.SkuNumberDigits = _skuNumberDigits <= 0 ? 1 : _skuNumberDigits;
+            template.LinkedCategoryKeysCsv = string.Join(',', _templateLinkedCategoryKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase));
+            template.CombinationCategoryKeysCsv = string.Join(',', _combinationCategoryKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase));
+            template.PrimaryCategoryKey = _selectedPrimaryTemplateCategoryKey;
+            template.FrontFaceTierOptionsCsv = NormalizeCsvInput(_frontFaceTierOptionsInput);
+            template.FrontFaceColorOptionsCsv = NormalizeCsvInput(_frontFaceColorOptionsInput);
+            template.ShippingLengthInches = NormalizeDimensionValue(_shippingLengthInches);
+            template.ShippingWidthInches = NormalizeDimensionValue(_shippingWidthInches);
+            template.ShippingHeightInches = NormalizeDimensionValue(_shippingHeightInches);
+            template.ShippingWeightOunces = NormalizeDimensionValue(_shippingWeightOunces);
+            template.UpdatedAt = DateTimeOffset.UtcNow;
+
+            await DbContext.SaveChangesAsync();
+            _configurationMessage = "Finished goods template saved. Production prompts now read from these saved options.";
+        }
+        catch (Exception exception)
+        {
+            _configurationMessage = $"Template could not be saved. {exception.Message}";
+        }
+        finally
+        {
+            _isSavingTemplate = false;
+        }
+    }
+
+    private async Task LoadAvailableElementsAsync()
+    {
+        _isLoadingCatalog = true;
+        _catalogLoadError = null;
+
+        try
+        {
+            var root = Path.Combine(Environment.WebRootPath, "process-files");
+            if (!Directory.Exists(root))
+            {
+                AvailableElementGroups = [];
+                _linkedElementKeys.Clear();
+                _finalProductDrafts.Clear();
+                return;
+            }
+
+            AvailableElementGroups = Directory.GetDirectories(root)
+                .Select(typeDirectory =>
+                {
+                    var groupKey = Path.GetFileName(typeDirectory);
+                    var options = EnumerateElementOptions(typeDirectory, groupKey)
+                        .OrderBy(element => element.Label, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    return new ElementGroupOption(
+                        groupKey,
+                        ToSourceGroupDisplayName(groupKey),
+                        options);
+                })
+                .Where(group => group.Elements.Any())
+                .OrderBy(group => GetGroupSortOrder(group.Key))
+                .ThenBy(group => group.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var validKeys = AvailableElementGroups
+                .SelectMany(group => group.Elements)
+                .Select(element => element.Key)
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var orphanedKey in _linkedElementKeys.Where(key => !validKeys.Contains(key)).ToList())
+            {
+                _linkedElementKeys.Remove(orphanedKey);
+            }
+
+            foreach (var orphanedAssignment in _elementAssignments.Keys.Where(key => !validKeys.Contains(key)).ToList())
+            {
+                _elementAssignments.Remove(orphanedAssignment);
+            }
+
+            foreach (var orphanedGroupKey in _templateLinkedCategoryKeys.Where(key => !AvailableElementGroups.Any(group => string.Equals(group.Key, key, StringComparison.OrdinalIgnoreCase))).ToList())
+            {
+                _templateLinkedCategoryKeys.Remove(orphanedGroupKey);
+            }
+
+            foreach (var orphanedCombinationKey in _combinationCategoryKeys.Where(key => !_templateLinkedCategoryKeys.Contains(key)).ToList())
+            {
+                _combinationCategoryKeys.Remove(orphanedCombinationKey);
+            }
+
+            if (!_templateCategoriesInitialized && AvailableElementGroups.Count > 0)
+            {
+                var initialCategoryKeys = _savedTemplateCategoryKeys.Count > 0
+                    ? _savedTemplateCategoryKeys
+                        .Where(savedKey => AvailableElementGroups.Any(group => string.Equals(group.Key, savedKey, StringComparison.OrdinalIgnoreCase)))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    : AvailableElementGroups.Select(group => group.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var categoryKey in initialCategoryKeys)
+                {
+                    _templateLinkedCategoryKeys.Add(categoryKey);
+                }
+
+                var initialCombinationKeys = _savedCombinationCategoryKeys.Count > 0
+                    ? _savedCombinationCategoryKeys
+                        .Where(savedKey => _templateLinkedCategoryKeys.Contains(savedKey))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    : _templateLinkedCategoryKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var combinationKey in initialCombinationKeys)
+                {
+                    _combinationCategoryKeys.Add(combinationKey);
+                }
+
+                if (!string.IsNullOrWhiteSpace(_savedPrimaryTemplateCategoryKey) && _templateLinkedCategoryKeys.Contains(_savedPrimaryTemplateCategoryKey))
+                {
+                    _selectedPrimaryTemplateCategoryKey = _savedPrimaryTemplateCategoryKey;
+                }
+                else
+                {
+                    _selectedPrimaryTemplateCategoryKey = AvailableElementGroups
+                        .Where(group => _templateLinkedCategoryKeys.Contains(group.Key))
+                        .OrderBy(group => GetGroupSortOrder(group.Key))
+                        .ThenBy(group => group.DisplayName, StringComparer.OrdinalIgnoreCase)
+                        .Select(group => group.Key)
+                        .FirstOrDefault();
+                }
+
+                _templateCategoriesInitialized = true;
+                MarkPermutationsDirty();
+            }
+
+            if (!string.IsNullOrWhiteSpace(_selectedPrimaryTemplateCategoryKey) && !_templateLinkedCategoryKeys.Contains(_selectedPrimaryTemplateCategoryKey))
+            {
+                _selectedPrimaryTemplateCategoryKey = null;
+            }
+
+            SyncTemplateCategoryFromPrimary();
+
+            PruneFinalProductDrafts();
+        }
+        catch (Exception exception)
+        {
+            AvailableElementGroups = [];
+            _linkedElementKeys.Clear();
+            _elementAssignments.Clear();
+            _finalProductDrafts.Clear();
+            _catalogLoadError = $"The local element catalog could not be loaded. {exception.Message}";
+        }
+        finally
+        {
+            _isLoadingCatalog = false;
+        }
+    }
+
+    private void LinkElement(ElementOption element)
+    {
+        if (!CanLinkElement(element))
+        {
+            _configurationMessage = "Link this top-level category in the template before linking its elements.";
+            return;
+        }
+
+        if (!IsTemplateReady)
+        {
+            _configurationMessage = "Build a product template first, then assign elements.";
+            return;
+        }
+
+        _linkedElementKeys.Add(element.Key);
+        EnsureAssignment(element);
+        MarkPermutationsDirty();
+        _configurationMessage = $"Linked {element.Label} into {ToSourceGroupDisplayName(element.SourceGroupKey)}.";
+    }
+
+    private void LinkAllElementsInGroup(ElementGroupOption group)
+    {
+        if (!IsTemplateCategoryLinked(group.Key))
+        {
+            _configurationMessage = "Link this top-level category in the template before linking its elements.";
+            return;
+        }
+
+        if (!IsTemplateReady)
+        {
+            _configurationMessage = "Build a product template first, then assign elements.";
+            return;
+        }
+
+        foreach (var element in group.Elements)
+        {
+            _linkedElementKeys.Add(element.Key);
+            EnsureAssignment(element);
+        }
+
+        MarkPermutationsDirty();
+        _configurationMessage = $"Linked all {group.DisplayName.ToLowerInvariant()} options.";
+    }
+
+    private void RemoveLinkedElement(string elementKey)
+    {
+        var removedElement = AvailableElementGroups
+            .SelectMany(group => group.Elements)
+            .FirstOrDefault(element => string.Equals(element.Key, elementKey, StringComparison.Ordinal));
+
+        if (_linkedElementKeys.Remove(elementKey) && removedElement is not null)
+        {
+            _elementAssignments.Remove(elementKey);
+            MarkPermutationsDirty();
+            _configurationMessage = $"Removed {removedElement.Label} from {removedElement.GroupDisplayName}.";
+        }
+    }
+
+    private void ClearGroupLinks(string sourceGroupKey)
+    {
+        var removed = AvailableElementGroups
+            .SelectMany(group => group.Elements)
+            .Where(element => string.Equals(element.SourceGroupKey, sourceGroupKey, StringComparison.OrdinalIgnoreCase))
+            .Select(element => element.Key)
+            .Where(key => _linkedElementKeys.Contains(key))
+            .ToList();
+
+        foreach (var key in removed)
+        {
+            _linkedElementKeys.Remove(key);
+            _elementAssignments.Remove(key);
+        }
+
+        if (removed.Count > 0)
+        {
+            MarkPermutationsDirty();
+            _configurationMessage = $"Cleared linked elements from {ToSourceGroupDisplayName(sourceGroupKey)}.";
+        }
+    }
+
+    private void ClearLinkedElements()
+    {
+        _linkedElementKeys.Clear();
+        _elementAssignments.Clear();
+        _finalProductDrafts.Clear();
+        MarkPermutationsDirty();
+        _configurationMessage = "Cleared the current finished-good configuration draft.";
+    }
+
+    private void OnTemplateChanged()
+    {
+        MarkPermutationsDirty();
+    }
+
+    private void AddTemplateCategoryLink()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedTemplateCategoryToLink))
+        {
+            return;
+        }
+
+        var added = _templateLinkedCategoryKeys.Add(_selectedTemplateCategoryToLink);
+        if (!added)
+        {
+            return;
+        }
+
+        _selectedPrimaryTemplateCategoryKey ??= _selectedTemplateCategoryToLink;
+        _combinationCategoryKeys.Add(_selectedTemplateCategoryToLink);
+        SyncTemplateCategoryFromPrimary();
+        _configurationMessage = $"Linked top-level category {ToSourceGroupDisplayName(_selectedTemplateCategoryToLink)} to the template.";
+        _selectedTemplateCategoryToLink = null;
+        MarkPermutationsDirty();
+    }
+
+    private void RemoveTemplateCategoryLink(string categoryKey)
+    {
+        if (!_templateLinkedCategoryKeys.Remove(categoryKey))
+        {
+            return;
+        }
+
+        ClearGroupLinks(categoryKey);
+        _combinationCategoryKeys.Remove(categoryKey);
+
+        if (string.Equals(_selectedPrimaryTemplateCategoryKey, categoryKey, StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedPrimaryTemplateCategoryKey = _templateLinkedCategoryKeys.FirstOrDefault();
+        }
+
+        SyncTemplateCategoryFromPrimary();
+        _configurationMessage = $"Removed top-level category {ToSourceGroupDisplayName(categoryKey)} from the template.";
+        MarkPermutationsDirty();
+    }
+
+    private void SetCombinationCategory(string categoryKey, object? rawValue)
+    {
+        var include = rawValue as bool? == true;
+
+        if (include)
+        {
+            if (_templateLinkedCategoryKeys.Contains(categoryKey))
+            {
+                _combinationCategoryKeys.Add(categoryKey);
+            }
+        }
+        else
+        {
+            _combinationCategoryKeys.Remove(categoryKey);
+        }
+
+        MarkPermutationsDirty();
+    }
+
+    private void OnPrimaryTemplateCategoryChanged()
+    {
+        SyncTemplateCategoryFromPrimary();
+        MarkPermutationsDirty();
+    }
+
+    private void SyncTemplateCategoryFromPrimary()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPrimaryTemplateCategoryKey))
+        {
+            _templateCategory = _templateLinkedCategoryKeys.Count == 0
+                ? "Finished Goods"
+                : ToSourceGroupDisplayName(_templateLinkedCategoryKeys.First());
+            return;
+        }
+
+        _templateCategory = ToSourceGroupDisplayName(_selectedPrimaryTemplateCategoryKey);
+    }
+
+    private void GeneratePermutationsFromTemplate()
+    {
+        if (!IsTemplateReady)
+        {
+            _configurationMessage = "Template name, linked categories, and at least one combination category are required before generating permutations.";
+            return;
+        }
+
+        if (!HasRequiredShippingDimensions())
+        {
+            _configurationMessage = "Enter shipping length, width, height, and weight before generating permutations.";
+            return;
+        }
+
+        var generated = BuildUniqueFinalProducts();
+        _generatedFinalProducts = generated;
+        _permutationsDirty = false;
+
+        var pricingSummary = ApplyPermutationPricingInputs(generated);
+        PruneFinalProductDrafts();
+        EnsureFinalProductSelection();
+
+        _configurationMessage = generated.Count == 0
+            ? "No permutations were generated. Link at least one element in each group you want to include."
+            : string.IsNullOrWhiteSpace(pricingSummary)
+                ? $"Generated {generated.Count} final product permutation(s) from the template assignments."
+                : $"Generated {generated.Count} final product permutation(s) from the template assignments. {pricingSummary}";
+    }
+
+    private bool HasRequiredShippingDimensions() =>
+        _shippingLengthInches is > 0m &&
+        _shippingWidthInches is > 0m &&
+        _shippingHeightInches is > 0m &&
+        _shippingWeightOunces is > 0m;
+
+    private string ApplyPermutationPricingInputs(IReadOnlyList<FinalProductRow> generated)
+    {
+        var requestedCogs = NormalizeMoneyValue(_finalProductCogsInput);
+        var requestedSellPrice = NormalizeMoneyValue(_finalSellPriceInput);
+
+        if (requestedCogs is null && requestedSellPrice is null)
+        {
+            return string.Empty;
+        }
+
+        var cogsAdjustedCount = 0;
+
+        foreach (var product in generated)
+        {
+            var draft = GetOrCreateFinalProductDraft(product.Key);
+
+            if (requestedCogs is not null)
+            {
+                var appliedCogs = decimal.Round(Math.Max(product.BaseCogs, requestedCogs.Value), 2, MidpointRounding.AwayFromZero);
+                draft.ProductCogs = appliedCogs;
+
+                if (appliedCogs > requestedCogs.Value)
+                {
+                    cogsAdjustedCount += 1;
+                }
+            }
+
+            if (requestedSellPrice is not null)
+            {
+                draft.SellPrice = decimal.Round(Math.Max(0m, requestedSellPrice.Value), 2, MidpointRounding.AwayFromZero);
+            }
+        }
+
+        var updates = new List<string>();
+
+        if (requestedCogs is not null)
+        {
+            updates.Add(cogsAdjustedCount == 0
+                ? $"Applied product COGS {requestedCogs.Value.ToString("C")} to all permutations."
+                : $"Applied requested product COGS with {cogsAdjustedCount} permutation(s) floored to base COGS.");
+        }
+
+        if (requestedSellPrice is not null)
+        {
+            updates.Add($"Applied sell price {requestedSellPrice.Value.ToString("C")} to all permutations.");
+        }
+
+        return string.Join(" ", updates);
+    }
+
+    private void SelectFinalProduct(string productKey)
+    {
+        _selectedFinalProductKey = productKey;
+        var product = SelectedFinalProduct;
+        if (product is null)
+        {
+            _selectedFinalProductEditor = new FinalProductEditor();
+            return;
+        }
+
+        _selectedFinalProductEditor = new FinalProductEditor
+        {
+            Category = GetDraftCategory(product),
+            Name = GetDraftName(product),
+            ProductCogs = GetDraftProductCogs(product),
+            SellPrice = GetDraftSellPrice(product),
+        };
+    }
+
+    private void SaveSelectedFinalProduct()
+    {
+        var product = SelectedFinalProduct;
+        if (product is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_selectedFinalProductEditor.Category) || string.IsNullOrWhiteSpace(_selectedFinalProductEditor.Name))
+        {
+            _configurationMessage = "Category and name are required for the selected final product.";
+            return;
+        }
+
+        var draft = GetOrCreateFinalProductDraft(product.Key);
+        draft.Category = _selectedFinalProductEditor.Category.Trim();
+        draft.Name = _selectedFinalProductEditor.Name.Trim();
+        draft.SellPrice = decimal.Round(Math.Max(0m, _selectedFinalProductEditor.SellPrice), 2, MidpointRounding.AwayFromZero);
+        draft.ProductCogs = decimal.Round(Math.Max(product.BaseCogs, _selectedFinalProductEditor.ProductCogs), 2, MidpointRounding.AwayFromZero);
+
+        if (draft.ProductCogs > _selectedFinalProductEditor.ProductCogs)
+        {
+            _configurationMessage = "Product COGS cannot be lower than base COGS and was adjusted automatically.";
+        }
+        else
+        {
+            _configurationMessage = "Selected final product changes applied.";
+        }
+
+        SelectFinalProduct(product.Key);
+    }
+
+    private int GetFinalProductIndex(string productKey)
+    {
+        var products = UniqueFinalProducts;
+        for (var index = 0; index < products.Count; index++)
+        {
+            if (string.Equals(products[index].Key, productKey, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return 0;
+    }
+
+    private void EnsureFinalProductSelection()
+    {
+        var products = UniqueFinalProducts;
+        if (products.Count == 0)
+        {
+            _selectedFinalProductKey = null;
+            _selectedFinalProductEditor = new FinalProductEditor();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedFinalProductKey) && products.Any(product => string.Equals(product.Key, _selectedFinalProductKey, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        SelectFinalProduct(products[0].Key);
+    }
+
+    private ElementVariationAssignment GetAssignment(ElementOption element)
+    {
+        if (_elementAssignments.TryGetValue(element.Key, out var existing))
+        {
+            return existing;
+        }
+
+        EnsureAssignment(element);
+        return _elementAssignments[element.Key];
+    }
+
+    private void EnsureAssignment(ElementOption element)
+    {
+        if (_elementAssignments.ContainsKey(element.Key))
+        {
+            return;
+        }
+
+        _elementAssignments[element.Key] = new ElementVariationAssignment
+        {
+            VariationName = BuildDefaultVariationName(element),
+            VariationCode = BuildDefaultVariationCode(element),
+        };
+    }
+
+    private void UpdateVariationName(string elementKey, string? value)
+    {
+        if (_elementAssignments.TryGetValue(elementKey, out var assignment))
+        {
+            assignment.VariationName = string.IsNullOrWhiteSpace(value) ? assignment.VariationName : value.Trim();
+            MarkPermutationsDirty();
+        }
+    }
+
+    private void UpdateVariationCode(string elementKey, string? value)
+    {
+        if (_elementAssignments.TryGetValue(elementKey, out var assignment))
+        {
+            assignment.VariationCode = string.IsNullOrWhiteSpace(value) ? assignment.VariationCode : value.Trim().ToUpperInvariant();
+            MarkPermutationsDirty();
+        }
+    }
+
+    private bool IsLinkedElement(ElementOption element) =>
+        _linkedElementKeys.Contains(element.Key);
+
+    private bool IsTemplateCategoryLinked(string sourceGroupKey) =>
+        _templateLinkedCategoryKeys.Contains(sourceGroupKey);
+
+    private bool CanLinkElement(ElementOption element) =>
+        IsTemplateReady && IsTemplateCategoryLinked(element.SourceGroupKey);
+
+    private IReadOnlyList<LinkedElementBreakdownRow> LinkedElementBreakdown =>
+        AvailableElementGroups
+            .Select(group => new LinkedElementBreakdownRow(
+                group.Key,
+                group.DisplayName,
+                group.Elements.Count(element => _linkedElementKeys.Contains(element.Key))))
+            .Where(row => row.LinkedCount > 0)
+            .OrderBy(row => GetGroupSortOrder(row.Key))
+            .ThenBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static int GetSpiderWidthPercent(int linkedCount, int maxLinkedCount)
+    {
+        if (linkedCount <= 0 || maxLinkedCount <= 0)
+        {
+            return 6;
+        }
+
+        var scaled = (int)Math.Round((linkedCount / (double)maxLinkedCount) * 100d, MidpointRounding.AwayFromZero);
+        return Math.Clamp(scaled, 6, 100);
+    }
+
+    private int GetLinkedCount(string sourceGroupKey) =>
+        AvailableElementGroups
+            .SelectMany(group => group.Elements)
+            .Count(element => string.Equals(element.SourceGroupKey, sourceGroupKey, StringComparison.OrdinalIgnoreCase) && _linkedElementKeys.Contains(element.Key));
+
+    private IReadOnlyList<FinalProductRow> BuildUniqueFinalProducts()
+    {
+        if (!IsTemplateReady)
+        {
+            return [];
+        }
+
+        var linkedGroups = AvailableElementGroups
+            .Select(group => new LinkedGroup(
+                group.Key,
+                group.DisplayName,
+                group.Elements.Where(element => _linkedElementKeys.Contains(element.Key)).ToList()))
+            .Where(group => group.Elements.Count > 0)
+            .Where(group => _combinationCategoryKeys.Contains(group.Key))
+            .OrderBy(group => GetGroupSortOrder(group.Key))
+            .ThenBy(group => group.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (linkedGroups.Count == 0)
+        {
+            return [];
+        }
+
+        var combinations = new List<List<ElementOption>>();
+        BuildElementCombinations(linkedGroups, 0, [], combinations);
+
+        var rows = new List<FinalProductRow>();
+        for (var index = 0; index < combinations.Count; index++)
+        {
+            var elements = combinations[index]
+                .OrderBy(element => GetGroupSortOrder(element.SourceGroupKey))
+                .ThenBy(element => element.GroupDisplayName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(element => element.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var key = string.Join("||", elements.Select(element => element.Key));
+            var baseCogs = decimal.Round(elements.Sum(element => element.Cogs), 2, MidpointRounding.AwayFromZero);
+            var suggestedSellPrice = decimal.Round(baseCogs * 2m, 2, MidpointRounding.AwayFromZero);
+            var (derivedCategory, derivedName) = DeriveCategoryAndNameFromFrontFace(elements, index + 1);
+            var variationNameSuffix = string.Join(" ", elements.Select(GetVariationNameForElement).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase));
+            var templateDrivenName = string.IsNullOrWhiteSpace(variationNameSuffix)
+                ? _templateName.Trim()
+                : $"{_templateName.Trim()} {variationNameSuffix}".Trim();
+
+            rows.Add(new FinalProductRow(
+                key,
+                suggestedSellPrice,
+                baseCogs,
+                string.IsNullOrWhiteSpace(derivedCategory) ? _templateCategory.Trim() : derivedCategory,
+                string.IsNullOrWhiteSpace(templateDrivenName) ? derivedName : templateDrivenName,
+                elements));
+        }
+
+        return rows;
+    }
+
+    private static void BuildElementCombinations(
+        IReadOnlyList<LinkedGroup> groups,
+        int depth,
+        List<ElementOption> currentSelection,
+        List<List<ElementOption>> combinations)
+    {
+        if (depth >= groups.Count)
+        {
+            combinations.Add(currentSelection.ToList());
+            return;
+        }
+
+        foreach (var element in groups[depth].Elements)
+        {
+            currentSelection.Add(element);
+            BuildElementCombinations(groups, depth + 1, currentSelection, combinations);
+            currentSelection.RemoveAt(currentSelection.Count - 1);
+        }
+    }
+
+    private (string Category, string Name) DeriveCategoryAndNameFromFrontFace(IReadOnlyList<ElementOption> elements, int productNumber)
+    {
+        var frontFace = elements.FirstOrDefault(element => string.Equals(element.SourceGroupKey, "front-faces", StringComparison.OrdinalIgnoreCase));
+        if (frontFace is null)
+        {
+            return ("Uncategorized", $"{_templateName} {productNumber:000}");
+        }
+
+        return SplitFrontFaceLabel(frontFace.Label);
+    }
+
+    private string GetVariationNameForElement(ElementOption element)
+    {
+        if (_elementAssignments.TryGetValue(element.Key, out var assignment) && !string.IsNullOrWhiteSpace(assignment.VariationName))
+        {
+            return assignment.VariationName!;
+        }
+
+        return BuildDefaultVariationName(element);
+    }
+
+    private string GetVariationCodeForElement(ElementOption element)
+    {
+        if (_elementAssignments.TryGetValue(element.Key, out var assignment) && !string.IsNullOrWhiteSpace(assignment.VariationCode))
+        {
+            return assignment.VariationCode!;
+        }
+
+        return BuildDefaultVariationCode(element);
+    }
+
+    private static string BuildDefaultVariationName(ElementOption element)
+    {
+        var segments = element.Label
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(segment => !string.IsNullOrWhiteSpace(segment))
+            .ToList();
+
+        return segments.Count == 0 ? element.Label : segments[^1];
+    }
+
+    private static string BuildDefaultVariationCode(ElementOption element)
+    {
+        var token = BuildDefaultVariationName(element);
+        var letters = token
+            .Split([' ', '-', '/'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => part[0])
+            .Where(character => char.IsLetterOrDigit(character))
+            .Take(3)
+            .ToArray();
+
+        return letters.Length == 0 ? "VAR" : new string(letters).ToUpperInvariant();
+    }
+
+    private static (string Category, string Name) SplitFrontFaceLabel(string label)
+    {
+        var segments = label
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(segment => !string.IsNullOrWhiteSpace(segment))
+            .ToList();
+
+        if (segments.Count == 0)
+        {
+            return ("Uncategorized", label);
+        }
+
+        if (segments.Count == 1)
+        {
+            return ("Front Faces", segments[0]);
+        }
+
+        return (segments[0], segments[^1]);
+    }
+
+    private string BuildGeneratedSku(int index)
+    {
+        var digits = _skuNumberDigits <= 0 ? 1 : _skuNumberDigits;
+        var sequence = index + 1;
+        return sequence.ToString($"D{digits}");
+    }
+
+    private string GetSkuPreview()
+    {
+        return BuildGeneratedSku(0);
+    }
+
+    private decimal GetDraftSellPrice(FinalProductRow product) =>
+        _finalProductDrafts.TryGetValue(product.Key, out var draft) && draft.SellPrice is not null
+            ? draft.SellPrice.Value
+            : product.SuggestedSellPrice;
+
+    private string GetDraftCategory(FinalProductRow product) =>
+        _finalProductDrafts.TryGetValue(product.Key, out var draft) && !string.IsNullOrWhiteSpace(draft.Category)
+            ? draft.Category!
+            : product.DerivedCategory;
+
+    private string GetDraftName(FinalProductRow product) =>
+        _finalProductDrafts.TryGetValue(product.Key, out var draft) && !string.IsNullOrWhiteSpace(draft.Name)
+            ? draft.Name!
+            : product.DerivedName;
+
+    private IReadOnlyList<string> GetCategoryOptions(FinalProductRow product)
+    {
+        var options = GetFrontFaceCategoryOptions().ToList();
+        var selected = GetDraftCategory(product);
+        if (!options.Contains(selected, StringComparer.OrdinalIgnoreCase))
+        {
+            options.Insert(0, selected);
+        }
+
+        return options;
+    }
+
+    private IReadOnlyList<string> GetNameOptions(FinalProductRow product)
+    {
+        var options = GetFrontFaceNameOptions().ToList();
+        var selected = GetDraftName(product);
+        if (!options.Contains(selected, StringComparer.OrdinalIgnoreCase))
+        {
+            options.Insert(0, selected);
+        }
+
+        return options;
+    }
+
+    private IReadOnlyList<string> GetFrontFaceCategoryOptions() =>
+        SelectedElements
+            .Where(element => string.Equals(element.SourceGroupKey, "front-faces", StringComparison.OrdinalIgnoreCase))
+            .Select(element => SplitFrontFaceLabel(element.Label).Category)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private IReadOnlyList<string> GetFrontFaceNameOptions() =>
+        SelectedElements
+            .Where(element => string.Equals(element.SourceGroupKey, "front-faces", StringComparison.OrdinalIgnoreCase))
+            .Select(element => SplitFrontFaceLabel(element.Label).Name)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private decimal GetDraftProductCogs(FinalProductRow product)
+    {
+        if (_finalProductDrafts.TryGetValue(product.Key, out var draft) && draft.ProductCogs is not null)
+        {
+            return Math.Max(product.BaseCogs, draft.ProductCogs.Value);
+        }
+
+        return product.BaseCogs;
+    }
+
+    private void UpdateFinalProductSellPrice(string productKey, string? rawValue)
+    {
+        if (!decimal.TryParse(rawValue, out var sellPrice))
+        {
+            return;
+        }
+
+        var draft = GetOrCreateFinalProductDraft(productKey);
+        draft.SellPrice = decimal.Round(Math.Max(0m, sellPrice), 2, MidpointRounding.AwayFromZero);
+    }
+
+    private void UpdateFinalProductCategory(string productKey, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var draft = GetOrCreateFinalProductDraft(productKey);
+        draft.Category = value.Trim();
+    }
+
+    private void UpdateFinalProductName(string productKey, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var draft = GetOrCreateFinalProductDraft(productKey);
+        draft.Name = value.Trim();
+    }
+
+    private void UpdateFinalProductCogs(FinalProductRow product, string? rawValue)
+    {
+        if (!decimal.TryParse(rawValue, out var cogs))
+        {
+            return;
+        }
+
+        var floorValue = Math.Max(product.BaseCogs, cogs);
+        var draft = GetOrCreateFinalProductDraft(product.Key);
+        draft.ProductCogs = decimal.Round(floorValue, 2, MidpointRounding.AwayFromZero);
+
+        if (draft.ProductCogs < product.BaseCogs)
+        {
+            draft.ProductCogs = product.BaseCogs;
+        }
+
+        _configurationMessage = draft.ProductCogs > cogs
+            ? "Product COGS cannot be lower than base COGS and was adjusted automatically."
+            : _configurationMessage;
+    }
+
+    private FinalProductDraft GetOrCreateFinalProductDraft(string productKey)
+    {
+        if (_finalProductDrafts.TryGetValue(productKey, out var draft))
+        {
+            return draft;
+        }
+
+        draft = new FinalProductDraft();
+        _finalProductDrafts[productKey] = draft;
+        return draft;
+    }
+
+    private void PruneFinalProductDrafts()
+    {
+        var validProductKeys = BuildUniqueFinalProducts()
+            .Select(product => product.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var orphanedKey in _finalProductDrafts.Keys.Where(key => !validProductKeys.Contains(key)).ToList())
+        {
+            _finalProductDrafts.Remove(orphanedKey);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedFinalProductKey) && !validProductKeys.Contains(_selectedFinalProductKey))
+        {
+            _selectedFinalProductKey = null;
+            _selectedFinalProductEditor = new FinalProductEditor();
+        }
+    }
+
+    private void MarkPermutationsDirty()
+    {
+        _permutationsDirty = true;
+        _generatedFinalProducts = [];
+        _selectedFinalProductKey = null;
+        _selectedFinalProductEditor = new FinalProductEditor();
+        PruneFinalProductDrafts();
+    }
+
+    private static string NormalizeCsvInput(string? value) =>
+        string.Join(", ", ParseCsvValues(value));
+
+    private static decimal? NormalizeDimensionValue(decimal? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value <= 0m
+            ? null
+            : decimal.Round(value.Value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal? NormalizeMoneyValue(decimal? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return value < 0m
+            ? 0m
+            : decimal.Round(value.Value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static string FormatDimension(decimal? value) =>
+        value is null ? "-" : value.Value.ToString("0.##");
+
+    private static string FormatWeight(decimal? value) =>
+        value is null ? "-" : value.Value.ToString("0.##");
+
+    private static IReadOnlyList<string> ParseCsvValues(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(token => !string.IsNullOrWhiteSpace(token))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+    private string BuildConfigurationKey()
+    {
+        var baseKey = Slugify(_templateName);
+        var suffix = SelectedElements.Count == 0
+            ? "draft"
+            : string.Join("-", SelectedElements.Select(element => Slugify(element.Label)).Take(4));
+
+        return $"fg-{baseKey}-{suffix}";
+    }
+
+    private static string GetElementDescriptor(ElementOption element)
+    {
+        var details = new List<string>();
+        if (!string.IsNullOrWhiteSpace(element.DesignFileName))
+        {
+            details.Add(element.DesignFileName!);
+        }
+
+        details.Add(element.Cogs.ToString("C"));
+        details.Add(element.HasImage ? "Image" : "Vector/File");
+        return string.Join(" • ", details);
+    }
+
+    private static IReadOnlyList<ElementOption> EnumerateElementOptions(string typeDirectory, string sourceGroupKey)
+    {
+        var options = new List<ElementOption>();
+
+        foreach (var assetDirectory in EnumerateAssetDirectories(typeDirectory))
+        {
+            var assetFiles = Directory.GetFiles(assetDirectory)
+                .Where(IsSupportedAssetFile)
+                .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (assetFiles.Count == 0)
+            {
+                continue;
+            }
+
+            var relativePath = Path.GetRelativePath(typeDirectory, assetDirectory);
+            var segments = relativePath
+                .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+            var labelSegments = segments
+                .Where(segment => !string.IsNullOrWhiteSpace(segment))
+                .Select(CleanLabelSegment)
+                .Where(segment => !string.IsNullOrWhiteSpace(segment))
+                .ToList();
+            var label = labelSegments.Count == 0
+                ? CleanLabelSegment(Path.GetFileName(assetDirectory))
+                : string.Join(" / ", labelSegments);
+            var primaryAsset = assetFiles.FirstOrDefault(IsImageFile) ?? assetFiles.FirstOrDefault();
+
+            options.Add(new ElementOption(
+                $"{sourceGroupKey}/{string.Join("|", segments)}",
+                sourceGroupKey,
+                ToSourceGroupDisplayName(sourceGroupKey),
+                sourceGroupKey,
+                label,
+                primaryAsset is null ? null : Path.GetFileName(primaryAsset),
+                ReadCogsCents(assetDirectory, typeDirectory) / 100m,
+                assetFiles.Any(IsImageFile)));
+        }
+
+        return options;
+    }
+
+    private static IEnumerable<string> EnumerateAssetDirectories(string directory)
+    {
+        var childDirectories = Directory.GetDirectories(directory)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var childAssetDirectories = childDirectories
+            .SelectMany(EnumerateAssetDirectories)
+            .ToList();
+        var assetFiles = Directory.GetFiles(directory).Where(IsSupportedAssetFile).ToList();
+
+        if (assetFiles.Count > 0 && childAssetDirectories.Count == 0)
+        {
+            yield return directory;
+        }
+
+        foreach (var childAssetDirectory in childAssetDirectories)
+        {
+            yield return childAssetDirectory;
+        }
+    }
+
+    private static bool IsMetadataFile(string filePath)
+    {
+        var fileName = Path.GetFileName(filePath);
+        return string.Equals(fileName, "colors.txt", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(fileName, "cogs.txt", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSupportedAssetFile(string filePath)
+    {
+        if (IsMetadataFile(filePath))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(filePath);
+        return IsImageFile(filePath) ||
+               extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".nc", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".gc", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".gcode", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".tap", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".lbrn", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".lbrn2", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".svg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".dxf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsImageFile(string filePath)
+    {
+        var extension = Path.GetExtension(filePath);
+        return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".gif", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".svg", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".tif", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".tiff", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".avif", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static long ReadCogsCents(string directory, string typeDirectory)
+    {
+        var current = new DirectoryInfo(directory);
+        while (current is not null)
+        {
+            var cogsPath = Path.Combine(current.FullName, "cogs.txt");
+            if (File.Exists(cogsPath) && decimal.TryParse(File.ReadAllText(cogsPath).Trim(), out var cogs))
+            {
+                return ToCents(cogs);
+            }
+
+            if (string.Equals(current.FullName, typeDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+
+            current = current.Parent;
+        }
+
+        return 0;
+    }
+
+    private static long ToCents(decimal value) =>
+        decimal.ToInt64(decimal.Round(value * 100m, 0, MidpointRounding.AwayFromZero));
+
+    private static string Slugify(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "draft";
+        }
+
+        var cleaned = new string(value
+            .Trim()
+            .ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : '-')
+            .ToArray());
+        var parts = cleaned.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 0 ? "draft" : string.Join("-", parts);
+    }
+
+    private static string ToSourceGroupDisplayName(string value) => FormatElementLabel(CleanLabelSegment(value));
+
+    private static string CleanLabelSegment(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return value.Replace('_', ' ').Replace('-', ' ').Trim();
+    }
+
+    private static string FormatElementLabel(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(" ", value
+            .Split([' ', '-'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(word => char.ToUpperInvariant(word[0]) + word[1..].ToLowerInvariant()));
+    }
+
+    private static int GetGroupSortOrder(string sourceGroupKey) => sourceGroupKey switch
+    {
+        "front-faces" => 0,
+        _ => 1,
+    };
+
+    private sealed record ElementOption(
+        string Key,
+        string SourceGroupKey,
+        string GroupDisplayName,
+        string ElementType,
+        string Label,
+        string? DesignFileName,
+        decimal Cogs,
+        bool HasImage);
+
+    private sealed record ElementGroupOption(
+        string Key,
+        string DisplayName,
+        IReadOnlyList<ElementOption> Elements);
+
+    private sealed record LinkedGroup(
+        string Key,
+        string DisplayName,
+        IReadOnlyList<ElementOption> Elements);
+
+    private sealed record LinkedElementBreakdownRow(
+        string Key,
+        string DisplayName,
+        int LinkedCount);
+
+    private sealed record FinalProductRow(
+        string Key,
+        decimal SuggestedSellPrice,
+        decimal BaseCogs,
+        string DerivedCategory,
+        string DerivedName,
+        IReadOnlyList<ElementOption> Elements)
+    {
+        public string ElementsLabel => string.Join(" • ", Elements.Select(element => $"{element.GroupDisplayName}: {element.Label}"));
+    }
+
+    private sealed class FinalProductDraft
+    {
+        public string? Category { get; set; }
+
+        public string? Name { get; set; }
+
+        public decimal? SellPrice { get; set; }
+
+        public decimal? ProductCogs { get; set; }
+    }
+
+    private sealed class ElementVariationAssignment
+    {
+        public string VariationName { get; set; } = string.Empty;
+
+        public string VariationCode { get; set; } = string.Empty;
+    }
+
+    private sealed class FinalProductEditor
+    {
+        public string Category { get; set; } = string.Empty;
+
+        public string Name { get; set; } = string.Empty;
+
+        public decimal ProductCogs { get; set; }
+
+        public decimal SellPrice { get; set; }
+    }
+}

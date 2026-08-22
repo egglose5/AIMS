@@ -1,0 +1,165 @@
+@page "/online-orders"
+@rendermode InteractiveServer
+
+<PageTitle>Online Orders</PageTitle>
+
+<!-- Future integration note: this page is intended for online orders from Square, WooCommerce, Etsy, Amazon, and other commerce channels. -->
+
+<div class="sales-hero">
+    <p class="sales-eyebrow">Orders</p>
+    <h1 class="sales-title">Online Orders</h1>
+    <p class="sales-subtitle">
+        A unified view for web and marketplace orders as channel integrations come online.
+    </p>
+</div>
+
+<section class="sales-card mb-4">
+    <div class="sales-sheet-header">
+        <div>
+            <h2>Order Intake</h2>
+            <p class="text-body-secondary mb-0">Track incoming online orders across connected sales channels.</p>
+        </div>
+        <div class="settings-actions">
+            <label class="sales-select-control">
+                <span>Channel</span>
+                <InputSelect class="form-select" @bind-Value="_selectedChannel">
+                    @foreach (var channel in Channels)
+                    {
+                        <option value="@channel">@channel</option>
+                    }
+                </InputSelect>
+            </label>
+            <label class="sales-select-control">
+                <span>Visible orders</span>
+                <InputSelect class="form-select" @bind-Value="_visibleOrders">
+                    @foreach (var option in VisibleOrderOptions)
+                    {
+                        <option value="@option">@option orders</option>
+                    }
+                </InputSelect>
+            </label>
+        </div>
+    </div>
+</section>
+
+<div class="sales-summary">
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Open Orders</span>
+        <strong class="sales-metric-value">@FilteredOrders.Count</strong>
+        <span class="sales-metric-note">Waiting for fulfillment or review</span>
+    </section>
+
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Gross Collected</span>
+        <strong class="sales-metric-value">@GrossCollected.ToString("C0")</strong>
+        <span class="sales-metric-note">Across visible online channels</span>
+    </section>
+
+    <section class="sales-card sales-metric">
+        <span class="sales-metric-label">Newest Channel</span>
+        <strong class="sales-metric-value">@NewestChannelLabel</strong>
+        <span class="sales-metric-note">Most recent online order source</span>
+    </section>
+</div>
+
+<section class="sales-card">
+    <div class="sales-sheet-header">
+        <div>
+            <h2>Recent Online Orders</h2>
+            <p class="text-body-secondary mb-0">@FilteredOrders.Count visible order(s)</p>
+        </div>
+    </div>
+
+    @if (FilteredOrders.Count == 0)
+    {
+        <div class="settings-status">
+            No online orders are available yet.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle sales-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Order</th>
+                        <th scope="col">Channel</th>
+                        <th scope="col">Customer</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" class="text-end">Gross Collected</th>
+                        <th scope="col">Graph</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var order in FilteredOrders)
+                    {
+                        <tr>
+                            <td>
+                                <div class="sales-name">@order.OrderNumber</div>
+                                <div class="sales-role">@order.PlacedAt.ToLocalTime().ToString("g")</div>
+                            </td>
+                            <td>
+                                <span class="sales-sheet-badge">@order.Channel</span>
+                            </td>
+                            <td>
+                                <div class="sales-name">@order.CustomerName</div>
+                                <div class="sales-role">@order.Destination</div>
+                            </td>
+                            <td>@order.Status</td>
+                            <td class="text-end">@order.GrossCollected.ToString("C0")</td>
+                            <td>
+                                <div class="sales-graph">
+                                    <div class="sales-graph-track">
+                                        <div class="sales-graph-fill" style="width: @(MaxGrossCents == 0 ? 0 : order.GrossCollectedCents / (decimal)MaxGrossCents * 100m)%"></div>
+                                    </div>
+                                    <div class="sales-graph-label">@order.GrossCollected.ToString("C0")</div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private string _selectedChannel = "All channels";
+    private int _visibleOrders = 25;
+    private IReadOnlyList<OnlineOrderRow> _onlineOrders = [];
+
+    private static readonly IReadOnlyList<string> Channels =
+    [
+        "All channels",
+        "Square",
+        "WooCommerce",
+        "Etsy",
+        "Amazon",
+    ];
+
+    private static readonly IReadOnlyList<int> VisibleOrderOptions = [10, 25, 50, 100];
+
+    private IReadOnlyList<OnlineOrderRow> FilteredOrders => _onlineOrders
+        .Where(order => _selectedChannel == "All channels" || order.Channel == _selectedChannel)
+        .OrderByDescending(order => order.PlacedAt)
+        .Take(_visibleOrders)
+        .ToList();
+
+    private decimal GrossCollected => FilteredOrders.Sum(order => order.GrossCollectedCents) / 100m;
+
+    private long MaxGrossCents => FilteredOrders.Count == 0 ? 0 : FilteredOrders.Max(order => order.GrossCollectedCents);
+
+    private string NewestChannelLabel => FilteredOrders.FirstOrDefault()?.Channel ?? "No orders yet";
+
+    private sealed record OnlineOrderRow(
+        string OrderNumber,
+        string Channel,
+        string CustomerName,
+        string Destination,
+        string Status,
+        DateTimeOffset PlacedAt,
+        long GrossCollectedCents)
+    {
+        public decimal GrossCollected => GrossCollectedCents / 100m;
+    }
+}

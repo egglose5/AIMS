@@ -1,0 +1,14 @@
+Ancient Innovations Control App v10 Pass 9.1 — Shows + Research
+
+Adds the first working Show Arm research interface:
+- Create permanent show + 2027 edition records
+- Edit core facts: fees, attendance, vendor counts, application dates
+- Attendance/vendor-count anomaly warning
+- Research intelligence for marketing, maps/placement, weather, security, setup and parking
+- Evidence locker with source, URL, reliability, sentiment and factual finding
+- Preliminary evidence verdict (unproven/researching/building case/high risk)
+- Frozen pre-show forecasts with confidence and evidence summary
+- Existing vendor profiles retained in a dedicated tab
+
+Protected boundary remains: no Production Arm behavior changed.
+Existing Show Arm data is preserved by the upgrade script.

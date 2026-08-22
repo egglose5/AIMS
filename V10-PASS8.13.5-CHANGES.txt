@@ -1,0 +1,8 @@
+Pass 8.13.5
+- Fixes the actual Code128 SVG intrinsic dimensions.
+- Barcode SVG is physically 1.72in x 0.24in.
+- Removes inline label-card dimensions that could compete with print CSS.
+- Keeps exact 2in x .75in page.
+- Keeps BLK/BR + artwork name below barcode.
+- Barcode value/SKU unchanged.
+- No inventory/category/subcategory logic changed.

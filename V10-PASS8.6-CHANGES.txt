@@ -1,0 +1,8 @@
+Ancient Innovations Control App v10 Pass 8.6 — DYMO Exact Page Size Fix
+
+- Fixes browser print pagination for 2.00 in x 0.75 in DYMO barcode stock.
+- Initial Inventory SKU labels now render and print as exactly one 2 x .75 page per label.
+- Customer-order completion labels now render and print as exactly one 2 x .75 page.
+- Production label print route defaults to 2 x .75 and uses one physical page per label.
+- Print margins are zero at the page level; content has small internal safe padding.
+- No fulfillment, routing, inventory, production, or database logic changed from Pass 8.5.

@@ -1,0 +1,11 @@
+Ancient Innovations Control App v10 Pass 8.11
+Inventory Family Normalization
+
+- Keeps Square as the catalog source of truth.
+- Keeps one inventory card per physical Square item with Black/Brown choices grouped inside.
+- Inventory category buttons now represent physical inventory families, not merchandising tags.
+- IP and New Releases are no longer separate Inventory categories.
+- Plain artwork stock routes to Never-Ending Notebooks.
+- Items named Modular Book / Modular System route to Modular Books.
+- Preserves existing live Square physical categories where appropriate.
+- Preserves permanent barcode/reprint behavior and all Pass 8.10 fulfillment/production work.

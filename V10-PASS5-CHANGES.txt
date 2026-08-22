@@ -1,0 +1,11 @@
+Ancient Innovations Control App v10 - Pass 5
+Shared Fulfillment Queue
+
+- Added /fulfillment shared operational queue.
+- Added Fulfillment navigation item.
+- Show Orders now idempotently hydrates the shared FulfillmentOrderLines backbone with customer, shipping address, product, quantity, selections, notes and order date.
+- Existing Show Orders status buttons now mirror their status into the shared fulfillment record.
+- Existing Show Orders UI and legacy ShowOrderFulfillments table remain intact.
+- No WooCommerce order intake yet.
+- No Pirate Ship/label integration yet.
+- No automatic inventory-vs-production decision yet.

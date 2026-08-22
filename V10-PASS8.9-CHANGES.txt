@@ -1,0 +1,16 @@
+Ancient Innovations Control App v10 Pass 8.9
+Square Inventory Grouping + Categories + Permanent Barcodes
+
+- Square remains the inventory catalog source of truth.
+- Corrected Square category resolution to prefer reporting_category, falling back to legacy category_id.
+- Inventory category buttons are generated from the live Square categories.
+- Search works across all categories even when a category is selected.
+- Restored the fast notebook workflow: color-specific Square entries/variations are grouped under one inventory card.
+  Example: Floral Riff Black + Brown appear as one Floral Riff card with Black and Brown choices inside.
+- Terminal Black/Brown suffixes on Square item names are grouped without merging different product families such as Modular Book.
+- Every Square item remains visible after barcode creation; Inventory now defaults to All instead of hiding initialized items.
+- Existing barcodes have permanent Print/Reprint controls and reprinting never changes inventory.
+- Partial initialization is supported: one choice can already have a barcode while another remains available to initialize.
+- A quantity of zero can intentionally initialize a choice and assign its permanent barcode.
+- Local artwork images only enrich the Square item and never decide whether the item exists.
+- Existing 2.00 x 0.75 inch DYMO print sizing remains unchanged.

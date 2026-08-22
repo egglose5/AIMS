@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17.6
+    container_name: controlapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: MustaineAI
+    ports:
+      - "5432:5432"
+    volumes:
+      - controlapp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d MustaineAI"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  controlapp-postgres-data:
+    driver: local

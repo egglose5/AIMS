@@ -1,0 +1,369 @@
+@page "/scout-discovery"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext Db
+@inject IScoutDiscoveryService Discovery
+
+<PageTitle>Scout Discovery</PageTitle>
+
+<div class="shows-hero">
+    <p class="shows-eyebrow">Ancient Innovations Brain</p>
+    <h1>Scout — Discovery S1.27</h1>
+    <p>Search dedicated show sources plus the open web. Research and judgment come next.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_message))
+{
+    <div class="alert alert-info mt-3">@_message</div>
+}
+
+<div class="row g-3 mt-2">
+    <div class="col-lg"><div class="shows-card"><span>NEW</span><strong>@_newCount</strong></div></div>
+    <div class="col-lg"><div class="shows-card"><span>RESEARCH NEXT</span><strong>@_acceptedCount</strong></div></div>
+    <div class="col-lg"><div class="shows-card"><span>IGNORED</span><strong>@_ignoredCount</strong></div></div>
+    <div class="col-lg"><div class="shows-card"><span>ARCHIVED JUNK</span><strong>@_junkCount</strong></div></div>
+    <div class="col-lg"><div class="shows-card"><span>ARCHIVED TEST</span><strong>@_archivedCount</strong></div></div>
+</div>
+
+<section class="shows-card mt-3">
+    <div class="shows-card-head">
+        <div>
+            <h2>Find shows</h2>
+            <p>Persisted Discovery Pool enabled. Scout Discovery is date-blind. S1.27 preserves S1.22 multi-state discovery and stages overflow beyond the active 300-lead batch instead of discarding it. Source-yield diagnostics show which directories are productive and which state lanes are missing.</p>
+        </div>
+        <span class="badge text-bg-primary">PHASE 1 · LIVE VERIFIED</span>
+    </div>
+
+    <div class="row g-2 mt-2">
+        <div class="col-md-3">
+            <label class="form-label">Planning season</label>
+            <input class="form-control" type="number" min="2026" max="2031" @bind="_targetYear" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Month</label>
+            <select class="form-select" @bind="_targetMonth">
+                <option value="0">Any month</option>
+                @for (var m = 1; m <= 12; m++)
+                {
+                    <option value="@m">@(new DateTime(2027,m,1).ToString("MMMM"))</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Vendor context</label>
+            <select class="form-select" @bind="_vendorId">
+                <option value="">General discovery</option>
+                @foreach (var v in _vendors)
+                {
+                    <option value="@v.Id">@v.VendorName</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Search geography</label>
+            <input class="form-control" @bind="_region" placeholder="Midwest, Indiana, Florida…" />
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap mt-3">
+        <button class="btn btn-primary" disabled="@_busy" @onclick="RunDiscoveryAsync">
+            @(_busy ? "Scout is searching…" : "Run Full Discovery")
+        </button>
+        <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="ReloadAsync">Refresh</button>
+        <button class="btn btn-outline-warning" disabled="@_busy" @onclick="ArchiveCalibrationLeadsAsync">Archive ALL Scout calibration leads</button>
+        <button class="btn btn-outline-primary" disabled="@(_busy || _queuedCount == 0)" @onclick="ActivateNextBatchAsync">Activate next batch (@_queuedCount queued)</button>
+    </div>
+
+    <details class="mt-3">
+        <summary class="text-body-secondary">Discovery rules</summary>
+        <div class="mt-2 small">
+            Scout does not use year or month in S1 search queries. It searches broadly across event types, vendor-application language, directories, local calendars and public discussions.
+            “Archive ALL Scout calibration leads” only archives Scout S1 calibration rows; it does not touch canonical Show Arm records. Archived test leads are excluded from future duplicate suppression. It suppresses known duplicates and only uses narrow hard exclusions.
+            It does not score shows, recommend applying, create Show Arm records, spend money, or assign vendors/backers.
+        </div>
+    </details>
+</section>
+
+<section class="shows-card mt-3">
+    <div class="shows-card-head">
+        <div>
+            <h2>Persistence diagnostics</h2>
+            <p>Read-only counts from the persisted Scout pool. These counters and the cards below use the same loaded records.</p>
+        </div>
+        <span class="badge text-bg-light">S1.27</span>
+    </div>
+    <div class="row g-2 small mt-1">
+        <div class="col-md-3"><strong>Persisted database Scout records:</strong> @_databaseScoutCount</div>
+        <div class="col-md-3"><strong>Loaded Discovery Pool:</strong> @_leads.Count</div>
+        <div class="col-md-3"><strong>Persisted active batch:</strong> @_newCount</div>
+        <div class="col-md-3"><strong>Persisted queued:</strong> @_queuedCount</div>
+    </div>
+    <div class="row g-2 small mt-1">
+        <div class="col-md-3"><strong>New:</strong> @_newCount</div>
+        <div class="col-md-3"><strong>Research Next:</strong> @_acceptedCount</div>
+        <div class="col-md-3"><strong>Ignored:</strong> @_ignoredCount</div>
+        <div class="col-md-3"><strong>Archived junk:</strong> @_junkCount</div>
+        <div class="col-md-3"><strong>Archived test:</strong> @_archivedCount</div>
+    </div>
+    <div class="small text-body-secondary mt-2">
+        PostgreSQL database: MustaineAI · persistent host storage: ~/.mustaine-ai/postgres-data
+    </div>
+</section>
+
+<section class="shows-card mt-3">
+    <div class="shows-card-head">
+        <div><h2>Discovery pool</h2><p>These are possibilities. “Research next” only moves them to Phase 2.</p></div>
+        <span class="badge text-bg-light">@VisibleLeads.Count shown</span>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap mt-2 mb-3">
+        <button class="@FilterButton("SCOUT_NEW")" @onclick='()=>SetFilter("SCOUT_NEW")'>New</button>
+        <button class="@FilterButton("SCOUT_ACCEPTED")" @onclick='()=>SetFilter("SCOUT_ACCEPTED")'>Research next</button>
+        <button class="@FilterButton("SCOUT_IGNORED")" @onclick='()=>SetFilter("SCOUT_IGNORED")'>Ignored</button>
+        <button class="@FilterButton("SCOUT_ARCHIVED_JUNK")" @onclick='()=>SetFilter("SCOUT_ARCHIVED_JUNK")'>Archived junk</button>
+        <button class="@FilterButton("SCOUT_ARCHIVED_TEST")" @onclick='()=>SetFilter("SCOUT_ARCHIVED_TEST")'>Archived test</button>
+        <button class="@FilterButton("ALL")" @onclick='()=>SetFilter("ALL")'>All</button>
+    </div>
+
+    @if (VisibleLeads.Count == 0)
+    {
+        <div class="showarm-empty"><strong>Nothing in this view.</strong><span>No persisted Scout records match this filter. Check Persistence diagnostics before running discovery.</span></div>
+    }
+    else
+    {
+        <div class="showarm-evidence-list">
+        @foreach (var lead in VisibleLeads)
+        {
+            <div class="showarm-evidence-item">
+                <div class="d-flex justify-content-between gap-3 align-items-start flex-wrap">
+                    <div>
+                        <strong>@lead.Title</strong>
+                        <div><small>@FormatTarget(lead) · @VendorName(lead.ShowVendorProfileId)</small></div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <span class="badge text-bg-light">@SourceName(lead.SearchQuery)</span>
+                        <span class="badge @StatusBadge(lead.Status)">@StatusLabel(lead.Status)</span>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(lead.Snippet))
+                {
+                    <p class="mb-2 mt-2">@Compact(lead.Snippet, 420)</p>
+                }
+
+                <div class="d-flex gap-2 flex-wrap mt-2">
+                    @if (Uri.TryCreate(lead.Url, UriKind.Absolute, out _))
+                    {
+                        <a class="btn btn-sm btn-outline-secondary" href="@lead.Url" target="_blank">Open source</a>
+                    }
+                    @if (lead.Status == "SCOUT_NEW")
+                    {
+                        <button class="btn btn-sm btn-success" @onclick='()=>SetStatusAsync(lead.Id,"SCOUT_ACCEPTED")'>Research next</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick='()=>SetStatusAsync(lead.Id,"SCOUT_IGNORED")'>Ignore</button>
+                    }
+                    else if (lead.Status == "SCOUT_IGNORED")
+                    {
+                        <button class="btn btn-sm btn-outline-primary" @onclick='()=>SetStatusAsync(lead.Id,"SCOUT_NEW")'>Restore</button>
+                    }
+                </div>
+
+                <details class="mt-2">
+                    <summary class="small text-body-secondary">Discovery details</summary>
+                    <div class="small mt-2">
+                        <div><strong>Found:</strong> @lead.DiscoveredAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</div>
+                        <div><strong>Search:</strong> @CleanQuery(lead.SearchQuery)</div>
+                    </div>
+                </details>
+            </div>
+        }
+        </div>
+    }
+</section>
+
+@code {
+    private List<ShowVendorProfileEntity> _vendors = [];
+    private List<ShowDiscoveryLeadEntity> _leads = [];
+    private int _targetYear = 2027;
+    private int _targetMonth;
+    private long? _vendorId;
+    private string _region = "Midwest";
+    private string _message = "";
+    private string _filter = "SCOUT_NEW";
+    private bool _busy;
+    private int _databaseScoutCount, _persistedCount, _newCount, _queuedCount, _acceptedCount, _ignoredCount, _junkCount, _archivedCount;
+
+    private List<ShowDiscoveryLeadEntity> VisibleLeads =>
+        _filter == "ALL" ? _leads :
+        _filter == "SCOUT_NEW" ? _leads.Where(x => x.Status == "SCOUT_NEW" || x.Status == "NEW").ToList() :
+        _filter == "SCOUT_IGNORED" ? _leads.Where(x => x.Status == "SCOUT_IGNORED" || x.Status == "IGNORED").ToList() :
+        _leads.Where(x => x.Status == _filter).ToList();
+private async Task ReloadAsync()
+    {
+        _vendors = await Db.ShowVendorProfiles.AsNoTracking().OrderBy(x => x.VendorName).ToListAsync();
+
+        // S1.23: one persisted Scout query is the source of truth for cards, filters and counters.
+        // Do not restrict by old SearchQuery prefixes: later S1 passes use SCOUT:S1.22:*.
+        var query = Db.ShowDiscoveryLeads.AsNoTracking()
+            .Where(x => x.SearchQuery != null && x.SearchQuery.StartsWith("SCOUT:"));
+
+        if (_targetYear > 0) query = query.Where(x => x.TargetYear == _targetYear);
+        if (_targetMonth > 0) query = query.Where(x => x.TargetMonth == _targetMonth);
+        if (_vendorId is long vendorId) query = query.Where(x => x.ShowVendorProfileId == vendorId);
+
+        _databaseScoutCount = await Db.ShowDiscoveryLeads.AsNoTracking()
+            .CountAsync(x => x.SearchQuery != null && x.SearchQuery.StartsWith("SCOUT:"));
+
+        _leads = await query.OrderByDescending(x => x.DiscoveredAt).ToListAsync();
+
+        _persistedCount = _leads.Count;
+        _newCount = _leads.Count(x => x.Status == "SCOUT_NEW" || x.Status == "NEW");
+        _queuedCount = _leads.Count(x => x.Status == "SCOUT_QUEUED");
+        _acceptedCount = _leads.Count(x => x.Status == "SCOUT_ACCEPTED");
+        _ignoredCount = _leads.Count(x => x.Status == "SCOUT_IGNORED" || x.Status == "IGNORED");
+        _junkCount = _leads.Count(x => x.Status == "SCOUT_ARCHIVED_JUNK");
+        _archivedCount = _leads.Count(x => x.Status == "SCOUT_ARCHIVED_TEST");
+    }
+
+    private async Task RunDiscoveryAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var result = await Discovery.DiscoverAsync(_vendorId, _targetYear, _targetMonth, _region, 300);
+            _message = result.Message;
+            _filter = "SCOUT_NEW";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = $"Scout discovery could not complete: {ex.GetBaseException().Message}"; }
+        finally { _busy = false; }
+    }
+
+    private async Task ActivateNextBatchAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var active = await Db.ShowDiscoveryLeads.CountAsync(x => x.TargetYear == _targetYear && x.Status == "SCOUT_NEW");
+            var room = Math.Max(0, 300 - active);
+            if (room == 0)
+            {
+                _message = "The active Scout batch already has 300 leads. Research or ignore some before activating more.";
+                return;
+            }
+            var next = await Db.ShowDiscoveryLeads
+                .Where(x => x.TargetYear == _targetYear && x.Status == "SCOUT_QUEUED")
+                .OrderBy(x => x.DiscoveredAt)
+                .Take(room)
+                .ToListAsync();
+            foreach (var row in next) row.Status = "SCOUT_NEW";
+            if (next.Count > 0) await Db.SaveChangesAsync();
+            _message = $"Activated {next.Count} queued Scout lead(s). Remaining queued leads stay staged for later batches.";
+            _filter = "SCOUT_NEW";
+            await ReloadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ArchiveCalibrationLeadsAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+
+        try
+        {
+            var rows = await Db.ShowDiscoveryLeads
+                .Where(x =>
+                    x.Status != "SCOUT_ARCHIVED_TEST" &&
+                    x.SearchQuery.StartsWith("SCOUT:"))
+                .ToListAsync();
+
+            foreach (var row in rows)
+                row.Status = "SCOUT_ARCHIVED_TEST";
+
+            if (rows.Count > 0)
+                await Db.SaveChangesAsync();
+
+            _message = $"Archived {rows.Count} prior Scout calibration lead(s) across all Scout S1 versions. Canonical Show Arm data was not changed. Archived rows will not suppress the next discovery run.";
+            _filter = "SCOUT_NEW";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Could not archive Scout calibration leads: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SetStatusAsync(long id, string status)
+    {
+        var lead = await Db.ShowDiscoveryLeads.FirstOrDefaultAsync(
+            x => x.Id == id && x.SearchQuery != null && x.SearchQuery.StartsWith("SCOUT:"));
+        if (lead is null) return;
+
+        lead.Status = status;
+        await Db.SaveChangesAsync();
+
+        _message = status switch
+        {
+            "SCOUT_ACCEPTED" => $"{lead.Title} is ready for Phase 2 research. No Show Arm record was created.",
+            "SCOUT_IGNORED" => $"{lead.Title} ignored.",
+            _ => $"{lead.Title} restored to discovery."
+        };
+        await ReloadAsync();
+    }
+
+    private void SetFilter(string value) => _filter = value;
+
+    private string VendorName(long? id) =>
+        id is long value ? _vendors.FirstOrDefault(x => x.Id == value)?.VendorName ?? "Vendor context" : "General";
+
+    private static string FormatTarget(ShowDiscoveryLeadEntity x) =>
+        x.TargetMonth is int m ? $"{new DateTime(x.TargetYear,m,1):MMMM} {x.TargetYear}" : x.TargetYear.ToString();
+
+    private static string CleanQuery(string? q) => (q ?? "").Replace("SCOUT:S1.1:", "").Replace("SCOUT:S1:", "");
+
+    private static string Compact(string? value, int max) =>
+        string.IsNullOrWhiteSpace(value) ? "" : value.Length <= max ? value : value[..max].TrimEnd() + "…";
+
+    private static string StatusLabel(string? status) => status switch
+    {
+        "SCOUT_ACCEPTED" => "RESEARCH NEXT",
+        "SCOUT_IGNORED" => "IGNORED",
+        "SCOUT_ARCHIVED_JUNK" => "ARCHIVED JUNK",
+        "SCOUT_ARCHIVED_TEST" => "ARCHIVED TEST",
+        _ => "NEW"
+    };
+
+    private static string StatusBadge(string? status) => status switch
+    {
+        "SCOUT_ACCEPTED" => "text-bg-success",
+        "SCOUT_IGNORED" => "text-bg-secondary",
+        "SCOUT_ARCHIVED_JUNK" => "text-bg-secondary",
+        "SCOUT_ARCHIVED_TEST" => "text-bg-dark",
+        _ => "text-bg-warning"
+    };
+
+    private static string SourceName(string? q)
+    {
+        var s = q ?? "";
+        var prefixes = new[] { "SCOUT:S1.7:", "SCOUT:S1.6:", "SCOUT:S1.5:", "SCOUT:S1.4:", "SCOUT:S1.3:", "SCOUT:S1.2:", "SCOUT:S1.1:" };
+        var prefix = prefixes.FirstOrDefault(x => s.StartsWith(x, StringComparison.OrdinalIgnoreCase));
+        if (prefix is null) return "WEB";
+        var rest = s[prefix.Length..];
+        var colon = rest.IndexOf(':');
+        return colon > 0 ? rest[..colon].Replace("_", " ") : "WEB";
+    }
+
+    private string FilterButton(string value) =>
+        _filter == value ? "btn btn-primary btn-sm" : "btn btn-outline-secondary btn-sm";
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+}

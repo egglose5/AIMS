@@ -1,0 +1,11 @@
+Ancient Innovations Control App v10 Pass 9.6 — AI Brain Intake + Intelligent Show Discovery
+- AI Brain Gmail intake for ai-brain@ancient-innovations.com via Google App Password/IMAP.
+- Imports only mail delivered to the AI Brain alias; does not ingest the normal inbox indiscriminately.
+- Duplicate protection by message ID.
+- Brain-wide routing foundation: Show, Tax/Financial, Marketing, Store, Operations, Unknown.
+- Show/year auto-match with Needs Review fallback.
+- Preserves original message text, metadata and attachments.
+- Email attachments become permanent Show Documents when matched.
+- Show Inbox redesigned as Needs Review / Processed / All; manual copy/paste intake removed.
+- Candidate discovery filtering strengthened so directories/list pages are sources, not candidate shows.
+- Existing database, maps, vendor files and historical intelligence preserved.

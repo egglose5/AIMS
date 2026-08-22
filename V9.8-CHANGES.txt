@@ -1,0 +1,7 @@
+Mustaine-AI v9.8 — Visual selector repair
+
+- Restores the proven v9.5 Initial Inventory visual card page unchanged.
+- Deduplicates artwork inside ArtworkVisualService by normalized artwork name.
+- Does not delete, move, merge, or rename any process files.
+- Reuses an existing notebook variation by artwork name + leather if duplicate process folders use different keys, preventing duplicate permanent SKUs.
+- Keeps large images, search, large preview, barcode generation, inventory counts, and Production behavior from v9.5.

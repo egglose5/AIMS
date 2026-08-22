@@ -1,0 +1,907 @@
+@page "/production"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI.Data
+@using MustaineAI.Services
+@inject ApplicationDbContext DbContext
+@inject IArtworkVisualService ArtworkVisuals
+
+<PageTitle>Production</PageTitle>
+
+<div class="production-hero">
+    <p class="production-eyebrow">Make List</p>
+    <h1 class="production-title">What Needs Made</h1>
+    <p class="production-subtitle">Square sales create the list. Finished barcode scans put product back on the shelf.</p>
+</div>
+
+<section class="production-card mb-4">
+    <div class="production-card-header">
+        <div>
+            <h2>Finished Inventory Scan</h2>
+            <span class="text-body-secondary">Scan a finished product once. That is the only production status action.</span>
+        </div>
+    </div>
+
+    <form @onsubmit="HandleScanSubmitAsync" @onsubmit:preventDefault="true" class="production-scan-row">
+        <input class="form-control production-scan-input"
+               placeholder="Scan finished SKU or customer-order completion barcode"
+               autocomplete="off"
+               autofocus
+               @bind="_scanSku"
+               @bind:event="oninput" />
+        <button class="btn btn-primary" type="submit" disabled="@_isScanning">@(_isScanning ? "Adding..." : "Add to Inventory")</button>
+    </form>
+
+    @if (!string.IsNullOrWhiteSpace(_scanMessage))
+    {
+        <div class="production-status @(_scanError ? "production-status-error" : string.Empty)">@_scanMessage</div>
+    }
+</section>
+
+@if (_isLoading)
+{
+    <section class="production-card">Loading sales and inventory...</section>
+}
+else
+{
+    <div class="production-summary mb-4">
+        <section class="production-metric">
+            <span class="production-metric-label">Needs Made</span>
+            <strong class="production-metric-value">@(NeedsMade.Sum(x => x.Quantity) + CustomerOrders.Sum(x => Math.Max(1, (int)Math.Round(x.Quantity, MidpointRounding.AwayFromZero))))</strong>
+        </section>
+        <section class="production-metric">
+            <span class="production-metric-label">Low Stock</span>
+            <strong class="production-metric-value">@LowStock.Count</strong>
+        </section>
+        <section class="production-metric">
+            <span class="production-metric-label">Sales Loaded Through</span>
+            <strong class="production-metric-value production-metric-small">@_lastRefreshLabel</strong>
+        </section>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_loadMessage))
+    {
+        <div class="production-status mb-4">@_loadMessage</div>
+    }
+
+    <section class="production-card mb-4">
+        <div class="production-card-header">
+            <div>
+                <h2>Customer Orders</h2>
+                <span class="text-body-secondary">Paid orders with no matching finished stock. Make it, scan it once, and the system sends it to Fulfillment.</span>
+            </div>
+        </div>
+        @if (CustomerOrders.Count == 0)
+        {
+            <div class="production-empty">No customer orders are waiting on production.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th>Product</th><th>Customer</th><th>Details</th><th class="text-end">Qty</th></tr></thead>
+                    <tbody>
+                    @foreach (var row in CustomerOrders)
+                    {
+                        <tr>
+                            <td><strong>@row.ProductName</strong></td>
+                            <td>@row.CustomerName</td>
+                            <td>@CustomerOrderDetails(row)</td>
+                            <td class="text-end"><strong>@FormatQty(row.Quantity)</strong></td>
+                        </tr>
+                        <tr>
+                            <td colspan="4">
+                                <div class="small text-body-secondary mb-1">Completion label — keep this with the customer order and scan it once when finished.</div>
+                                <div class="d-flex align-items-center gap-3 flex-wrap">
+                                    <div style="width:2in;height:.75in;max-width:100%;overflow:hidden;background:#fff;padding:.06in;box-sizing:border-box">
+                                        <div style="font-size:10px;font-weight:700;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@row.ProductName · @row.CustomerName</div>
+                                        <div style="height:.48in;overflow:hidden">@((MarkupString)GenerateCode128Svg(CustomerOrderBarcode(row), 1, 34))</div>
+                                    </div>
+                                    <a class="btn btn-outline-primary btn-sm" target="_blank" href="@CustomerOrderLabelUrl(row)">Print 2 × .75 label</a>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="production-card mb-4">
+        <div class="production-card-header">
+            <div>
+                <h2>Inventory Replacement</h2>
+                <span class="text-body-secondary">Shelf stock to replace after ordinary sales. Customer orders are kept separate above.</span>
+            </div>
+        </div>
+
+        @if (NeedsMade.Count == 0)
+        {
+            <div class="production-empty">Nothing is waiting to be remade.</div>
+        }
+        else
+        {
+            @foreach (var seller in NeedsMade.GroupBy(x => x.Seller).OrderBy(x => SellerSort(x.Key)).ThenBy(x => x.Key))
+            {
+                <div class="production-seller-section">
+                    <div class="production-section-header">
+                        <h3>@seller.Key</h3>
+                        <span class="production-badge">@seller.Sum(x => x.Quantity) item(s)</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr><th>Product</th><th>Artwork</th><th class="text-end">Qty</th></tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var row in seller.OrderBy(x => x.Product).ThenBy(x => x.Artwork))
+                            {
+                                <tr>
+                                    <td><strong>@row.Product</strong></td>
+                                    <td>
+                                        @if (string.IsNullOrWhiteSpace(row.Artwork))
+                                        {
+                                            <span>—</span>
+                                        }
+                                        else
+                                        {
+                                            var imageUrl = ArtworkVisuals.FindImageUrl(row.Artwork);
+                                            <div class="production-artwork-cell">
+                                                @if (!string.IsNullOrWhiteSpace(imageUrl))
+                                                {
+                                                    <img src="@imageUrl" alt="@row.Artwork" class="production-artwork-thumb" loading="lazy" />
+                                                }
+                                                <strong>@row.Artwork</strong>
+                                            </div>
+                                        }
+                                    </td>
+                                    <td class="text-end"><strong>@row.Quantity</strong></td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+    </section>
+
+    <section class="production-card">
+        <div class="production-card-header">
+            <div>
+                <h2>Low Stock</h2>
+                <span class="text-body-secondary">A product is flagged when available shelf stock drops below 5 and stays flagged until it is back to 10.</span>
+            </div>
+        </div>
+
+        @if (LowStock.Count == 0)
+        {
+            <div class="production-empty">No initialized notebook artwork is below the shelf target.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr><th>Product</th><th>Artwork</th><th class="text-end">Black</th><th class="text-end">Brown</th><th class="text-end">Total</th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in LowStock.OrderBy(x => x.Artwork))
+                    {
+                        <tr class="production-low-row">
+                            <td><strong>@row.Product</strong></td>
+                            <td>
+                                @{ var lowImageUrl = ArtworkVisuals.FindImageUrl(row.Artwork); }
+                                <div class="production-artwork-cell">
+                                    @if (!string.IsNullOrWhiteSpace(lowImageUrl))
+                                    {
+                                        <img src="@lowImageUrl" alt="@row.Artwork" class="production-artwork-thumb" loading="lazy" />
+                                    }
+                                    <strong>@row.Artwork</strong>
+                                </div>
+                            </td>
+                            <td class="text-end">@row.Black</td>
+                            <td class="text-end">@row.Brown</td>
+                            <td class="text-end"><strong>@row.Total</strong></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private const int LowStockTrigger = 4;
+    private const int ShelfTarget = 10;
+    private readonly TimeSpan _salesWorkingWindow = TimeSpan.FromDays(30);
+    private bool _isLoading = true;
+    private bool _isScanning;
+    private bool _scanError;
+    private string _scanSku = string.Empty;
+    private string? _scanMessage;
+    private string? _loadMessage;
+    private string _lastRefreshLabel = "—";
+    private List<NeedRow> NeedsMade = [];
+    private List<LowStockRow> LowStock = [];
+    private List<FulfillmentOrderLineEntity> CustomerOrders = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            // KISS rule: Production never calls Square. Square Sales owns synchronization;
+            // this page only reads the sales already stored in our database.
+            _loadMessage = null;
+            await BuildReportAsync();
+        }
+        catch (Exception ex)
+        {
+            _loadMessage = $"Production report could not load: {ex.Message}";
+            NeedsMade = [];
+            LowStock = [];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task HandleScanSubmitAsync()
+    {
+        var sku = (_scanSku ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(sku)) return;
+
+        _isScanning = true;
+        _scanError = false;
+        _scanMessage = null;
+        try
+        {
+            if (sku.StartsWith("SO:", StringComparison.OrdinalIgnoreCase))
+            {
+                var completed = await CompleteCustomerOrderAsync(sku);
+                if (!completed)
+                {
+                    _scanError = true;
+                    _scanMessage = "That customer-order completion barcode is not valid or is no longer waiting on production.";
+                    return;
+                }
+
+                _scanMessage = "Customer order finished — it is now in Fulfillment.";
+                _scanSku = string.Empty;
+                await BuildReportAsync();
+                return;
+            }
+
+            var product = await DbContext.SellableProducts.SingleOrDefaultAsync(
+                x => x.IsActive && (x.SquareSku == sku || x.PermanentSku == sku));
+            if (product is null)
+            {
+                _scanError = true;
+                _scanMessage = $"Barcode {sku} is not initialized in Mustaine-AI.";
+                return;
+            }
+
+            DbContext.InventoryTransactions.Add(new InventoryTransactionEntity
+            {
+                SellableProductId = product.Id,
+                PermanentSku = product.PermanentSku ?? sku,
+                LocationCode = "FINISHED_SHELF",
+                TransactionType = "FINISHED_SCAN",
+                QuantityDelta = 1,
+                Notes = "Finished product scanned into shelf inventory"
+            });
+            await DbContext.SaveChangesAsync();
+
+            // Pass 7: the physical finished-goods scan is the handoff into Fulfillment.
+            // Match the scanned finished SKU to the oldest pending Show Order whose selections
+            // describe this product. We only hand off on a single unambiguous match.
+            var handedOff = await TryHandOffShowOrderToFulfillmentAsync(product);
+
+            _scanMessage = handedOff
+                ? $"Added 1: {product.ArtworkName ?? product.Name} / {LeatherLabel(product.LeatherCode)} — order is now in Fulfillment"
+                : $"Added 1: {product.ArtworkName ?? product.Name} / {LeatherLabel(product.LeatherCode)}";
+            _scanSku = string.Empty;
+            await BuildReportAsync();
+        }
+        catch (Exception ex)
+        {
+            _scanError = true;
+            _scanMessage = ex.Message;
+        }
+        finally
+        {
+            _isScanning = false;
+        }
+    }
+
+
+    private static string CustomerOrderBarcode(FulfillmentOrderLineEntity row) => $"SO:{row.Id:N}";
+
+    private static string CustomerOrderLabelUrl(FulfillmentOrderLineEntity row) => $"/production/customer-order-label?id={row.Id:D}&autoprint=true";
+
+    private static string FormatQty(decimal quantity) => decimal.Truncate(quantity) == quantity
+        ? decimal.ToInt32(quantity).ToString()
+        : quantity.ToString("0.####");
+
+    private async Task<bool> CompleteCustomerOrderAsync(string barcode)
+    {
+        var raw = barcode[3..].Trim();
+        if (!Guid.TryParseExact(raw, "N", out var id) && !Guid.TryParse(raw, out id)) return false;
+
+        var order = await DbContext.FulfillmentOrderLines.FirstOrDefaultAsync(x =>
+            x.Id == id && x.SourceChannel == "SQUARE_SHOW_ORDER" &&
+            x.ProductionStatus == "NEEDS_PRODUCTION" &&
+            (x.TrackingNumber == null || x.TrackingNumber == ""));
+        if (order is null) return false;
+
+        FulfillmentWorkflowRules.MarkReadyToFulfill(order);
+        order.UpdatedAt = DateTimeOffset.UtcNow;
+
+        var legacy = await DbContext.ShowOrderFulfillments.FindAsync(order.SourceOrderId, order.SourceLineItemId);
+        if (legacy is not null)
+        {
+            legacy.Status = "READY_TO_SHIP";
+            legacy.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await DbContext.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task<bool> TryHandOffShowOrderToFulfillmentAsync(SellableProductEntity product)
+    {
+        var pending = await DbContext.FulfillmentOrderLines
+            .Where(x => x.SourceChannel == "SQUARE_SHOW_ORDER" &&
+                        x.ProductionStatus == "NEEDS_PRODUCTION" &&
+                        (x.TrackingNumber == null || x.TrackingNumber == ""))
+            .OrderBy(x => x.OrderCreatedAt)
+            .ToListAsync();
+
+        var matches = pending.Where(x => ShowOrderMatchesFinishedProduct(x, product)).ToList();
+        if (matches.Count != 1) return false;
+
+        var order = matches[0];
+        order.Sku = product.PermanentSku;
+        FulfillmentWorkflowRules.MarkReadyToFulfill(order);
+        order.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // The completion scan added one physical unit to shelf inventory. Reserve that same unit
+        // immediately to this customer so it can never be counted as free stock.
+        var reservationKey = $"SHOW_ORDER:{order.SourceOrderId}:{order.SourceLineItemId}";
+        var alreadyReserved = await DbContext.InventoryTransactions.AnyAsync(x =>
+            x.TransactionType == "ORDER_RESERVATION" && x.Notes == reservationKey);
+        if (!alreadyReserved)
+        {
+            DbContext.InventoryTransactions.Add(new InventoryTransactionEntity
+            {
+                SellableProductId = product.Id, PermanentSku = product.PermanentSku!,
+                LocationCode = "FINISHED_SHELF", TransactionType = "ORDER_RESERVATION",
+                QuantityDelta = -1, Notes = reservationKey
+            });
+        }
+
+        var legacy = await DbContext.ShowOrderFulfillments.FindAsync(order.SourceOrderId, order.SourceLineItemId);
+        if (legacy is not null)
+        {
+            legacy.Status = "READY_TO_SHIP";
+            legacy.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await DbContext.SaveChangesAsync();
+        return true;
+    }
+
+    private static bool ShowOrderMatchesFinishedProduct(FulfillmentOrderLineEntity order, SellableProductEntity product)
+    {
+        var selections = ParseSelectionValues(order.SelectionJson);
+        var haystack = (string.Join(" | ", selections) + " | " + (order.OrderNotes ?? "") + " | " + order.ProductName).ToLowerInvariant();
+
+        if (!string.IsNullOrWhiteSpace(product.ArtworkName) &&
+            !haystack.Contains(product.ArtworkName.Trim().ToLowerInvariant())) return false;
+
+        var leather = LeatherLabel(product.LeatherCode);
+        if (!string.IsNullOrWhiteSpace(leather) &&
+            !haystack.Contains(leather.Trim().ToLowerInvariant())) return false;
+
+        if (!string.IsNullOrWhiteSpace(product.ProductTypeCode))
+        {
+            var type = product.ProductTypeCode.Replace('_', ' ').Replace('-', ' ').Trim().ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(type) && !haystack.Contains(type) &&
+                !order.ProductName.ToLowerInvariant().Contains(type))
+            {
+                // Product type codes are not always display labels, so artwork + leather remain
+                // the stable physical match when the code is not represented in the order text.
+            }
+        }
+
+        return true;
+    }
+
+    private static List<string> ParseSelectionValues(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch { return []; }
+    }
+
+    private static string CustomerOrderDetails(FulfillmentOrderLineEntity row)
+    {
+        var values = ParseSelectionValues(row.SelectionJson);
+        if (!string.IsNullOrWhiteSpace(row.OrderNotes)) values.Add(row.OrderNotes!);
+        return values.Count == 0 ? "—" : string.Join(" · ", values);
+    }
+
+    private async Task EnsurePendingShowOrdersAreInSharedProductionAsync()
+    {
+        var showLines = await DbContext.SquareSaleLineItems
+            .Where(x => x.LineItemName != null && x.LineItemName.StartsWith("Show Order -"))
+            .OrderBy(x => x.SaleCreatedAt)
+            .ToListAsync();
+        if (showLines.Count == 0) return;
+
+        var orderIds = showLines.Select(x => x.SquareOrderId).Distinct().ToList();
+        var sales = await DbContext.SquareSales.AsNoTracking()
+            .Where(x => x.OrderId != null && orderIds.Contains(x.OrderId))
+            .ToListAsync();
+        var legacyStates = await DbContext.ShowOrderFulfillments.AsNoTracking()
+            .Where(x => orderIds.Contains(x.SquareOrderId))
+            .ToListAsync();
+
+        foreach (var line in showLines)
+        {
+            var legacy = legacyStates.FirstOrDefault(x =>
+                x.SquareOrderId == line.SquareOrderId && x.LineItemUid == line.LineItemUid);
+            if (legacy?.Status is "SHIPPED" or "COMPLETE") continue;
+
+            var shared = await DbContext.FulfillmentOrderLines.FirstOrDefaultAsync(x =>
+                x.SourceChannel == "SQUARE_SHOW_ORDER" &&
+                x.SourceOrderId == line.SquareOrderId &&
+                x.SourceLineItemId == line.LineItemUid);
+
+            if (shared is null)
+            {
+                shared = new FulfillmentOrderLineEntity
+                {
+                    SourceChannel = "SQUARE_SHOW_ORDER",
+                    SourceOrderId = line.SquareOrderId,
+                    SourceLineItemId = line.LineItemUid,
+                    ProductName = (line.LineItemName ?? "Show Order")
+                        .Replace("Show Order -", "", StringComparison.OrdinalIgnoreCase).Trim(),
+                    Quantity = Math.Max(1, line.Quantity),
+                    OrderCreatedAt = line.SaleCreatedAt,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+                DbContext.FulfillmentOrderLines.Add(shared);
+            }
+
+            var sale = sales.Where(x => x.OrderId == line.SquareOrderId)
+                .OrderByDescending(x => x.CreatedAt).FirstOrDefault();
+            shared.SourceCustomerId ??= sale?.CustomerId;
+            shared.ProductName = (line.LineItemName ?? shared.ProductName)
+                .Replace("Show Order -", "", StringComparison.OrdinalIgnoreCase).Trim();
+            shared.Quantity = Math.Max(1, line.Quantity);
+            shared.OrderNotes = line.Note;
+            shared.SelectionJson = NormalizeModifierSnapshot(line.ModifiersJson);
+            shared.OrderCreatedAt = line.SaleCreatedAt;
+
+            // If a real reservation/completion scan has already handed this order to Fulfillment,
+            // leave it alone. Otherwise any unshipped Show Order is customer-order production.
+            var reservationKey = $"SHOW_ORDER:{line.SquareOrderId}:{line.LineItemUid}";
+            var hasReservation = await DbContext.InventoryTransactions.AsNoTracking().AnyAsync(x =>
+                x.TransactionType == "ORDER_RESERVATION" && x.Notes == reservationKey);
+            if (!hasReservation
+                && string.IsNullOrWhiteSpace(shared.TrackingNumber)
+                && !FulfillmentWorkflowRules.IsReleasedToFulfillment(shared))
+            {
+                shared.ProductionStatus = "NEEDS_PRODUCTION";
+                shared.FulfillmentStatus = "OPEN";
+            }
+            shared.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await DbContext.SaveChangesAsync();
+    }
+
+    private static string? NormalizeModifierSnapshot(string? modifiersJson)
+    {
+        if (string.IsNullOrWhiteSpace(modifiersJson)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(modifiersJson);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array) return modifiersJson;
+            var values = new List<string>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    var value = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(value)) values.Add(value!);
+                    continue;
+                }
+                if (item.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    foreach (var name in new[] { "name", "Name", "display_name", "displayName", "value", "Value" })
+                    {
+                        if (item.TryGetProperty(name, out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            var value = prop.GetString();
+                            if (!string.IsNullOrWhiteSpace(value)) { values.Add(value!); break; }
+                        }
+                    }
+                }
+            }
+            return System.Text.Json.JsonSerializer.Serialize(values);
+        }
+        catch { return modifiersJson; }
+    }
+
+    private static bool IsNonProductionLine(SquareSaleLineItemEntity item)
+    {
+        var name = (item.LineItemName ?? item.VariationName ?? string.Empty).Trim();
+        var category = (item.ReportingCategoryName ?? string.Empty).Trim();
+        if (category.Contains("Shipping", StringComparison.OrdinalIgnoreCase)) return true;
+        return name.Equals("USPS Shipping", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("UPS Shipping", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("Shipping", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(" Shipping", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Shipping Charge", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task BuildReportAsync()
+    {
+        // Pass 8.2: Production must be able to discover waiting Show Orders on its own.
+        // Do not require the user to open Show Orders first just to hydrate the shared queue.
+        await EnsurePendingShowOrdersAreInSharedProductionAsync();
+
+        CustomerOrders = await DbContext.FulfillmentOrderLines.AsNoTracking()
+            .Where(x => x.ProductionStatus == "NEEDS_PRODUCTION" &&
+                        (x.TrackingNumber == null || x.TrackingNumber == ""))
+            .OrderBy(x => x.OrderCreatedAt)
+            .ToListAsync();
+
+        var initializedProducts = await DbContext.SellableProducts
+            .AsNoTracking()
+            .Where(x => x.IsActive && !string.IsNullOrWhiteSpace(x.PermanentSku))
+            .ToListAsync();
+
+        var inventoryTransactions = await DbContext.InventoryTransactions
+            .AsNoTracking()
+            .Where(x => x.LocationCode == "FINISHED_SHELF")
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync();
+
+        var sales = await DbContext.SquareSales
+            .AsNoTracking()
+            .Where(x => x.OrderId != null)
+            .ToListAsync();
+
+        var saleByOrder = sales
+            .GroupBy(x => x.OrderId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(x => !string.IsNullOrWhiteSpace(x.TeamMemberName)).ThenBy(x => x.CreatedAt).First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var lineItems = await DbContext.SquareSaleLineItems
+            .AsNoTracking()
+            .OrderBy(x => x.SaleCreatedAt)
+            .ToListAsync();
+
+        _lastRefreshLabel = lineItems.Count == 0
+            ? "No sales synced"
+            : lineItems.Max(x => x.SaleCreatedAt).LocalDateTime.ToString("MMM d, h:mm tt");
+
+        var initialAtByProduct = inventoryTransactions
+            .Where(x => x.TransactionType == "INITIAL_COUNT")
+            .GroupBy(x => x.SellableProductId)
+            .ToDictionary(g => g.Key, g => g.Min(x => x.CreatedAt));
+
+        var productByNormalizedArtworkColor = initializedProducts
+            .Where(x => !string.IsNullOrWhiteSpace(x.ArtworkName) && !string.IsNullOrWhiteSpace(x.LeatherCode))
+            .GroupBy(x => InventoryKey(NormalizeArtwork(x.ArtworkName!), LeatherLabel(x.LeatherCode)))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var saleEvents = new List<SaleEvent>();
+        foreach (var item in lineItems)
+        {
+            // Service/charge lines are not physical production work. They may exist in Square
+            // for order totals, but must never create inventory-replacement tasks.
+            if (IsNonProductionLine(item)) continue;
+
+            // Custom Show Orders have their own fulfillment queue and must never be paid down
+            // by an ordinary finished-stock barcode scan.
+            if ((item.LineItemName ?? string.Empty).StartsWith("Show Order -", StringComparison.OrdinalIgnoreCase)) continue;
+
+            saleByOrder.TryGetValue(item.SquareOrderId, out var sale);
+            var seller = NormalizeSeller(sale?.TeamMemberName);
+            var info = DescribeSquareLine(item);
+            var qty = Math.Max(0, (int)Math.Round(item.Quantity, MidpointRounding.AwayFromZero));
+            if (qty == 0) continue;
+
+            // Historical custom/open-price sales did not identify a catalog product. Keep those
+            // sales for reporting, but they can never create a useful production instruction.
+            if (string.Equals(info.Product, "Unnamed item", StringComparison.OrdinalIgnoreCase)) continue;
+
+            DateTimeOffset? baseline = null;
+            SellableProductEntity? localProduct = null;
+            if (!string.IsNullOrWhiteSpace(info.Artwork) && !string.IsNullOrWhiteSpace(info.Color))
+            {
+                productByNormalizedArtworkColor.TryGetValue(InventoryKey(info.Artwork, info.Color), out localProduct);
+                if (localProduct is not null && initialAtByProduct.TryGetValue(localProduct.Id, out var initialAt))
+                    baseline = initialAt;
+            }
+
+            // For initialized products, sales before the physical count are already represented by that count.
+            if (baseline.HasValue && item.SaleCreatedAt < baseline.Value) continue;
+
+            // For items that are not initialized yet, only consider the automatic 30-day working window.
+            if (!baseline.HasValue && item.SaleCreatedAt < DateTimeOffset.UtcNow.Subtract(_salesWorkingWindow)) continue;
+
+            saleEvents.Add(new SaleEvent(item.SaleCreatedAt, seller, info.Product, info.Artwork, info.Color, qty, localProduct?.Id));
+        }
+
+        // Reconcile in time order. A finished scan can only pay down a sale that already happened;
+        // making random shelf stock before a later sale must not erase that future production need.
+        var outstanding = new List<SaleEvent>();
+        var timeline = saleEvents
+            .Select(x => new ProductionEvent(x.At, 0, x, null))
+            .Concat(inventoryTransactions
+                .Where(x => x.TransactionType == "FINISHED_SCAN" && x.QuantityDelta > 0)
+                .Select(x => new ProductionEvent(x.CreatedAt, 1, null, x)))
+            .OrderBy(x => x.At)
+            .ThenBy(x => x.SortOrder)
+            .ToList();
+
+        foreach (var evt in timeline)
+        {
+            if (evt.Sale is not null)
+            {
+                outstanding.Add(evt.Sale);
+                continue;
+            }
+
+            var scan = evt.Scan!;
+            var credits = scan.QuantityDelta;
+            for (var i = 0; i < outstanding.Count && credits > 0; i++)
+            {
+                var need = outstanding[i];
+                if (need.LocalProductId != scan.SellableProductId) continue;
+
+                var used = Math.Min(credits, need.Quantity);
+                credits -= used;
+                var remaining = need.Quantity - used;
+                outstanding[i] = need with { Quantity = remaining };
+            }
+        }
+
+        outstanding = outstanding.Where(x => x.Quantity > 0).ToList();
+
+        NeedsMade = outstanding
+            .GroupBy(x => new { x.Seller, x.Product, x.Artwork })
+            .Select(g => new NeedRow(g.Key.Seller, g.Key.Product, g.Key.Artwork, g.Sum(x => x.Quantity)))
+            .Where(x => x.Quantity > 0)
+            .ToList();
+
+        LowStock = BuildLowStock(initializedProducts, inventoryTransactions, saleEvents, initialAtByProduct);
+    }
+
+    private static List<LowStockRow> BuildLowStock(
+        List<SellableProductEntity> products,
+        List<InventoryTransactionEntity> inventoryTransactions,
+        List<SaleEvent> saleEvents,
+        Dictionary<Guid, DateTimeOffset> initialAtByProduct)
+    {
+        var rows = new List<LowStockRow>();
+        var notebooks = products
+            .Where(x => string.Equals(x.ProductTypeCode, "NOTEBOOK", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(x.ArtworkName))
+            .GroupBy(x => NormalizeArtwork(x.ArtworkName!), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in notebooks)
+        {
+            var variations = group.ToList();
+            var ids = variations.Select(x => x.Id).ToHashSet();
+            var initialTimes = variations.Where(x => initialAtByProduct.ContainsKey(x.Id)).Select(x => initialAtByProduct[x.Id]).ToList();
+            if (initialTimes.Count == 0) continue;
+            var baseline = initialTimes.Min();
+
+            var events = new List<InventoryBalanceEvent>();
+            foreach (var tx in inventoryTransactions.Where(x => ids.Contains(x.SellableProductId) && x.CreatedAt >= baseline))
+                events.Add(new InventoryBalanceEvent(tx.CreatedAt, tx.QuantityDelta));
+
+            foreach (var sale in saleEvents.Where(x => x.At >= baseline && string.Equals(NormalizeArtwork(x.Artwork), group.Key, StringComparison.OrdinalIgnoreCase)))
+                events.Add(new InventoryBalanceEvent(sale.At, -sale.Quantity));
+
+            var initialTotal = inventoryTransactions
+                .Where(x => ids.Contains(x.SellableProductId) && x.TransactionType == "INITIAL_COUNT")
+                .Sum(x => x.QuantityDelta);
+
+            // Start at zero because INITIAL_COUNT events are included in chronological events.
+            var balance = 0;
+            var lowLatch = false;
+            foreach (var e in events.OrderBy(x => x.At))
+            {
+                balance += e.Delta;
+                if (balance <= LowStockTrigger) lowLatch = true;
+                if (lowLatch && balance >= ShelfTarget) lowLatch = false;
+            }
+
+            var blackId = variations.FirstOrDefault(x => string.Equals(LeatherLabel(x.LeatherCode), "Black", StringComparison.OrdinalIgnoreCase))?.Id;
+            var brownId = variations.FirstOrDefault(x => string.Equals(LeatherLabel(x.LeatherCode), "Brown", StringComparison.OrdinalIgnoreCase))?.Id;
+            var black = CurrentVariationBalance(blackId, inventoryTransactions, saleEvents, group.Key, "Black", baseline);
+            var brown = CurrentVariationBalance(brownId, inventoryTransactions, saleEvents, group.Key, "Brown", baseline);
+            var total = black + brown;
+
+            if (lowLatch || total <= LowStockTrigger)
+                rows.Add(new LowStockRow("Never-Ending Notebook", group.First().ArtworkName ?? group.Key, black, brown, total));
+        }
+
+        return rows;
+    }
+
+    private static int CurrentVariationBalance(
+        Guid? productId,
+        List<InventoryTransactionEntity> inventoryTransactions,
+        List<SaleEvent> sales,
+        string artwork,
+        string color,
+        DateTimeOffset baseline)
+    {
+        if (!productId.HasValue) return 0;
+        var added = inventoryTransactions.Where(x => x.SellableProductId == productId.Value && x.CreatedAt >= baseline).Sum(x => x.QuantityDelta);
+        var sold = sales.Where(x => x.At >= baseline && string.Equals(NormalizeArtwork(x.Artwork), artwork, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Color, color, StringComparison.OrdinalIgnoreCase)).Sum(x => x.Quantity);
+        return Math.Max(0, added - sold);
+    }
+
+    private static SquareLineInfo DescribeSquareLine(SquareSaleLineItemEntity item)
+    {
+        var rawName = (item.LineItemName ?? item.VariationName ?? "Unnamed item").Trim();
+        var category = (item.ReportingCategoryName ?? string.Empty).Trim();
+        var color = ExtractColor(rawName);
+        var artwork = string.Empty;
+        string product;
+
+        if (category.Contains("Modular Book", StringComparison.OrdinalIgnoreCase) || rawName.Contains("Modular Book", StringComparison.OrdinalIgnoreCase))
+        {
+            product = "Modular Book";
+            artwork = NormalizeArtwork(rawName.Replace("Modular Book", "", StringComparison.OrdinalIgnoreCase));
+        }
+        else if (category.Contains("Never-Ending", StringComparison.OrdinalIgnoreCase) || category.Contains("Notebook", StringComparison.OrdinalIgnoreCase))
+        {
+            product = "Never-Ending Notebook";
+            artwork = NormalizeArtwork(rawName);
+        }
+        else if (category.Contains("Leather Wall", StringComparison.OrdinalIgnoreCase) || rawName.Contains("Wall Scroll", StringComparison.OrdinalIgnoreCase))
+        {
+            product = "Leather Wall Hanging";
+            artwork = NormalizeArtwork(rawName.Replace("Wall Scroll", "", StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            product = rawName;
+        }
+
+        return new SquareLineInfo(product, artwork, color);
+    }
+
+    private static string ExtractColor(string value)
+    {
+        if (value.EndsWith(" - Black", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" – Black", StringComparison.OrdinalIgnoreCase)) return "Black";
+        if (value.EndsWith(" - Brown", StringComparison.OrdinalIgnoreCase) || value.EndsWith(" – Brown", StringComparison.OrdinalIgnoreCase)) return "Brown";
+        return string.Empty;
+    }
+
+    private static string NormalizeArtwork(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var text = value.Trim()
+            .Replace("—", "-")
+            .Replace("–", "-")
+            .Replace("’", "'");
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s*-\s*(Black|Brown)\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+Modular\s+Book\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+Wall\s+Scroll\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+    }
+
+    private static string InventoryKey(string artwork, string color) => $"{NormalizeArtwork(artwork).ToUpperInvariant()}|{color.ToUpperInvariant()}";
+    private static string LeatherLabel(string? code) => string.Equals(code, "BR", StringComparison.OrdinalIgnoreCase) ? "Brown" : string.Equals(code, "BK", StringComparison.OrdinalIgnoreCase) ? "Black" : (code ?? "");
+
+    private static string NormalizeSeller(string? seller)
+    {
+        if (string.IsNullOrWhiteSpace(seller)) return "Online";
+        var value = seller.Trim();
+        return string.Equals(value, "Jai Mustaine", StringComparison.OrdinalIgnoreCase) ? "Jaime Mustaine" : value;
+    }
+
+    private static int SellerSort(string seller) => seller switch
+    {
+        "Abby Yount" => 0,
+        "Jaime Mustaine" => 1,
+        "Blake Mustaine" => 2,
+        "Online" => 3,
+        _ => 10
+    };
+
+    private sealed record NeedRow(string Seller, string Product, string Artwork, int Quantity);
+    private sealed record LowStockRow(string Product, string Artwork, int Black, int Brown, int Total);
+    private sealed record SaleEvent(DateTimeOffset At, string Seller, string Product, string Artwork, string Color, int Quantity, Guid? LocalProductId);
+    private sealed record InventoryBalanceEvent(DateTimeOffset At, int Delta);
+    private sealed record ProductionEvent(DateTimeOffset At, int SortOrder, SaleEvent? Sale, InventoryTransactionEntity? Scan);
+    private sealed record SquareLineInfo(string Product, string Artwork, string Color);
+
+    private static string GenerateCode128Svg(string value, int moduleWidth = 2, int barHeight = 48)
+    {
+        var payload = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        var codes = new List<int> { 104 };
+
+        foreach (var character in payload)
+        {
+            var normalized = character is < ' ' or > '~' ? '?' : character;
+            codes.Add(normalized - 32);
+        }
+
+        var checksum = codes[0];
+        for (var index = 1; index < codes.Count; index++)
+        {
+            checksum += codes[index] * index;
+        }
+
+        checksum %= 103;
+        codes.Add(checksum);
+        codes.Add(106);
+
+        const int quietZone = 10;
+
+        var x = quietZone;
+        var bars = new List<string>();
+
+        foreach (var code in codes)
+        {
+            var pattern = Code128Patterns[code];
+            var drawBar = true;
+
+            foreach (var digit in pattern)
+            {
+                var width = (digit - '0') * moduleWidth;
+                if (drawBar)
+                {
+                    bars.Add($"<rect x=\"{x}\" y=\"0\" width=\"{width}\" height=\"{barHeight}\" fill=\"#000\" />");
+                }
+
+                x += width;
+                drawBar = !drawBar;
+            }
+        }
+
+        var totalWidth = x + quietZone;
+        var text = System.Net.WebUtility.HtmlEncode(payload);
+
+        return $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{totalWidth}\" height=\"{barHeight}\" viewBox=\"0 0 {totalWidth} {barHeight}\" shape-rendering=\"crispEdges\" role=\"img\" aria-label=\"Code 128 barcode for {text}\"><rect width=\"100%\" height=\"100%\" fill=\"#fff\" />{string.Join(string.Empty, bars)}</svg>";
+    }
+
+    private static readonly string[] Code128Patterns =
+    [
+        "212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213",
+        "221312", "231212", "112232", "122132", "122231", "113222", "123122", "123221", "223211", "221132",
+        "221231", "213212", "223112", "312131", "311222", "321122", "321221", "312212", "322112", "322211",
+        "212123", "212321", "232121", "111323", "131123", "131321", "112313", "132113", "132311", "211313",
+        "231113", "231311", "112133", "112331", "132131", "113123", "113321", "133121", "313121", "211331",
+        "231131", "213113", "213311", "213131", "311123", "311321", "331121", "312113", "312311", "332111",
+        "314111", "221411", "431111", "111224", "111422", "121124", "121421", "141122", "141221", "112214",
+        "112412", "122114", "122411", "142112", "142211", "241211", "221114", "413111", "241112", "134111",
+        "111242", "121142", "121241", "114212", "124112", "124211", "411212", "421112", "421211", "212141",
+        "214121", "412121", "111143", "111341", "131141", "114113", "114311", "411113", "411311", "113141",
+        "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
+    ];
+}

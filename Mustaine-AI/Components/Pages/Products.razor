@@ -1,0 +1,386 @@
+@page "/products"
+@rendermode InteractiveServer
+@using MustaineAI.Services
+@inject IProductRegistryService ProductRegistry
+
+<PageTitle>Products</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
+        <div>
+            <p class="text-uppercase small text-secondary fw-semibold mb-1">Product registry</p>
+            <h1 class="mb-2">Products</h1>
+            <p class="text-body-secondary mb-0">Square remains the commerce source of truth. This registry manages sellable variant SKU assignment in the existing Square convention, plus draft intake before downstream sync.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-secondary" @onclick="RefreshReconciliationAsync" disabled="@_reconLoading">@(_reconLoading ? "Refreshing…" : "Refresh Square Reconciliation")</button>
+            <button class="btn btn-primary" @onclick="ToggleComposer">@(ShowComposer ? "Close Add Product" : "+ Add Product")</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="alert @(_hasError ? "alert-danger" : "alert-success")">@_message</div>
+    }
+
+    @if (_dashboard is null)
+    {
+        <div class="alert alert-info">Loading product registry…</div>
+    }
+    else
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Products</div><div class="fs-2 fw-bold">@_dashboard.TotalProducts</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Drafts</div><div class="fs-2 fw-bold">@_dashboard.DraftProducts</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Active</div><div class="fs-2 fw-bold">@_dashboard.ActiveProducts</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Mapped to Square</div><div class="fs-2 fw-bold">@_dashboard.SquareMappedProducts</div></div></div></div>
+            <div class="col-6 col-xl"><div class="card h-100"><div class="card-body"><div class="text-body-secondary small">Reserved SKUs</div><div class="fs-2 fw-bold">@_dashboard.ReservedSkuCount</div></div></div></div>
+        </div>
+
+        @if (ShowComposer)
+        {
+            <section class="card p-3 mb-4">
+                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-3">
+                    <div>
+                        <h2 class="h4 mb-1">Add Product</h2>
+                        <p class="text-body-secondary mb-0">Round 1 intake creates a safe draft product, verifies the live SKU registry, and assigns the next valid Square SKU without manual guessing.</p>
+                    </div>
+                    <span class="badge text-bg-secondary">Status on save: Draft</span>
+                </div>
+
+                <EditForm Model="_input" OnValidSubmit="CreateDraftAsync">
+                    <DataAnnotationsValidator />
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Product name</label>
+                            <InputText class="form-control" @bind-Value="_input.ProductName" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Product family / category</label>
+                            <InputText class="form-control" @bind-Value="_input.ProductFamily" list="product-family-options" />
+                            <datalist id="product-family-options">
+                                @foreach (var option in _dashboard.FamilyOptions)
+                                {
+                                    <option value="@option"></option>
+                                }
+                            </datalist>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Design / artwork name</label>
+                            <InputText class="form-control" @bind-Value="_input.DesignName" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Production family</label>
+                            <InputText class="form-control" @bind-Value="_input.ProductionFamily" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Price (USD)</label>
+                            <InputNumber class="form-control" @bind-Value="_input.Price" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Notes</label>
+                            <InputText class="form-control" @bind-Value="_input.Notes" />
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-primary" type="submit" disabled="@_saving">@(_saving ? "Saving…" : "Save Draft Product")</button>
+                        <button class="btn btn-outline-secondary" type="button" @onclick="ResetComposer">Clear</button>
+                    </div>
+                </EditForm>
+
+                @if (_createdResult is not null)
+                {
+                    <div class="alert alert-success mt-3 mb-0">
+                        <div class="fw-semibold">Product saved</div>
+                        <div>Assigned Square SKU: @_createdResult.AssignedSku</div>
+                        <div>Status: @_createdResult.Status</div>
+                    </div>
+                }
+            </section>
+        }
+
+        <section class="card mb-4">
+            <div class="card-header d-flex justify-content-between gap-2 flex-wrap">
+                <div>
+                    <strong>Registry products</strong>
+                    <div class="small text-body-secondary">Newest 200 products from the live Control App registry.</div>
+                </div>
+                <input class="form-control form-control-sm" style="max-width: 280px;" placeholder="Filter products…" @bind="_filter" @bind:event="oninput" />
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Square SKU</th>
+                            <th>Internal SKU</th>
+                            <th>Status</th>
+                            <th>Variant</th>
+                            <th>Family</th>
+                            <th>Square</th>
+                            <th>Woo</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var product in FilteredProducts)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">@product.Name</div>
+                                    @if (!string.IsNullOrWhiteSpace(product.ArtworkName))
+                                    {
+                                        <div class="small text-body-secondary">@product.ArtworkName</div>
+                                    }
+                                </td>
+                                <td>@(product.SquareSku ?? "Pending")</td>
+                                <td class="small text-body-secondary">@(product.PermanentSku ?? "—")</td>
+                                <td><span class="badge @LifecycleBadge(product.LifecycleStatus)">@product.LifecycleStatus</span></td>
+                                <td class="small text-body-secondary">@VariantLabel(product)</td>
+                                <td>@(product.ProductFamily ?? "—")</td>
+                                <td class="small text-body-secondary">@(string.IsNullOrWhiteSpace(product.SquareCatalogVariationId) ? (product.SquareCatalogItemId ?? "—") : $"{product.SquareCatalogItemId} / {product.SquareCatalogVariationId}")</td>
+                                <td class="small text-body-secondary">@(string.IsNullOrWhiteSpace(product.WooVariationId) ? (product.WooProductId ?? "—") : $"{product.WooProductId} / {product.WooVariationId}")</td>
+                                <td>@product.CreatedAt.ToLocalTime().ToString("g")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header d-flex justify-content-between gap-2 flex-wrap">
+                <div>
+                    <strong>Square SKU reconciliation</strong>
+                    <div class="small text-body-secondary">Compares live Square catalog SKU usage with the Control App registry without auto-linking uncertain matches.</div>
+                </div>
+                @if (_reconciliation is not null)
+                {
+                    <span class="badge text-bg-secondary">Assigned SKUs: @_reconciliation.AssignedSkuCount</span>
+                }
+            </div>
+
+            @if (_reconciliation is null)
+            {
+                <div class="card-body text-body-secondary">Run the reconciliation when you want a fresh Square comparison.</div>
+            }
+            else
+            {
+                <div class="card-body">
+                    <div class="row g-3 mb-4">
+                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Duplicate SKUs</div><div class="fs-4 fw-bold">@_reconciliation.DuplicateSkuCount</div></div></div>
+                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Missing Square SKUs</div><div class="fs-4 fw-bold">@_reconciliation.MissingSquareSkuCount</div></div></div>
+                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Square not mapped</div><div class="fs-4 fw-bold">@_reconciliation.UnmappedSquareCount</div></div></div>
+                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Safe matches</div><div class="fs-4 fw-bold">@_reconciliation.SafeMatchCount</div></div></div>
+                        <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-body-secondary small">Conflicts</div><div class="fs-4 fw-bold">@_reconciliation.ConflictCount</div></div></div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <h3 class="h6">Duplicate SKUs</h3>
+                            @if (_reconciliation.DuplicateSkus.Count == 0)
+                            {
+                                <div class="text-body-secondary small">No duplicate SKUs found.</div>
+                            }
+                            else
+                            {
+                                <ul class="list-group list-group-flush">
+                                    @foreach (var row in _reconciliation.DuplicateSkus)
+                                    {
+                                        <li class="list-group-item px-0">
+                                            <div class="fw-semibold">@row.Sku</div>
+                                            <div class="small text-body-secondary">@row.Message</div>
+                                            <div class="small">@string.Join(" | ", row.Details)</div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                        <div class="col-lg-6">
+                            <h3 class="h6">Safe Control App matches</h3>
+                            @if (_reconciliation.SafeMatches.Count == 0)
+                            {
+                                <div class="text-body-secondary small">No safe auto-match candidates were found.</div>
+                            }
+                            else
+                            {
+                                <ul class="list-group list-group-flush">
+                                    @foreach (var row in _reconciliation.SafeMatches)
+                                    {
+                                        <li class="list-group-item px-0">
+                                            <div class="fw-semibold">@row.ProductName (@row.Sku)</div>
+                                            <div class="small text-body-secondary">@row.SquareDisplayName</div>
+                                            <div class="small">Square IDs: @row.SquareItemId / @(row.SquareVariationId ?? "item-only")</div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                        <div class="col-lg-6">
+                            <h3 class="h6">Square rows missing SKUs</h3>
+                            @if (_reconciliation.MissingSquareSkus.Count == 0)
+                            {
+                                <div class="text-body-secondary small">No missing SKUs found in the current Square catalog sample.</div>
+                            }
+                            else
+                            {
+                                <ul class="list-group list-group-flush">
+                                    @foreach (var row in _reconciliation.MissingSquareSkus)
+                                    {
+                                        <li class="list-group-item px-0">
+                                            <div class="fw-semibold">@row.DisplayName</div>
+                                            <div class="small text-body-secondary">Square IDs: @row.ItemId / @(row.VariationId ?? "item-only")</div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                        <div class="col-lg-6">
+                            <h3 class="h6">Conflicts needing review</h3>
+                            @if (_reconciliation.Conflicts.Count == 0)
+                            {
+                                <div class="text-body-secondary small">No registry conflicts were detected.</div>
+                            }
+                            else
+                            {
+                                <ul class="list-group list-group-flush">
+                                    @foreach (var row in _reconciliation.Conflicts)
+                                    {
+                                        <li class="list-group-item px-0">
+                                            <div class="fw-semibold">@row.Sku</div>
+                                            <div class="small text-body-secondary">@row.Message</div>
+                                            <div class="small">@string.Join(" | ", row.Details)</div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private ProductRegistryDashboard? _dashboard;
+    private SquareSkuReconciliationReport? _reconciliation;
+    private ProductComposerInput _input = new();
+    private CreateDraftProductResult? _createdResult;
+    private string _filter = string.Empty;
+    private string? _message;
+    private bool _hasError;
+    private bool _saving;
+    private bool _reconLoading;
+
+    private bool ShowComposer { get; set; }
+
+    private IReadOnlyList<ProductRegistryRow> FilteredProducts => _dashboard?.Products
+        .Where(x => string.IsNullOrWhiteSpace(_filter)
+                    || x.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)
+                    || (x.SquareSku?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (x.PermanentSku?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (x.ProductFamily?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (x.ArtworkName?.Contains(_filter, StringComparison.OrdinalIgnoreCase) ?? false))
+        .ToList() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardAsync();
+    }
+
+    private async Task LoadDashboardAsync()
+    {
+        _dashboard = await ProductRegistry.GetDashboardAsync();
+    }
+
+    private void ToggleComposer()
+    {
+        ShowComposer = !ShowComposer;
+        if (!ShowComposer)
+            ResetComposer();
+    }
+
+    private void ResetComposer()
+    {
+        _input = new ProductComposerInput();
+        _createdResult = null;
+    }
+
+    private async Task CreateDraftAsync()
+    {
+        _saving = true;
+        _hasError = false;
+        _message = null;
+        try
+        {
+            _createdResult = await ProductRegistry.CreateDraftProductAsync(
+                new NewProductIntakeInput(
+                    _input.ProductName ?? string.Empty,
+                    _input.ProductFamily,
+                    _input.DesignName,
+                    _input.Price,
+                    _input.ProductionFamily,
+                    _input.Notes));
+            _message = $"Product saved. Assigned Square SKU: {_createdResult.AssignedSku}. Status: {_createdResult.Status}.";
+            await LoadDashboardAsync();
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task RefreshReconciliationAsync()
+    {
+        _reconLoading = true;
+        _hasError = false;
+        _message = null;
+        try
+        {
+            _reconciliation = await ProductRegistry.ReconcileSquareCatalogAsync();
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _message = $"Square reconciliation failed: {ex.Message}";
+        }
+        finally
+        {
+            _reconLoading = false;
+        }
+    }
+
+    private static string LifecycleBadge(string status) => status switch
+    {
+        "ACTIVE" => "text-bg-success",
+        "PAUSED" => "text-bg-warning",
+        "DISCONTINUED" => "text-bg-secondary",
+        _ => "text-bg-primary"
+    };
+
+    private static string VariantLabel(ProductRegistryRow product)
+    {
+        var parts = new[] { product.ProductTypeCode, product.LeatherCode }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return parts.Length == 0 ? "—" : string.Join(" / ", parts);
+    }
+
+    private sealed class ProductComposerInput
+    {
+        public string? ProductName { get; set; }
+        public string? ProductFamily { get; set; }
+        public string? DesignName { get; set; }
+        public decimal? Price { get; set; }
+        public string? ProductionFamily { get; set; }
+        public string? Notes { get; set; }
+    }
+}

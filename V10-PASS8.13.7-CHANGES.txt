@@ -1,0 +1,12 @@
+v10 Pass 8.13.7
+INVENTORY + BARCODES: INITIALIZATION ONLY
+
+- Removes Update Counts from initialized cards.
+- Removes ongoing Black/Brown inventory quantities from initialized cards.
+- Starting quantity is entered only for uninitialized choices.
+- Fully initialized cards simply show ✓ Initialized.
+- Partially initialized items show the initialized color as complete and only ask for the missing color's starting quantity.
+- Emergency Reprint 1 Label remains available and never changes inventory.
+- After initialization, inventory is changed only by sales and finished-product scans.
+- Preserves Pass 8.13.6 DYMO single-SVG barcode/text label fix.
+- Preserves Square source-of-truth categories and shared artwork subcategories.

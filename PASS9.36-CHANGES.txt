@@ -1,0 +1,40 @@
+Ancient Innovations Control App - Pass 9.36
+Accepted-Show Backer Lifecycle + People/Happiness Privacy Boundary
+
+FLOW LOCKED IN
+1. Show is proposed to a primary vendor.
+2. Primary vendor approves or declines APPLICATION (not the show booking).
+3. YES sends application work to Melissa.
+4. Melissa applies.
+5. Promoter accepts Ancient Innovations.
+6. Only then does the show enter the primary vendor's operational Vendor Shows schedule.
+7. Primary vendor chooses an eligible backer.
+8. Backer receives a request in their own Vendor Shows portal.
+9. Backer accepts or declines.
+10. Accepted backer is stored with the show as operational show data.
+
+WHAT CHANGED
+- Vendor Shows now separates Application Decisions from accepted/operational shows.
+- Pre-acceptance proposals no longer look like fully booked operational shows.
+- Accepted/committed show cards have a Backer section.
+- Primary vendor selects the backer from eligible active vendors.
+- Eligibility excludes date conflicts with committed/booked shows and pending/confirmed backer work.
+- Selected backer receives Accept / Decline controls in their own vendor portal.
+- Backer name and state are visible: waiting for approval / confirmed / declined.
+- Primary vendor can cancel a pending request or change a confirmed backer.
+- Backer history is cancelled rather than deleted, preserving an audit trail.
+- Admin Show Arm understands the same offered/accepted lifecycle; admin assignment is an override REQUEST, not silent confirmation.
+- Admin override is blocked until promoter acceptance / legacy COMMITTED state.
+- Future/current legacy BACKER_ASSIGNED phantom rows are cancelled during install.
+
+PRIVACY / PEOPLE-HAPPINESS BOUNDARY
+Ops stores only operational data needed to run the show: primary vendor, requested/confirmed backer,
+status, and compensation terms. It intentionally does not store diagnoses, medical details, or the private
+reason that a specific packing/load accommodation is needed. Later, the local Brain may combine the confirmed
+backer identity with private local context to produce a packing/load plan. The Arm receives only the operational
+instruction it needs.
+
+COMPATIBILITY
+- Existing 2026 live COMMITTED assignments remain operational so the current season still appears.
+- Pass 9.35/9.35.1 hybrid Ops architecture is preserved.
+- No new database tables are required.

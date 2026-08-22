@@ -1,0 +1,30 @@
+Ancient Innovations Control App v10 Pass 9.5
+Complete Vendor Show Schedule + Trust Builder
+
+Built as one safe Vendor Operations batch on top of Pass 9.4.
+
+Adds/finishes:
+- Upcoming/active and Past Shows on the vendor's existing Show Schedule
+- Year selector and year-specific vendor history
+- Full assigned-show card: dates, hours, booth/location, setup, parking/load-in, promoter, lodging/camping, maps and documents
+- Vendor approve/decline workflow for offered shows
+- System Trust Builder per show: vendor-tracked sales vs system/Square sales, dollars/percent variance and match/reconcile status
+- Year-end Trust Builder summary across compared shows
+- Commission rate, earned, paid, paid date and outstanding balance
+- Commission rates are owner/admin controlled for mapped vendor accounts
+- Mileage entry and year-end mileage total
+- Miscellaneous show expense entry with category, description, amount, reimbursable flag and receipt upload
+- Expenses are Show Arm references intended for the Tax & Financial Records Arm; no duplicate accounting system
+- Vendor Show Notes preserved in original text
+- Vendor booth/placement/photo uploads stored persistently outside the container
+- Lightweight Finish Show / closeout action
+- Vendor-year totals for shows, system sales, vendor-tracked sales, commission earned/paid/outstanding, mileage and misc expenses
+- Server-side vendor profile restriction when a login is mapped to a non-admin ShowVendorProfile
+- Legacy owner installs without profile mapping retain full admin access
+
+Preserves:
+- Production/Inventory behavior
+- Shipping/Fulfillment behavior
+- Show historical intelligence
+- Research queue/discovery
+- maps and database data

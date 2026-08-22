@@ -1,0 +1,955 @@
+@page "/vendor-shows"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Authorization
+@using MustaineAI.Data
+@inject ShowArmDbContext Db
+@inject ApplicationDbContext IdentityDb
+@inject IShowFileStorageService ShowFiles
+@inject IWebHostEnvironment Env
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Vendor Show Schedule</PageTitle>
+
+<div class="shows-hero">
+    <p class="shows-eyebrow">Show Arm</p>
+    <h1>Vendor Show Schedule</h1>
+    <p>One place for the show, your numbers, mileage, expenses and notes.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_message))
+{
+    <div class="alert alert-success mt-3">@_message</div>
+}
+
+<div class="shows-card mt-3">
+    <div class="shows-card-head">
+        <div>
+            <h2>Vendor</h2>
+            <p>Owner/Melissa can review any vendor. A mapped vendor login is locked to that vendor's own profile.</p>
+        </div>
+    </div>
+    @if (_accessDenied)
+    {
+        <div class="alert alert-danger mb-0">@_accessDeniedReason</div>
+    }
+    else if (_isShowAdmin)
+    {
+        <select class="form-select" style="max-width:360px" @bind="_vendorId" @bind:after="LoadAsync">
+            <option value="0">Choose vendor</option>
+            @foreach (var v in _vendors)
+            {
+                <option value="@v.Id">@v.VendorName</option>
+            }
+        </select>
+    }
+    else if (_vendorId > 0)
+    {
+        <div class="vendor-lock-card"><strong>@_vendors.FirstOrDefault(x => x.Id == _vendorId)?.VendorName</strong><span>Private vendor view</span></div>
+    }
+</div>
+
+@if (_vendorId > 0)
+{
+    @if (_backerRequests.Count > 0 || _confirmedBacking.Count > 0)
+    {
+        <section class="shows-card mt-3">
+            <div class="shows-card-head">
+                <div>
+                    <h2>Backer requests</h2>
+                    <p>A backer is chosen only after Ancient Innovations is accepted into the show. The requested backer must approve before the relationship becomes part of the operational show record.</p>
+                </div>
+            </div>
+            @foreach (var b in _backerRequests)
+            {
+                <div class="vendor-offer-box mb-2">
+                    <strong>@b.PrimaryVendorName asked you to back @b.ShowName</strong>
+                    <p class="mb-2">@b.DateLabel · @b.CityState</p>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-success btn-sm" @onclick="() => RespondBackerAsync(b.AssignmentId, true)">Accept backer request</button>
+                        <button class="btn btn-outline-danger btn-sm" @onclick="() => RespondBackerAsync(b.AssignmentId, false)">Decline</button>
+                    </div>
+                </div>
+            }
+            @foreach (var b in _confirmedBacking)
+            {
+                <div class="border rounded p-2 mb-2">
+                    <strong>Backing @b.PrimaryVendorName at @b.ShowName</strong>
+                    <div class="text-body-secondary small">@b.DateLabel · @b.CityState · Confirmed</div>
+                </div>
+            }
+        </section>
+    }
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head">
+            <div>
+                <h2>Show schedule</h2>
+                <p>Your assigned shows, instructions, Trust Builder, mileage, expenses and notes.</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap align-items-end">
+                <label class="small fw-semibold">Year
+                    <select class="form-select" @bind="_year" @bind:after="LoadAsync">
+                        @foreach (var y in _years)
+                        {
+                            <option value="@y">@y</option>
+                        }
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        @if (_rows.Count == 0)
+        {
+            <p class="text-body-secondary">No assigned shows for @_year yet.</p>
+        }
+        else
+        {
+            @if (_applicationDecisions.Count > 0)
+            {
+                <h3 class="vendor-show-section-title">Application Decisions</h3>
+                <p class="text-body-secondary">These are proposed placements. Approving one sends it to Melissa to apply. It does not become an operational show until the promoter accepts Ancient Innovations.</p>
+                @foreach (var r in _applicationDecisions)
+                {
+                    @ApplicationDecisionCard(r)
+                }
+            }
+            @if (_upcoming.Count > 0)
+            {
+                <h3 class="vendor-show-section-title">Upcoming / Active</h3>
+                @foreach (var r in _upcoming)
+                {
+                    @ShowCard(r)
+                }
+            }
+            @if (_past.Count > 0)
+            {
+                <h3 class="vendor-show-section-title mt-4">Past Shows</h3>
+                @foreach (var r in _past)
+                {
+                    @ShowCard(r)
+                }
+            }
+        }
+    </section>
+
+    <section class="shows-card mt-3">
+        <div class="shows-card-head">
+            <div>
+                <h2>@_year Year-End Summary</h2>
+                <p>Recordkeeping summary for the vendor and owner. Tax treatment stays with the Tax &amp; Financial Records Arm/accountant.</p>
+            </div>
+        </div>
+
+        <div class="vendor-year-metrics">
+            <div class="shows-card"><span>Shows</span><strong>@_rows.Count</strong></div>
+            <div class="shows-card"><span>System sales</span><strong>@Money0(_rows.Sum(x => x.Closeout.SystemSquareSales ?? 0))</strong></div>
+            <div class="shows-card"><span>Vendor tracked</span><strong>@Money0(_rows.Where(x=>x.Closeout.VendorTrackedSales.HasValue).Sum(x => x.Closeout.VendorTrackedSales ?? 0))</strong></div>
+            <div class="shows-card"><span>Commission earned</span><strong>@Money0(_rows.Sum(x => x.Closeout.CommissionEarned ?? 0))</strong></div>
+            <div class="shows-card"><span>Commission paid</span><strong>@Money0(_rows.Sum(x => x.Closeout.CommissionPaid ?? 0))</strong></div>
+            <div class="shows-card"><span>Outstanding</span><strong>@Money0(_rows.Sum(x => Math.Max(0, (x.Closeout.CommissionEarned ?? 0) - (x.Closeout.CommissionPaid ?? 0))))</strong></div>
+            <div class="shows-card"><span>Mileage</span><strong>@_rows.Sum(x => x.Closeout.MileageReported ?? 0).ToString("N0")</strong></div>
+            <div class="shows-card"><span>Misc. expenses</span><strong>@Money0(_rows.Sum(x => x.Expenses.Sum(e => e.Amount)))</strong></div>
+        </div>
+
+        <div class="vendor-trust-summary mt-3">
+            <div>
+                <h3>System Trust Builder</h3>
+                <p>Compare what the vendor tracked with what Ancient Innovations tracked. Manual tracking can fade away once the system proves itself.</p>
+            </div>
+            <div class="trust-summary-grid">
+                <div><span>Shows compared</span><strong>@ComparedCount</strong></div>
+                <div><span>Matched</span><strong>@MatchedCount</strong></div>
+                <div><span>Vendor total</span><strong>@Money0(ComparedVendorTotal)</strong></div>
+                <div><span>System total</span><strong>@Money0(ComparedSystemTotal)</strong></div>
+                <div><span>Total difference</span><strong>@Money2(Math.Abs(ComparedVendorTotal - ComparedSystemTotal))</strong></div>
+                <div><span>Difference %</span><strong>@TrustDifferencePercent.ToString("N2")%</strong></div>
+            </div>
+            @if (ComparedCount > 0)
+            {
+                <div class="mt-2 badge @(MatchedCount == ComparedCount ? "text-bg-success" : "text-bg-warning")">
+                    @(MatchedCount == ComparedCount ? "System matched every compared show within tolerance" : "Some shows need reconciliation")
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    long _vendorId;
+    int _year = DateTime.Today.Year;
+    bool _isShowAdmin;
+    string? _message;
+    List<int> _years = [];
+    List<ShowVendorProfileEntity> _vendors = [];
+    List<Row> _rows = [];
+    List<Row> _applicationDecisions = [];
+    List<Row> _upcoming = [];
+    List<Row> _past = [];
+    List<BackerRequestRow> _backerRequests = [];
+    List<BackerRequestRow> _confirmedBacking = [];
+    List<ShowAssignmentEntity> _allAssignments = [];
+    List<ShowEditionEntity> _allYearEditions = [];
+
+    bool _accessDenied;
+    string? _accessDeniedReason;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _vendors = await Db.ShowVendorProfiles.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.VendorName).ToListAsync();
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var user = auth.User;
+        if (user.Identity?.IsAuthenticated != true)
+        {
+            _accessDenied = true;
+            _accessDeniedReason = "Sign in is required for Vendor Shows.";
+            return;
+        }
+
+        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var mapped = !string.IsNullOrWhiteSpace(userId)
+            ? _vendors.FirstOrDefault(x => x.ApplicationUserId == userId)
+            : null;
+        var mappedAdminCount = _vendors.Count(x => x.IsActive && x.IsShowAdmin && !string.IsNullOrWhiteSpace(x.ApplicationUserId));
+
+        if (mapped?.IsShowAdmin == true)
+        {
+            _isShowAdmin = true;
+        }
+        else if (mapped is not null)
+        {
+            _isShowAdmin = false;
+            _vendorId = mapped.Id;
+        }
+        else
+        {
+            var allowLegacyOwnerBridge = false;
+            if (!string.IsNullOrWhiteSpace(userId) && mappedAdminCount == 0)
+            {
+                var users = await IdentityDb.Users.AsNoTracking()
+                    .Select(x => new { x.Id })
+                    .ToListAsync();
+                allowLegacyOwnerBridge = users.Count == 1 && users[0].Id == userId;
+            }
+
+            if (allowLegacyOwnerBridge)
+            {
+                _isShowAdmin = true;
+                _message = "Legacy owner bridge is active because no show-admin vendor mappings exist yet. Map the owner account to a show-admin vendor profile to remove this fallback.";
+            }
+            else
+            {
+                _accessDenied = true;
+                _accessDeniedReason = "This account is authenticated but not mapped to a vendor profile or owner/admin bridge. Vendor Portal access is deny-by-default until a profile mapping exists.";
+                return;
+            }
+        }
+
+        await LoadYearChoicesAsync();
+        if (_vendorId > 0) await LoadAsync();
+    }
+
+    async Task LoadYearChoicesAsync()
+    {
+        var assignmentYears = await Db.ShowAssignments.AsNoTracking()
+            .Join(Db.ShowEditions.AsNoTracking(), a => a.ShowEditionId, e => e.Id, (a, e) => new { a.ShowVendorProfileId, e.Year })
+            .Where(x => _vendorId == 0 || x.ShowVendorProfileId == _vendorId)
+            .Select(x => x.Year).Distinct().OrderByDescending(x => x).ToListAsync();
+        _years = assignmentYears.Count > 0 ? assignmentYears : [DateTime.Today.Year, DateTime.Today.Year + 1];
+        if (!_years.Contains(_year)) _year = _years.Contains(DateTime.Today.Year + 1) ? DateTime.Today.Year + 1 : _years[0];
+    }
+
+    async Task LoadAsync()
+    {
+        _message = null;
+        _rows = [];
+        _applicationDecisions = [];
+        _upcoming = [];
+        _past = [];
+        _backerRequests = [];
+        _confirmedBacking = [];
+        if (_vendorId == 0) return;
+        await LoadYearChoicesAsync();
+
+        // Backer rows are operational relationships, not primary show assignments. Keep them out of the
+        // vendor's own show schedule so a request to help someone else cannot masquerade as their show.
+        _allAssignments = await Db.ShowAssignments.AsNoTracking().ToListAsync();
+        _allYearEditions = await Db.ShowEditions.AsNoTracking().Include(x => x.ShowEvent).Where(x => x.Year == _year).ToListAsync();
+        await LoadBackerRequestsAsync();
+
+        var assignments = _allAssignments
+            .Where(x => x.ShowVendorProfileId == _vendorId && !IsBackerStatus(x.Status))
+            .ToList();
+
+        foreach (var a in assignments)
+        {
+            var e = await Db.ShowEditions.AsNoTracking().Include(x => x.ShowEvent)
+                .FirstAsync(x => x.Id == a.ShowEditionId);
+            if (e.Year != _year) continue;
+
+            var c = await Db.ShowVendorCloseouts.FirstOrDefaultAsync(x => x.ShowEditionId == e.Id && x.ShowVendorProfileId == _vendorId)
+                ?? new ShowVendorCloseoutEntity { ShowEditionId = e.Id, ShowVendorProfileId = _vendorId, CommissionRate = .25m };
+            var result = await Db.ShowResults.AsNoTracking().FirstOrDefaultAsync(x => x.ShowEditionId == e.Id && x.ShowVendorProfileId == _vendorId);
+            if (c.SystemSquareSales is null && result is not null) c.SystemSquareSales = result.GrossSquareSales;
+            RecalcCommission(c);
+
+            var app = await Db.ShowApplications.AsNoTracking().FirstOrDefaultAsync(x => x.ShowEditionId == e.Id && (x.ShowVendorProfileId == _vendorId || x.ShowVendorProfileId == null));
+            var opportunity = await Db.ShowOpportunities.AsNoTracking().FirstOrDefaultAsync(x => x.ShowEditionId == e.Id && x.ShowVendorProfileId == _vendorId);
+            var maps = await Db.ShowMaps.AsNoTracking().Where(x => x.ShowEditionId == e.Id).OrderByDescending(x => x.Year).ToListAsync();
+            var docs = await Db.ShowDocuments.AsNoTracking().Where(x => x.ShowEditionId == e.Id && (x.ShowVendorProfileId == null || x.ShowVendorProfileId == _vendorId)).OrderByDescending(x => x.CreatedAt).ToListAsync();
+            var expenses = await Db.ShowFinancialReferences.Where(x => x.ShowEditionId == e.Id && x.ShowVendorProfileId == _vendorId && x.Kind == "EXPENSE").OrderBy(x => x.RecordedAt).ToListAsync();
+            var sharedNotes = await Db.ShowNotes.AsNoTracking().Where(x => x.ShowEditionId == e.Id && x.UseForShowArm).OrderByDescending(x => x.CreatedAt).ToListAsync();
+
+            var row = new Row(e, a, c, app, maps, docs, expenses, sharedNotes, opportunity);
+            _rows.Add(row);
+        }
+
+        _rows = _rows.OrderBy(x => x.Edition.StartDate ?? new DateOnly(x.Edition.Year, 1, 1)).ToList();
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        _applicationDecisions = _rows.Where(x => !IsOperationalShow(x) && !x.IsPast(today)).ToList();
+        _upcoming = _rows.Where(x => IsOperationalShow(x) && !x.IsPast(today)).ToList();
+        _past = _rows.Where(x => IsOperationalShow(x) && x.IsPast(today)).OrderByDescending(x => x.Edition.StartDate).ToList();
+    }
+
+    RenderFragment ApplicationDecisionCard(Row r) => @<article class="vendor-show-card">
+        <div class="vendor-show-card-head">
+            <div>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <h3>@r.Name</h3>
+                    <span class="badge @StatusBadge(r.Assignment.Status)">@FriendlyStatus(r.Assignment.Status)</span>
+                </div>
+                <p>@r.DateLabel · @r.CityState</p>
+            </div>
+        </div>
+        @if (r.Assignment.Status.Equals("OFFERED", StringComparison.OrdinalIgnoreCase))
+        {
+            <div class="vendor-offer-box">
+                <strong>Ancient Innovations researched this placement for you.</strong>
+                <p class="mb-2">Do you want Ancient Innovations to apply? If you say YES, Melissa receives the application work. A YES is not a booking.</p>
+                <div class="vendor-show-info-grid mb-2">
+                    <div><span>Dates</span><strong>@r.DateLabel</strong></div>
+                    <div><span>Location</span><strong>@r.CityState</strong></div>
+                    <div><span>Expected sales</span><strong>@OpportunityForecast(r)</strong></div>
+                    <div><span>Why this show</span><strong>@OpportunityWhy(r)</strong></div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mt-2">
+                    <button class="btn btn-success btn-sm" @onclick='()=>RespondOfferAsync(r, "YES")'>YES — send to Melissa to apply</button>
+                    <input class="form-control form-control-sm" style="max-width:340px" placeholder="Why not this show? (optional)" @bind="r.DeclineReason" />
+                    <button class="btn btn-outline-danger btn-sm" @onclick='()=>RespondOfferAsync(r, "NO")'>NO — do not apply</button>
+                    <button class="btn btn-outline-dark btn-sm" @onclick='()=>RespondOfferAsync(r, "WEEKEND")'>NOT THIS WEEKEND</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info mb-0">
+                <strong>Approved to apply.</strong> Melissa/application staff owns the application step. This show will move into your operational schedule only after the promoter accepts Ancient Innovations.
+                @if (r.Application is not null && !string.IsNullOrWhiteSpace(r.Application.Status))
+                {
+                    <span class="ms-2 badge text-bg-light">Application: @FriendlyStatus(r.Application.Status)</span>
+                }
+            </div>
+        }
+    </article>;
+
+    RenderFragment ShowCard(Row r) => @<article class="vendor-show-card">
+        <div class="vendor-show-card-head">
+            <div>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <h3>@r.Name</h3>
+                    <span class="badge @StatusBadge(r.Assignment.Status)">@FriendlyStatus(r.Assignment.Status)</span>
+                    @if (r.Closeout.ClosedAt is not null)
+                    {
+                        <span class="badge text-bg-secondary">Closed out</span>
+                    }
+                </div>
+                <p>@r.DateLabel · @r.CityState</p>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(r.Edition.ShowEvent.WebsiteUrl))
+            {
+                <a class="btn btn-outline-secondary btn-sm" href="@r.Edition.ShowEvent.WebsiteUrl" target="_blank">Show website</a>
+            }
+        </div>
+
+        <div class="border rounded p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                <div>
+                    <strong>Backer</strong>
+                    <p class="small text-body-secondary mb-1">Backers are selected after promoter acceptance because the confirmed person affects how this show is packed, loaded and prepared.</p>
+                </div>
+            </div>
+            @{ var currentBacker = CurrentBacker(r.Edition.Id); }
+            @if (currentBacker is not null && currentBacker.Status == "BACKER_ACCEPTED")
+            {
+                <div><strong>@VendorName(currentBacker.ShowVendorProfileId)</strong> <span class="badge text-bg-success">Confirmed</span></div>
+                <button class="btn btn-outline-secondary btn-sm mt-2" @onclick="() => CancelBackerAsync(currentBacker.Id)">Change backer</button>
+            }
+            else if (currentBacker is not null && currentBacker.Status == "BACKER_OFFERED")
+            {
+                <div><strong>@VendorName(currentBacker.ShowVendorProfileId)</strong> <span class="badge text-bg-warning">Waiting for approval</span></div>
+                <button class="btn btn-outline-secondary btn-sm mt-2" @onclick="() => CancelBackerAsync(currentBacker.Id)">Cancel request</button>
+            }
+            else
+            {
+                @if (currentBacker is not null && currentBacker.Status == "BACKER_DECLINED")
+                {
+                    <div class="alert alert-warning py-2">@VendorName(currentBacker.ShowVendorProfileId) declined. Choose another eligible backer.</div>
+                }
+                <div class="showarm-form-grid">
+                    <label>Choose eligible backer
+                        <select class="form-select" @bind="r.SelectedBackerId">
+                            <option value="">Choose backer</option>
+                            @foreach (var v in EligibleBackers(r))
+                            {
+                                <option value="@v.Id">@v.VendorName</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Backer commission %
+                        <input type="number" step="0.5" min="0" max="100" class="form-control" @bind="r.BackerRate" />
+                    </label>
+                </div>
+                <small class="text-body-secondary d-block mt-2">@BackerPolicyHint(_vendors.First(x => x.Id == _vendorId))</small>
+                <button class="btn btn-dark btn-sm mt-2" disabled="@(r.SelectedBackerId is null || r.BackerRate is null)" @onclick="() => RequestBackerAsync(r)">Request this backer</button>
+            }
+        </div>
+
+        @if (r.Assignment.Status.Equals("OFFERED", StringComparison.OrdinalIgnoreCase))
+        {
+            <div class="vendor-offer-box">
+                <strong>Ancient Innovations researched this placement for you.</strong>
+                <p class="mb-2">Do you want to work this show? Application links and deadlines stay with Melissa after YES.</p>
+                <div class="vendor-show-info-grid mb-2">
+                    <div><span>Dates</span><strong>@r.DateLabel</strong></div>
+                    <div><span>Location</span><strong>@r.CityState</strong></div>
+                    <div><span>Expected sales</span><strong>@OpportunityForecast(r)</strong></div>
+                    <div><span>Why this show</span><strong>@OpportunityWhy(r)</strong></div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center mt-2">
+                    <button class="btn btn-success btn-sm" @onclick='()=>RespondOfferAsync(r, "YES")'>YES — I want this show</button>
+                    <input class="form-control form-control-sm" style="max-width:340px" placeholder="Why not this show? (optional)" @bind="r.DeclineReason" />
+                    <button class="btn btn-outline-danger btn-sm" @onclick='()=>RespondOfferAsync(r, "NO")'>NO — not this show</button>
+                    <button class="btn btn-outline-dark btn-sm" @onclick='()=>RespondOfferAsync(r, "WEEKEND")'>NOT THIS WEEKEND</button>
+                </div>
+            </div>
+        }
+
+        <div class="vendor-show-info-grid">
+            <div><span>Show hours</span><strong>@Text(r.Edition.ShowHours)</strong></div>
+            <div><span>Booth / location</span><strong>@Text(r.AssignedLocation)</strong></div>
+            <div><span>Setup</span><strong>@Text(r.Edition.SetupDetails)</strong></div>
+            <div><span>Parking / load-in</span><strong>@Text(FirstText(r.Edition.ParkingDetails, r.Edition.LoadInDetails))</strong></div>
+            <div><span>Promoter</span><strong>@Text(r.Edition.ShowEvent.PromoterName)</strong></div>
+            <div><span>Camping / lodging</span><strong>@Text(r.Edition.CampingDetails)</strong></div>
+        </div>
+
+        @if (r.Maps.Count > 0 || r.Documents.Count > 0)
+        {
+            <details class="vendor-show-details">
+                <summary>Maps &amp; show documents (@(r.Maps.Count + r.Documents.Count))</summary>
+                <div class="vendor-doc-list">
+                    @foreach (var m in r.Maps)
+                    {
+                        @if (!string.IsNullOrWhiteSpace(m.StoredFileName))
+                        {
+                            <a target="_blank" href="@(ShowFiles.MapUrl(m.StoredFileName!))">Map: @m.Title</a>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(m.SourceUrl))
+                        {
+                            <a target="_blank" href="@m.SourceUrl">Map: @m.Title</a>
+                        }
+                    }
+                    @foreach (var d in r.Documents)
+                    {
+                        @if (!string.IsNullOrWhiteSpace(d.StoredPath))
+                        {
+                            <a target="_blank" href="@d.StoredPath">@d.Title</a>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(d.SourceUrl))
+                        {
+                            <a target="_blank" href="@d.SourceUrl">@d.Title</a>
+                        }
+                    }
+                </div>
+            </details>
+        }
+
+        <div class="trust-builder-card mt-3">
+            <div class="trust-builder-title">
+                <div><h4>System Trust Builder</h4><p>Enter the number you tracked. Ancient Innovations keeps its system number beside it so you can see when the system is ready to replace manual tracking.</p></div>
+                @if (r.Closeout.VendorTrackedSales.HasValue && r.Closeout.SystemSquareSales.HasValue)
+                {
+                    <span class="badge @TrustBadge(r)">@TrustLabel(r)</span>
+                }
+            </div>
+            <div class="trust-builder-grid">
+                <label>My tracked sales
+                    <input type="number" step="0.01" class="form-control" @bind="r.Closeout.VendorTrackedSales" />
+                </label>
+                <div class="system-number"><span>Ancient Innovations tracked</span><strong>@Money2(r.Closeout.SystemSquareSales)</strong><small>System / Square</small></div>
+                <div class="system-number"><span>Difference</span><strong>@DifferenceText(r)</strong><small>@DifferencePercentText(r)</small></div>
+            </div>
+        </div>
+
+        <div class="showarm-form-grid mt-3">
+            <label>Mileage
+                <input type="number" step="0.1" class="form-control" @bind="r.Closeout.MileageReported" />
+            </label>
+            <label>Commission rate
+                <input type="number" step="0.01" class="form-control" @bind="r.Closeout.CommissionRate" disabled="@(!_isShowAdmin)" />
+                @if (!_isShowAdmin)
+                {
+                    <small class="text-body-secondary">Set by Ancient Innovations</small>
+                }
+            </label>
+            <div class="system-number"><span>Commission earned</span><strong>@Money2(CurrentCommission(r))</strong></div>
+            <label>Commission paid
+                <input type="number" step="0.01" class="form-control" @bind="r.Closeout.CommissionPaid" disabled="@(!_isShowAdmin)" />
+            </label>
+        </div>
+        <div class="commission-strip">
+            <span>Outstanding commission</span><strong>@Money2(Math.Max(0, CurrentCommission(r) - (r.Closeout.CommissionPaid ?? 0)))</strong>
+            @if (_isShowAdmin)
+            {
+                <label>Paid date <input type="text" class="form-control form-control-sm" placeholder="YYYY-MM-DD" @bind="r.CommissionPaidDateString" /></label>
+            }
+        </div>
+
+        <details class="vendor-show-details mt-3" open="@(r.Expenses.Count > 0)">
+            <summary>Misc. show expenses — @Money2(r.Expenses.Sum(x => x.Amount))</summary>
+            <p class="small text-body-secondary mt-2 mb-2">Entered here for convenience; the canonical expense record belongs to the Tax &amp; Financial Records Arm.</p>
+            @if (r.Expenses.Count > 0)
+            {
+                <div class="vendor-expense-list">
+                    @foreach (var ex in r.Expenses)
+                    {
+                        <div class="vendor-expense-row">
+                            <div><strong>@ex.Category</strong><span>@ex.Description</span></div>
+                            <div><strong>@ex.Amount.ToString("C2")</strong>@if(ex.Reimbursable)
+                            {
+                                <span class="badge text-bg-info ms-2">Reimbursable</span>
+                            }</div>
+                            @if (!string.IsNullOrWhiteSpace(ex.ReceiptPath))
+                            {
+                                <a href="@ex.ReceiptPath" target="_blank">Receipt</a>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            <div class="vendor-expense-entry mt-2">
+                <select class="form-select" @bind="r.NewExpense.Category">
+                    <option value="PARKING">Parking</option><option value="TOLL">Toll</option><option value="HOTEL">Hotel</option><option value="SUPPLIES">Supplies</option><option value="MEALS">Meals</option><option value="OTHER">Other</option>
+                </select>
+                <input class="form-control" placeholder="Description" @bind="r.NewExpense.Description" />
+                <input type="number" step="0.01" class="form-control" placeholder="Amount" @bind="r.NewExpense.Amount" />
+                <label class="form-check"><input class="form-check-input" type="checkbox" @bind="r.NewExpense.Reimbursable" /> Reimbursable by Ancient Innovations</label>
+                <InputFile OnChange="@(e => CaptureExpenseReceiptAsync(r, e))" accept="image/*,.pdf" />
+                <button class="btn btn-outline-primary btn-sm" @onclick="()=>AddExpenseAsync(r)" disabled="@(r.NewExpense.Amount <= 0)">Add expense</button>
+            </div>
+        </details>
+
+        <div class="border rounded p-3 mt-3">
+            <div class="d-flex justify-content-between gap-2 align-items-start flex-wrap">
+                <div><strong>Shared show notes</strong><p class="small text-body-secondary mb-2">Useful knowledge for the Show Arm. Check Marketing useful when this should also feed future promotion, social posts, booth messaging or recap content.</p></div>
+                <span class="badge text-bg-light">@r.SharedNotes.Count shared</span>
+            </div>
+            @if (r.SharedNotes.Count > 0)
+            {
+                <div class="d-grid gap-2 mb-3">
+                    @foreach (var note in r.SharedNotes.OrderByDescending(x => x.CreatedAt).Take(12))
+                    {
+                        <div class="border-top pt-2">
+                            <div class="d-flex justify-content-between gap-2"><small><strong>@(note.CreatedBy ?? "Ancient Innovations")</strong> · @note.CreatedAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</small>@if (note.UseForMarketing) { <span class="badge text-bg-info">Marketing useful</span> }</div>
+                            <div>@note.NoteText</div>
+                        </div>
+                    }
+                </div>
+            }
+            <textarea class="form-control" rows="3" @bind="r.NewSharedNote" placeholder="Placement, crowd, customer reactions, best sellers, organizer insight, weather, setup, what to repeat, what Marketing should know…"></textarea>
+            <div class="d-flex gap-3 align-items-center flex-wrap mt-2">
+                <label class="form-check mb-0"><input class="form-check-input" type="checkbox" @bind="r.NewSharedNoteForMarketing" /> Marketing useful</label>
+                <button class="btn btn-outline-primary btn-sm" @onclick="()=>AddSharedNoteAsync(r)" disabled="@string.IsNullOrWhiteSpace(r.NewSharedNote)">Add shared show note</button>
+            </div>
+        </div>
+
+        <label class="mt-3 fw-semibold">Private closeout / vendor notes
+            <textarea class="form-control" rows="4" @bind="r.Closeout.VendorNotes" placeholder="Private closeout notes or anything that does not need to become shared show intelligence…"></textarea>
+        </label>
+
+        <div class="vendor-photo-box mt-3">
+            <div><strong>Show / placement photos</strong><p>Booth, crowd, placement, obstruction or anything useful for next year.</p></div>
+            <InputFile OnChange="@(e => AddVendorPhotoAsync(r, e))" accept="image/*" multiple />
+            @if (r.VendorPhotos.Count > 0)
+            {
+                <div class="vendor-photo-list">
+                    @foreach (var p in r.VendorPhotos)
+                    {
+                        <a href="@p.StoredPath" target="_blank">@p.Title</a>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap mt-3">
+            <button class="btn btn-primary btn-sm" @onclick="()=>SaveAsync(r)">Save show record</button>
+            <button class="btn btn-outline-dark btn-sm" @onclick="()=>FinishShowAsync(r)">Finish show / close out</button>
+        </div>
+    </article>;
+
+    // ---------------- Backer lifecycle ----------------
+    // Privacy boundary: Ops stores only who was requested/confirmed and the operational compensation terms.
+    // It intentionally does NOT store medical details or the private reason a particular load plan is needed.
+    // The local Brain may use confirmed backer identity plus private local context later to produce packing/load instructions.
+    static bool IsBackerStatus(string status) => status is "BACKER_OFFERED" or "BACKER_ACCEPTED" or "BACKER_DECLINED" or "BACKER_CANCELLED" or "BACKER_ASSIGNED";
+
+    bool IsOperationalShow(Row r)
+    {
+        if (r.Assignment.Status == "COMMITTED") return true; // legacy/live schedule compatibility
+        var appStatus = (r.Application?.Status ?? "").Trim().ToUpperInvariant();
+        return appStatus == "ACCEPTED";
+    }
+
+    async Task LoadBackerRequestsAsync()
+    {
+        var rows = _allAssignments.Where(x => x.ShowVendorProfileId == _vendorId && x.Status is "BACKER_OFFERED" or "BACKER_ACCEPTED").ToList();
+        foreach (var a in rows)
+        {
+            var e = _allYearEditions.FirstOrDefault(x => x.Id == a.ShowEditionId);
+            if (e is null) continue;
+            var primaryId = ParsePrimaryVendorId(a.DeclineReason);
+            var primaryName = VendorName(primaryId);
+            var br = new BackerRequestRow(a.Id, e, primaryName);
+            if (a.Status == "BACKER_OFFERED") _backerRequests.Add(br);
+            else _confirmedBacking.Add(br);
+        }
+    }
+
+    ShowAssignmentEntity? CurrentBacker(long editionId)
+        => _allAssignments.Where(x => x.ShowEditionId == editionId && x.Status is "BACKER_OFFERED" or "BACKER_ACCEPTED" or "BACKER_DECLINED")
+            .OrderByDescending(x => x.OfferedAt).FirstOrDefault();
+
+    IEnumerable<ShowVendorProfileEntity> EligibleBackers(Row r)
+    {
+        var start = r.Edition.StartDate;
+        var end = r.Edition.EndDate ?? start;
+        return _vendors.Where(v => v.IsActive && v.Id != _vendorId && !HasBackerConflict(v.Id, r.Edition.Id, start, end)).OrderBy(v => v.VendorName);
+    }
+
+    bool HasBackerConflict(long vendorId, long currentEditionId, DateOnly? start, DateOnly? end)
+    {
+        if (start is null) return false;
+        var finish = end ?? start;
+        foreach (var a in _allAssignments.Where(x => x.ShowVendorProfileId == vendorId && x.ShowEditionId != currentEditionId && (x.Status is "COMMITTED" or "BOOKED" or "BACKER_OFFERED" or "BACKER_ACCEPTED")))
+        {
+            var e = _allYearEditions.FirstOrDefault(x => x.Id == a.ShowEditionId);
+            if (e?.StartDate is null) continue;
+            var eEnd = e.EndDate ?? e.StartDate;
+            if (e.StartDate.Value <= finish && eEnd.Value >= start.Value) return true;
+        }
+        return false;
+    }
+
+    async Task RequestBackerAsync(Row r)
+    {
+        if (!IsOperationalShow(r) || r.SelectedBackerId is not long backerId || r.BackerRate is null) return;
+        var existing = await Db.ShowAssignments.Where(x => x.ShowEditionId == r.Edition.Id && (x.Status == "BACKER_OFFERED" || x.Status == "BACKER_ACCEPTED" || x.Status == "BACKER_DECLINED")).ToListAsync();
+        foreach (var old in existing.Where(x => x.Status != "BACKER_DECLINED")) old.Status = "BACKER_CANCELLED";
+        var primary = _vendors.First(x => x.Id == _vendorId);
+        Db.ShowAssignments.Add(new ShowAssignmentEntity
+        {
+            ShowEditionId = r.Edition.Id,
+            ShowVendorProfileId = backerId,
+            Status = "BACKER_OFFERED",
+            OfferedAt = DateTimeOffset.UtcNow,
+            DeclineReason = EncodeBackerTerms(r.BackerRate.Value, BackerPaidFrom(primary), _vendorId)
+        });
+        await Db.SaveChangesAsync();
+        _message = $"Backer request sent to {VendorName(backerId)} for {r.Name}. The backer must approve before they are confirmed.";
+        await LoadAsync();
+    }
+
+    async Task RespondBackerAsync(long assignmentId, bool accepted)
+    {
+        var a = await Db.ShowAssignments.FirstOrDefaultAsync(x => x.Id == assignmentId && x.ShowVendorProfileId == _vendorId && x.Status == "BACKER_OFFERED");
+        if (a is null) return;
+        a.Status = accepted ? "BACKER_ACCEPTED" : "BACKER_DECLINED";
+        a.RespondedAt = DateTimeOffset.UtcNow;
+        if (accepted) a.CommittedAt = DateTimeOffset.UtcNow;
+        await Db.SaveChangesAsync();
+        _message = accepted ? "Backer assignment confirmed." : "Backer request declined. The primary vendor can choose someone else.";
+        await LoadAsync();
+    }
+
+    async Task CancelBackerAsync(long assignmentId)
+    {
+        var a = await Db.ShowAssignments.FirstOrDefaultAsync(x => x.Id == assignmentId && (x.Status == "BACKER_OFFERED" || x.Status == "BACKER_ACCEPTED"));
+        if (a is null) return;
+        var primaryId = ParsePrimaryVendorId(a.DeclineReason);
+        if (!_isShowAdmin && primaryId != _vendorId) return;
+        a.Status = "BACKER_CANCELLED";
+        a.RespondedAt = DateTimeOffset.UtcNow;
+        await Db.SaveChangesAsync();
+        _message = "Backer cleared. Choose another eligible backer when ready.";
+        await LoadAsync();
+    }
+
+    string VendorName(long? id) => id is long v ? _vendors.FirstOrDefault(x => x.Id == v)?.VendorName ?? $"Vendor {v}" : "Primary vendor";
+    static string BackerPaidFrom(ShowVendorProfileEntity primary) => primary.VendorName.Equals("Jaime", StringComparison.OrdinalIgnoreCase) ? "BUSINESS" : "PRIMARY_VENDOR_SHARE";
+    static string BackerPolicyHint(ShowVendorProfileEntity primary) => primary.VendorName.ToLowerInvariant() switch
+    {
+        "jaime" => "Jaime policy: backer defaults to 20% commission paid as a show/business expense.",
+        "blake" => "Blake policy: Blake receives his vendor commission and pays his backer from Blake's portion. Set the agreed rate for this show.",
+        _ => "Set the agreed backer rate for this show."
+    };
+    static string EncodeBackerTerms(decimal rate, string paidFrom, long primaryVendorId) => $"BACKER_TERMS|RATE={rate:0.##}|PAID_FROM={paidFrom}|PRIMARY_VENDOR_ID={primaryVendorId}";
+    static long? ParsePrimaryVendorId(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var part = raw.Split('|').FirstOrDefault(x => x.StartsWith("PRIMARY_VENDOR_ID=", StringComparison.OrdinalIgnoreCase));
+        return part is not null && long.TryParse(part.Split('=',2)[1], out var id) ? id : null;
+    }
+
+    async Task SaveAsync(Row r)
+    {
+        RecalcCommission(r.Closeout);
+        r.Closeout.CommissionPaidDate = ParseDate(r.CommissionPaidDateString);
+        r.Closeout.UpdatedAt = DateTimeOffset.UtcNow;
+        if (r.Closeout.Id == 0) Db.ShowVendorCloseouts.Add(r.Closeout);
+        await Db.SaveChangesAsync();
+        _message = $"Saved {r.Name}.";
+        await LoadAsync();
+    }
+
+    async Task FinishShowAsync(Row r)
+    {
+        r.Closeout.CloseoutStatus = "COMPLETE";
+        r.Closeout.ClosedAt = DateTimeOffset.UtcNow;
+        await SaveAsync(r);
+        _message = $"{r.Name} closeout saved.";
+    }
+
+    async Task RespondOfferAsync(Row r, string decision)
+    {
+        var a = await Db.ShowAssignments.FirstAsync(x => x.Id == r.Assignment.Id);
+        a.RespondedAt = DateTimeOffset.UtcNow;
+
+        if (decision == "YES")
+        {
+            a.Status = "VENDOR_YES";
+            a.DeclineReason = null;
+            var app = await Db.ShowApplications.FirstOrDefaultAsync(x => x.ShowEditionId == r.Edition.Id && x.ShowVendorProfileId == _vendorId);
+            if (app is null)
+            {
+                app = new ShowApplicationEntity { ShowEditionId = r.Edition.Id, ShowVendorProfileId = _vendorId };
+                Db.ShowApplications.Add(app);
+            }
+            app.Status = "READY_TO_APPLY";
+            app.NextAction = "Melissa: review application platform, deadline, fees and submit application.";
+            app.LastCheckedAt ??= DateTimeOffset.UtcNow;
+            if (r.Opportunity is not null)
+            {
+                var opp = await Db.ShowOpportunities.FirstAsync(x => x.Id == r.Opportunity.Id);
+                opp.Status = "VENDOR_YES";
+            }
+            _message = $"YES recorded for {r.Name}. It is now in Melissa's application workflow.";
+        }
+        else if (decision == "WEEKEND")
+        {
+            a.Status = "UNAVAILABLE_WEEKEND";
+            a.DeclineReason = "Vendor unavailable this weekend.";
+            if (r.Opportunity is not null)
+            {
+                var opp = await Db.ShowOpportunities.FirstAsync(x => x.Id == r.Opportunity.Id);
+                opp.Status = "AVAILABLE_OTHER_VENDOR";
+            }
+            _message = $"Weekend marked unavailable. {r.Name} can be placed with another vendor, and overlapping shows will not be offered here.";
+        }
+        else
+        {
+            a.Status = "VENDOR_NO";
+            a.DeclineReason = r.DeclineReason;
+            if (r.Opportunity is not null)
+            {
+                var opp = await Db.ShowOpportunities.FirstAsync(x => x.Id == r.Opportunity.Id);
+                opp.Status = "AVAILABLE_OTHER_VENDOR";
+            }
+            _message = $"NO recorded for {r.Name}. This vendor remains available that weekend and the show can be considered for another vendor.";
+        }
+
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    async Task AddSharedNoteAsync(Row r)
+    {
+        if (string.IsNullOrWhiteSpace(r.NewSharedNote)) return;
+        var vendorName = _vendors.FirstOrDefault(x => x.Id == _vendorId)?.VendorName ?? "Vendor";
+        Db.ShowNotes.Add(new ShowNoteEntity { ShowEditionId = r.Edition.Id, ShowVendorProfileId = _vendorId, NoteType = "VENDOR", NoteText = r.NewSharedNote.Trim(), UseForShowArm = true, UseForMarketing = r.NewSharedNoteForMarketing, CreatedBy = vendorName, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow });
+        await Db.SaveChangesAsync();
+        _message = $"Shared show note added to {r.Name}.";
+        await LoadAsync();
+    }
+
+    async Task AddExpenseAsync(Row r)
+    {
+        if (r.NewExpense.Amount <= 0) return;
+        var ex = new ShowFinancialReferenceEntity
+        {
+            ShowEditionId = r.Edition.Id,
+            ShowVendorProfileId = _vendorId,
+            Kind = "EXPENSE",
+            Category = r.NewExpense.Category,
+            Amount = r.NewExpense.Amount,
+            Reimbursable = r.NewExpense.Reimbursable,
+            Description = r.NewExpense.Description,
+            ReceiptPath = r.NewExpense.ReceiptPath,
+            RecordedAt = DateTimeOffset.UtcNow
+        };
+        Db.ShowFinancialReferences.Add(ex);
+        await Db.SaveChangesAsync();
+        r.NewExpense = new ExpenseDraft();
+        _message = $"Expense added to {r.Name}.";
+        await LoadAsync();
+    }
+
+    async Task CaptureExpenseReceiptAsync(Row r, InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        r.NewExpense.ReceiptPath = await SaveFileAsync(file, r, "receipt");
+    }
+
+    async Task AddVendorPhotoAsync(Row r, InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(8))
+        {
+            var path = await SaveFileAsync(file, r, "photo");
+            var doc = new ShowDocumentEntity
+            {
+                ShowEditionId = r.Edition.Id,
+                ShowVendorProfileId = _vendorId,
+                DocumentType = "VENDOR_PHOTO",
+                Title = file.Name,
+                StoredPath = path,
+                AppliesToYear = r.Edition.Year,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            Db.ShowDocuments.Add(doc);
+        }
+        await Db.SaveChangesAsync();
+        _message = $"Photo added to {r.Name}.";
+        await LoadAsync();
+    }
+
+    async Task<string> SaveFileAsync(IBrowserFile file, Row r, string kind)
+    {
+        var root = Path.Combine(Env.WebRootPath, "uploads", "show-vendor-files");
+        Directory.CreateDirectory(root);
+        var ext = Path.GetExtension(file.Name);
+        var safeExt = string.IsNullOrWhiteSpace(ext) ? "" : ext.ToLowerInvariant();
+        var stored = $"{r.Edition.Year}-{r.Edition.Id}-{_vendorId}-{kind}-{Guid.NewGuid():N}{safeExt}";
+        var full = Path.Combine(root, stored);
+        await using var input = file.OpenReadStream(12 * 1024 * 1024);
+        await using var output = File.Create(full);
+        await input.CopyToAsync(output);
+        return $"/uploads/show-vendor-files/{stored}";
+    }
+
+    void RecalcCommission(ShowVendorCloseoutEntity c)
+        => c.CommissionEarned = (c.SystemSquareSales ?? c.VendorTrackedSales ?? 0) * (c.CommissionRate ?? 0);
+
+    decimal CurrentCommission(Row r)
+    {
+        RecalcCommission(r.Closeout);
+        return r.Closeout.CommissionEarned ?? 0;
+    }
+
+    int ComparedCount => _rows.Count(x => x.Closeout.VendorTrackedSales.HasValue && x.Closeout.SystemSquareSales.HasValue);
+    int MatchedCount => _rows.Count(x => IsTrustedMatch(x));
+    decimal ComparedVendorTotal => _rows.Where(x => x.Closeout.VendorTrackedSales.HasValue && x.Closeout.SystemSquareSales.HasValue).Sum(x => x.Closeout.VendorTrackedSales ?? 0);
+    decimal ComparedSystemTotal => _rows.Where(x => x.Closeout.VendorTrackedSales.HasValue && x.Closeout.SystemSquareSales.HasValue).Sum(x => x.Closeout.SystemSquareSales ?? 0);
+    decimal TrustDifferencePercent => ComparedSystemTotal == 0 ? 0 : Math.Abs(ComparedVendorTotal - ComparedSystemTotal) / ComparedSystemTotal * 100m;
+
+    bool IsTrustedMatch(Row r)
+    {
+        if (!r.Closeout.VendorTrackedSales.HasValue || !r.Closeout.SystemSquareSales.HasValue) return false;
+        var diff = Math.Abs(r.Closeout.VendorTrackedSales.Value - r.Closeout.SystemSquareSales.Value);
+        var pct = r.Closeout.SystemSquareSales.Value == 0 ? (diff == 0 ? 0 : 100) : diff / Math.Abs(r.Closeout.SystemSquareSales.Value) * 100m;
+        return diff <= 25m || pct <= 1m;
+    }
+
+    string TrustBadge(Row r) => IsTrustedMatch(r) ? "text-bg-success" : DifferencePercent(r) <= 5 ? "text-bg-warning" : "text-bg-danger";
+    string TrustLabel(Row r) => IsTrustedMatch(r) ? "Matched" : DifferencePercent(r) <= 5 ? "Check difference" : "Reconcile";
+    decimal DifferencePercent(Row r)
+    {
+        if (!r.Closeout.VendorTrackedSales.HasValue || !r.Closeout.SystemSquareSales.HasValue) return 0;
+        var sys = Math.Abs(r.Closeout.SystemSquareSales.Value);
+        return sys == 0 ? 0 : Math.Abs(r.Closeout.VendorTrackedSales.Value - r.Closeout.SystemSquareSales.Value) / sys * 100m;
+    }
+    string DifferenceText(Row r) => r.Closeout.VendorTrackedSales.HasValue && r.Closeout.SystemSquareSales.HasValue ? Math.Abs(r.Closeout.VendorTrackedSales.Value - r.Closeout.SystemSquareSales.Value).ToString("C2") : "—";
+    string DifferencePercentText(Row r) => r.Closeout.VendorTrackedSales.HasValue && r.Closeout.SystemSquareSales.HasValue ? $"{DifferencePercent(r):N2}%" : "Enter your tracked sales to compare";
+
+    static string Money2(decimal? d) => d?.ToString("C2") ?? "—";
+    static string Money0(decimal d) => d.ToString("C0");
+    static string OpportunityForecast(Row r)
+        => r.Opportunity?.ForecastLow is decimal low && r.Opportunity.ForecastHigh is decimal high ? $"{low:C0}–{high:C0}" : "Research estimate not locked yet";
+
+    static string OpportunityWhy(Row r)
+        => string.IsNullOrWhiteSpace(r.Opportunity?.FitRationale) ? "Selected as a researched placement for this vendor." : r.Opportunity!.FitRationale!;
+
+    static string Text(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s;
+    static string FirstText(params string?[] values) => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? "—";
+    static DateOnly? ParseDate(string? s) => DateOnly.TryParse(s, out var d) ? d : null;
+    static string FriendlyStatus(string s) => s.Replace('_', ' ').ToLowerInvariant() switch { var x => System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(x) };
+    static string StatusBadge(string s) => s.ToUpperInvariant() switch { "APPROVED" or "VENDOR_YES" or "COMMITTED" or "BOOKED" => "text-bg-success", "DECLINED" or "VENDOR_NO" => "text-bg-danger", "UNAVAILABLE_WEEKEND" => "text-bg-dark", "OFFERED" => "text-bg-warning", _ => "text-bg-secondary" };
+
+    sealed class ExpenseDraft
+    {
+        public string Category { get; set; } = "PARKING";
+        public string? Description { get; set; }
+        public decimal Amount { get; set; }
+        public bool Reimbursable { get; set; }
+        public string? ReceiptPath { get; set; }
+    }
+
+    sealed record BackerRequestRow(long AssignmentId, ShowEditionEntity Edition, string PrimaryVendorName)
+    {
+        public string ShowName => Edition.ShowEvent.Name;
+        public string CityState => $"{Edition.ShowEvent.City}, {Edition.ShowEvent.State}";
+        public string DateLabel => Edition.StartDate is null ? Edition.Year.ToString() : Edition.EndDate is not null && Edition.EndDate != Edition.StartDate ? $"{Edition.StartDate:MMM d}–{Edition.EndDate:MMM d, yyyy}" : Edition.StartDate.Value.ToString("MMM d, yyyy");
+    }
+
+    sealed class Row
+    {
+        public ShowEditionEntity Edition { get; }
+        public ShowAssignmentEntity Assignment { get; }
+        public ShowVendorCloseoutEntity Closeout { get; }
+        public ShowApplicationEntity? Application { get; }
+        public List<ShowMapEntity> Maps { get; }
+        public List<ShowDocumentEntity> Documents { get; }
+        public List<ShowFinancialReferenceEntity> Expenses { get; }
+        public List<ShowNoteEntity> SharedNotes { get; }
+        public ShowOpportunityEntity? Opportunity { get; }
+        public ExpenseDraft NewExpense { get; set; } = new();
+        public string NewSharedNote { get; set; } = "";
+        public bool NewSharedNoteForMarketing { get; set; }
+        public string? DeclineReason { get; set; }
+        public string? CommissionPaidDateString { get; set; }
+        public long? SelectedBackerId { get; set; }
+        public decimal? BackerRate { get; set; } = 20m;
+        public List<ShowDocumentEntity> VendorPhotos => Documents.Where(x => x.DocumentType == "VENDOR_PHOTO").ToList();
+        public Row(ShowEditionEntity e, ShowAssignmentEntity a, ShowVendorCloseoutEntity c, ShowApplicationEntity? app, List<ShowMapEntity> maps, List<ShowDocumentEntity> docs, List<ShowFinancialReferenceEntity> expenses, List<ShowNoteEntity> sharedNotes, ShowOpportunityEntity? opportunity)
+        {
+            Edition = e; Assignment = a; Closeout = c; Application = app; Maps = maps; Documents = docs; Expenses = expenses; SharedNotes = sharedNotes; Opportunity = opportunity;
+            CommissionPaidDateString = c.CommissionPaidDate?.ToString("yyyy-MM-dd");
+        }
+        public string Name => Edition.ShowEvent.Name;
+        public string CityState => $"{Edition.ShowEvent.City}, {Edition.ShowEvent.State}";
+        public string DateLabel => Edition.StartDate is null ? Edition.Year.ToString() : Edition.EndDate is not null && Edition.EndDate != Edition.StartDate ? $"{Edition.StartDate:MMM d}–{Edition.EndDate:MMM d, yyyy}" : Edition.StartDate.Value.ToString("MMM d, yyyy");
+        public string? AssignedLocation => Application?.AssignedLocation ?? Edition.LocationIntel;
+        public bool IsPast(DateOnly today) => (Edition.EndDate ?? Edition.StartDate) is DateOnly d && d < today;
+    }
+}

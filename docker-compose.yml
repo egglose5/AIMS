@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17.6
+    container_name: controlapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: MustaineAI
+    ports:
+      - "5432:5432"
+    volumes:
+      - ${HOME}/.mustaine-ai/postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d MustaineAI"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Mustaine-AI/Dockerfile
+    container_name: controlapp-web
+    restart: unless-stopped
+    env_file:
+      - path: .env.ai-brain
+        required: false
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_DATA_PROTECTION_KEYS_PATH: /app/.aspnet/DataProtection-Keys
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=MustaineAI;Username=postgres;Password=postgres
+    volumes:
+      - ${HOME}/.mustaine-ai/dp-keys:/app/.aspnet/DataProtection-Keys
+      - ${HOME}/.mustaine-ai/show-maps:/app/wwwroot/uploads/show-maps
+      - ${HOME}/.mustaine-ai/show-vendor-files:/app/wwwroot/uploads/show-vendor-files
+      - ${HOME}/.mustaine-ai/brain-email-attachments:/app/wwwroot/uploads/brain-email
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"

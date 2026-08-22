@@ -1,0 +1,31 @@
+Pass 9.34 — Remaining 2026 Live Schedule
+
+Source: Ancient Innovations Event Operations Center 2026.
+Scope: shows starting after Aug. 18, 2026 that have an assigned vendor.
+
+Imported primary vendors:
+Aug 29–30  Michiana Ren Fair — Melissa
+Aug 30–Sep 2  Blueberry Festival — Abby
+Sep 5–6  Daniel Bonne Pioneer Festival — Melissa
+Sep 5–7  Frankfort Fall Festival — Sonya (Jaime preserved as backer)
+Sep 7  Lawrenceburg Art In The Park — Blake
+Sep 12  Louisville Pride — Jaime
+Sep 12–13  Village Peddler Festival — Blake
+Sep 17–20  Nappanee Apple Festival — Jaime
+Sep 19–26  Mitchell Persimmon Festival — Blake
+Sep 24–26  Uncle Pen fest — Abby
+Sep 25–27  Warrens Cranberry Festival — Jaime
+Sep 26–27  Atlanta IN art fair — Sonya (source also named Matt; retained as source note)
+Sep 26–27  Chautauqa — Abby
+Oct 1–4  Riley Days — Jaime
+Oct 1–3  Seymour Oktoberfest — Blake
+Oct 2  Lakota West — Melissa
+Oct 10–11  Bardstown Art & Craft — Melissa
+Oct 21–24  Centerville Pumpkin Festival — Melissa
+Oct 24  Odon Harvest Festival — Sonya (source also named Matt; retained as source note)
+Oct 25  Irvington Halloween Market — Jaime
+Nov 14–15  Lakota East — Melissa
+Nov 21–22  Ryle High School — Melissa
+
+Unassigned research/candidate rows were intentionally NOT imported into the live vendor schedule.
+This import is idempotent and may be run again safely.

@@ -1,0 +1,17 @@
+v10 Pass 8.14.0 — Shipping & Fulfillment
+
+- Preserves working Pass 8.13.9 Inventory, Square-SKU barcodes, Hold, and Production behavior.
+- Fulfillment groups multiple product lines into one customer order card.
+- Shows customer, shipping address, product selections/options, quantities, and notes already stored in the shared fulfillment record.
+- Simple workflow: Ready to Fulfill -> Packing -> Ready to Ship -> Shipped.
+- Ready to Ship includes an Open Pirate Ship button.
+- Pirate Ship remains responsible for postage, labels, and customer tracking communication.
+- Manual Mark Shipped closes the Control App job after the Pirate Ship label is purchased; carrier/tracking are optional fields for local history.
+- Shipped orders move out of the active queue into Shipped History.
+- No duplicate tracking email is sent by the Control App.
+- No new database schema is required for this pass.
+
+Intentional boundary:
+- This pass does not invent a Pirate Ship API or scrape Pirate Ship.
+- It does not alter the working Inventory/Production routing logic.
+- Automatic WooCommerce/Pirate Ship shipment-status ingestion is not added until its exact existing Woo metadata can be verified from a real shipped website order. Manual Mark Shipped is the safe fallback.

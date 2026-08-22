@@ -1,0 +1,328 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using MustaineAI
+@using MustaineAI.Components
+@using MustaineAI.Components.Layout
+@using MustaineAI.Data
+@using MustaineAI.Services
+@attribute [StreamRendering]
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Home</PageTitle>
+
+<div class="home-hero">
+    <p class="home-eyebrow">Dashboard</p>
+    <h1 class="home-title">Welcome To The ANc-Inn Control dashboard.</h1>
+    <p class="home-subtitle">
+        A live snapshot of Square sales, team performance, and the item flow that matters most in the last 24 hours.
+    </p>
+</div>
+
+@if (_isLoading)
+{
+    <section class="home-card home-state">
+        Loading dashboard...
+    </section>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_loadError))
+    {
+        <section class="home-card home-state home-state-error">
+            <strong>Dashboard data unavailable.</strong>
+            <div>@_loadError</div>
+        </section>
+    }
+
+    <div class="home-metrics">
+        @foreach (var metric in Metrics)
+        {
+            <section class="home-card home-metric">
+                <span class="home-metric-label">@metric.Label</span>
+                <strong class="home-metric-value @metric.AccentClass">@metric.Value</strong>
+                <span class="home-metric-note">@metric.Note</span>
+            </section>
+        }
+    </div>
+
+    <div class="home-grid">
+        <section class="home-card">
+            <div class="home-card-header">
+                <div>
+                    <p class="home-card-eyebrow">Last 24 Hours</p>
+                    <h2 class="home-card-title">Print Queue Preview</h2>
+                </div>
+                <span class="home-card-badge">Ready for printer output</span>
+            </div>
+
+            <p class="home-card-note">
+                This panel reads from locally synced sales in the last 24 hours so we can swap in a real print queue feed without rebuilding the layout.
+            </p>
+
+            @if (PrintQueueRows.Count == 0)
+            {
+                <div class="home-state home-state-muted">
+                    No local sales were found in the last 24 hours. Once Square data is synced, the queue will show the latest receipts here.
+                </div>
+            }
+            else
+            {
+                <div class="home-queue-list">
+                    @foreach (var row in PrintQueueRows)
+                    {
+                        <article class="home-queue-row">
+                            <div class="home-queue-copy">
+                                <div class="home-queue-title">@row.Label</div>
+                                <div class="home-queue-detail">@row.Detail</div>
+                                <div class="home-queue-meta">@row.Meta</div>
+                            </div>
+
+                            <div class="home-queue-graph">
+                                <div class="home-queue-track">
+                                    <div class="home-queue-fill" style="width: @($"{row.BarWidth:F0}%")"></div>
+                                </div>
+                                <div class="home-queue-value">@row.AmountLabel</div>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="home-card">
+            <div class="home-card-header">
+                <div>
+                    <p class="home-card-eyebrow">Last 24 Hours</p>
+                    <h2 class="home-card-title">Most Recently Sold Items</h2>
+                </div>
+                <span class="home-card-badge">@RecentItems.Count items</span>
+            </div>
+
+            <p class="home-card-note">
+                Click an item to focus it, then use the list below to compare last-24-hour sales by reporting category and line-item name.
+            </p>
+
+            @if (RecentItems.Count == 0)
+            {
+                <div class="home-state home-state-muted">
+                    No line items were found in the last 24 hours yet. After syncing Square, the most recent items will appear here.
+                </div>
+            }
+            else
+            {
+                <div class="home-recent-focus">
+                    <div class="home-recent-focus-label">Selected item</div>
+                    <div class="home-recent-focus-name">@SelectedRecentItem.LineItemName</div>
+                    <div class="home-recent-focus-meta">
+                        @SelectedRecentItem.ReportingCategoryName
+                        @if (!string.IsNullOrWhiteSpace(SelectedRecentItem.VariationName))
+                        {
+                            <span> - @SelectedRecentItem.VariationName</span>
+                        }
+                    </div>
+                    <div class="home-recent-focus-stats">
+                        <span>@SelectedRecentItem.TimeLabel</span>
+                        <strong>@SelectedRecentItem.AmountLabel</strong>
+                    </div>
+                </div>
+
+                <div class="home-recent-list" role="list">
+                    @foreach (var item in RecentItems)
+                    {
+                        <button type="button"
+                                class="home-recent-row @(item.Key == SelectedRecentItem.Key ? "is-selected" : string.Empty)"
+                                role="listitem"
+                                @onclick="() => SelectRecentItem(item.Key)">
+                            <div class="home-recent-copy">
+                                <div class="home-recent-title">@item.LineItemName</div>
+                                <div class="home-recent-detail">@item.ReportingCategoryName</div>
+                                @if (!string.IsNullOrWhiteSpace(item.VariationName))
+                                {
+                                    <div class="home-recent-detail">@item.VariationName</div>
+                                }
+                            </div>
+
+                            <div class="home-recent-graph">
+                                <div class="home-recent-track">
+                                    <div class="home-recent-fill" style="width: @($"{item.BarWidth:F0}%")"></div>
+                                </div>
+                                <div class="home-recent-value">
+                                    <span>@item.TimeLabel</span>
+                                    <strong>@item.AmountLabel</strong>
+                                </div>
+                            </div>
+                        </button>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private string? _loadError;
+    private IReadOnlyList<HomeMetricCard> Metrics = [];
+    private IReadOnlyList<PrintQueueRow> PrintQueueRows = [];
+    private IReadOnlyList<RecentItemRow> RecentItems = [];
+    private string? _selectedRecentItemKey;
+
+    private RecentItemRow SelectedRecentItem =>
+        RecentItems.FirstOrDefault(item => item.Key == _selectedRecentItemKey) ?? RecentItems.First();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+
+        try
+        {
+            var recentWindowStart = DateTimeOffset.UtcNow.AddHours(-24);
+            var teamMembers = await DbContext.SquareTeamMembers.AsNoTracking().ToListAsync();
+            var sales = await DbContext.SquareSales
+                .AsNoTracking()
+                .Where(sale => sale.CreatedAt >= recentWindowStart)
+                .ToListAsync();
+            var lineItems = await DbContext.SquareSaleLineItems
+                .AsNoTracking()
+                .Where(lineItem => lineItem.SaleCreatedAt >= recentWindowStart)
+                .ToListAsync();
+
+            var employeeSummaries = sales
+                .OrderByDescending(sale => sale.CreatedAt)
+                .GroupBy(sale => sale.TeamMemberId ?? sale.TeamMemberName ?? "Unassigned", StringComparer.OrdinalIgnoreCase)
+                .Select(group =>
+                {
+                    var firstSale = group.First();
+                    var teamMember = teamMembers.FirstOrDefault(member =>
+                        !string.IsNullOrWhiteSpace(firstSale.TeamMemberId) &&
+                        string.Equals(member.SquareTeamMemberId, firstSale.TeamMemberId, StringComparison.OrdinalIgnoreCase));
+
+                    return new EmployeeSummary(
+                        teamMember?.DisplayName ?? firstSale.TeamMemberName ?? "Unassigned",
+                        group.Sum(GetNetCollectedCents),
+                        group.Sum(sale => sale.TipCents),
+                        group.Sum(GetGrossCollectedCents));
+                })
+                .OrderByDescending(summary => summary.GrossCents)
+                .ToList();
+
+            var grossCents = sales.Sum(GetGrossCollectedCents);
+            var netCents = sales.Sum(GetNetCollectedCents);
+            var topSeller = employeeSummaries.FirstOrDefault();
+            var bestTipped = employeeSummaries.OrderByDescending(summary => summary.TipCents).FirstOrDefault();
+
+            Metrics = BuildMetrics(grossCents, netCents, topSeller, bestTipped);
+
+            var recentSales = sales
+                .OrderByDescending(sale => sale.CreatedAt)
+                .ToList();
+
+            var maxQueueAmount = recentSales.Count == 0 ? 0 : recentSales.Max(GetNetCollectedCents);
+            PrintQueueRows = recentSales
+                .Take(6)
+                .Select(sale => new PrintQueueRow(
+                    !string.IsNullOrWhiteSpace(sale.ReceiptNumber) ? $"Receipt #{sale.ReceiptNumber}" : "Recent sale",
+                    string.IsNullOrWhiteSpace(sale.TeamMemberName) ? "Unassigned" : sale.TeamMemberName,
+                    sale.CreatedAt.ToLocalTime().ToString("g"),
+                    FormatCurrency(GetNetCollectedCents(sale)),
+                    maxQueueAmount == 0 ? 0 : GetNetCollectedCents(sale) / (decimal)maxQueueAmount * 100m))
+                .ToList();
+
+            var recentLineItems = lineItems
+                .OrderByDescending(lineItem => lineItem.SaleCreatedAt)
+                .ThenBy(lineItem => lineItem.SortOrder)
+                .ToList();
+
+            var maxRecentAmount = recentLineItems.Count == 0 ? 0 : recentLineItems.Max(lineItem => lineItem.GrossAmountCents);
+            RecentItems = recentLineItems
+                .Take(8)
+                .Select(lineItem =>
+                {
+                    var key = $"{lineItem.SquareOrderId}:{lineItem.LineItemUid}";
+                    return new RecentItemRow(
+                        key,
+                        lineItem.LineItemName ?? "Unnamed line item",
+                        lineItem.ReportingCategoryName ?? "Uncategorized",
+                        lineItem.VariationName,
+                        lineItem.SaleCreatedAt.ToLocalTime().ToString("g"),
+                        FormatCurrency(lineItem.GrossAmountCents),
+                        maxRecentAmount == 0 ? 0 : lineItem.GrossAmountCents / (decimal)maxRecentAmount * 100m);
+                })
+                .ToList();
+
+            _selectedRecentItemKey = RecentItems.FirstOrDefault()?.Key;
+            _loadError = null;
+        }
+        catch
+        {
+            Metrics = BuildMetrics(0, 0, null, null);
+            PrintQueueRows = [];
+            RecentItems = [];
+            _selectedRecentItemKey = null;
+            _loadError = "Live Square data could not be loaded right now. The app is still running, but PostgreSQL did not respond in time.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void SelectRecentItem(string key)
+    {
+        _selectedRecentItemKey = key;
+    }
+
+    private static IReadOnlyList<HomeMetricCard> BuildMetrics(
+        long grossCents,
+        long netCents,
+        EmployeeSummary? topSeller,
+        EmployeeSummary? bestTipped)
+    {
+        return
+        [
+            new HomeMetricCard("24h Gross Sales", FormatCurrency(grossCents), "Order totals from local sales in the last 24 hours.", "home-metric-emerald"),
+            new HomeMetricCard("24h Net Collected", FormatCurrency(netCents), "Order totals plus tips from local sales in the last 24 hours.", "home-metric-blue"),
+            new HomeMetricCard("24h Highest Seller", topSeller is null ? "No sales yet" : topSeller.Name, topSeller is null ? "Waiting for synced sales data." : $"{FormatCurrency(topSeller.GrossCents)} in last-24-hour sales", "home-metric-gold"),
+            new HomeMetricCard("24h Best Tipped", bestTipped is null ? "No tips yet" : bestTipped.Name, bestTipped is null ? "Waiting for synced tip data." : $"{FormatCurrency(bestTipped.TipCents)} in last-24-hour tips", "home-metric-rose"),
+        ];
+    }
+
+    private static long GetGrossCollectedCents(SquareSaleEntity sale) =>
+        sale.OrderTotalCents > 0 ? sale.OrderTotalCents : sale.AmountCents;
+
+    private static long GetNetCollectedCents(SquareSaleEntity sale) =>
+        GetGrossCollectedCents(sale) + sale.TipCents;
+
+    private static string FormatCurrency(long cents) => (cents / 100m).ToString("C0");
+
+    private sealed record HomeMetricCard(string Label, string Value, string Note, string AccentClass);
+
+    private sealed record PrintQueueRow(
+        string Label,
+        string Detail,
+        string Meta,
+        string AmountLabel,
+        decimal BarWidth);
+
+    private sealed record RecentItemRow(
+        string Key,
+        string LineItemName,
+        string ReportingCategoryName,
+        string? VariationName,
+        string TimeLabel,
+        string AmountLabel,
+        decimal BarWidth);
+
+    private sealed record EmployeeSummary(
+        string Name,
+        long NetCents,
+        long TipCents,
+        long GrossCents);
+
+}
